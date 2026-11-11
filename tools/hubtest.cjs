@@ -33,6 +33,7 @@ const issues = [
   issue(6, { 'What is it?': 'Game', Name: 'Broken', Game: '[bad.json](https://github.com/user-attachments/files/3/bad.json)' }),
   issue(7, { 'What is it?': 'Photo', Name: 'Hidden', 'Photos and clips': '![x](https://github.com/user-attachments/assets/aaa)' }, { labels: [{ name: 'share' }, { name: 'hub-hide' }] }),
   issue(8, { 'What is it?': 'Game', Name: 'Not a share' }, { title: 'Bug: crash', labels: [] }),
+  issue(9, { 'What is it?': 'Utility app', Name: 'Egg timer', Game: link, 'About it': 'Counts down.' }),
 ];
 
 (async () => {
@@ -42,7 +43,7 @@ const issues = [
   let res = await build(dir, issues, download, m => logs.push(m));
   const idx = JSON.parse(fs.readFileSync(path.join(dir, 'index.json'), 'utf8'));
   const ids = idx.items.map(i => i.id).sort();
-  if (JSON.stringify(ids) === '[1,2,3,5]') ok('shown: maintainer posts and the approved one; not waiting, broken, hidden or other issues'); else fail('shown ids ' + ids);
+  if (JSON.stringify(ids) === '[1,2,3,5,9]') ok('shown: maintainer posts and the approved one; not waiting, broken, hidden or other issues'); else fail('shown ids ' + ids);
   const one = idx.items.find(i => i.id === 1);
   const g1 = JSON.parse(fs.readFileSync(path.join(dir, one.cart), 'utf8'));
   if (g1.code === cart.code && g1.tiles === cart.tiles && one.media[0] === 'items/1/1.png' && fs.existsSync(path.join(dir, one.media[0]))) ok('game from a play link, with its photo'); else fail('item 1 ' + JSON.stringify(one));
@@ -52,6 +53,8 @@ const issues = [
   if (three.kind === 'clip' && three.media[0] === 'items/3/1.gif' && !three.cart) ok('clip post'); else fail('item 3 ' + JSON.stringify(three));
   if (JSON.parse(fs.readFileSync(path.join(dir, 'items/5/game.bitkit'), 'utf8')).name === 'From file') ok('game from an attached .json cart'); else fail('item 5');
   if (res.get(6).error && /not a BitKit game/.test(res.get(6).error)) ok('a broken game is refused with a reason: ' + res.get(6).error); else fail('item 6 ' + JSON.stringify(res.get(6)));
+  const nine = idx.items.find(i => i.id === 9);
+  if (nine.kind === 'app' && nine.cart && nine.title === 'Egg timer') ok('a utility app post'); else fail('item 9 ' + JSON.stringify(nine));
   if (res.get(4).hidden) ok('a new person\'s post waits for hub-ok'); else fail('item 4');
 
   // approve 4, close 1, edit 3: the hub follows
@@ -61,7 +64,7 @@ const issues = [
   res = await build(dir, issues, download, m => logs.push(m));
   const idx2 = JSON.parse(fs.readFileSync(path.join(dir, 'index.json'), 'utf8'));
   const ids2 = idx2.items.map(i => i.id).sort();
-  if (JSON.stringify(ids2) === '[2,3,4,5]' && !fs.existsSync(path.join(dir, 'items/1'))) ok('approving adds a post, closing takes one down (files too)'); else fail('after changes ' + ids2);
+  if (JSON.stringify(ids2) === '[2,3,4,5,9]' && !fs.existsSync(path.join(dir, 'items/1'))) ok('approving adds a post, closing takes one down (files too)'); else fail('after changes ' + ids2);
   if (idx2.items.find(i => i.id === 3).title === 'Bigger jump') ok('an edited post is updated'); else fail('edit');
   if (res.get(5).same) ok('unchanged posts are not downloaded again'); else fail('item 5 was rebuilt');
   fs.rmSync(dir, { recursive: true, force: true });

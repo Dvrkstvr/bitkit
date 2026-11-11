@@ -128,7 +128,14 @@ BitKit's flagship game, and it is growing. You arrive in the valley of Windrow w
 - **The tractor (mid game).** A rusted tractor stands by the Long acre. Mend it with iron and copper from the mine, and Marrow sells implements for it: a plough, a seed drill, a water tank and a reaper. **A** climbs on, holding **A** works the cell under you and the one on either side as you drive, **L** changes the implement, **R** the seed, **B** fills the tank at the pond (or honks), and **Y** hops off.
 - **While the Bit is off**, the farm carries on (`save()`, `saved()` and `clock()`): up to three days pass, and what you watered keeps growing.
 - **Goal:** rebuild the old windmill in three steps, with wood, stone, fibre, coins, crops for the builders and the lost millstone. With the sails up, grain sells for double.
-- Coming next: visits and trades between linked Bits, and a little automation for the very late game.
+- **Very late: the tractor drives itself.** Once the mill turns, build the silo and buy the clockwork driver
+  from Marrow. Press Y beside the tractor and teach it a route by driving it once, working as you go. It
+  then drives that route by itself, every morning if you like (also on days that pass while the Bit is
+  off), unloads what it reaps at the silo as it passes, and fills its tank at the pond. The silo sells at
+  the day's prices and tops up an empty trough.
+
+  ![The tractor on its route beside the silo](docs/media/windrow-route.png)
+- Coming next: visits and trades between linked Bits.
 
 ### Beacon Keeper
 
@@ -228,6 +235,19 @@ A potion kitchen. The order cards at the top show which three ingredients each c
 - **One kitchen** (alone or together): earn the shift's target, which grows with the crew.
 - **Teams** (2 players or more): two mirrored kitchens get the same orders at the same moments. Most coins wins.
 - **Goal:** earn the shift's target in coins, or out-brew the other kitchen. Continue carries on the shift with your coins and the time left.
+
+#### Mind Laps
+
+<img src="docs/media/mind-laps.png" width="400" alt="Mind Laps: a number sequence with four answers on the d-pad, in a park by a running track">
+
+A daily brain jog: five laps of 30 seconds, one quick exercise each. Answers sit on the d-pad, so you press the direction of the right one.
+
+- **Quick Sums** (maths), **Arrow Echo** (memory: watch the arrows, then press them back), **Next Up** (logic: what comes next in the row), **Firefly Jars** (counting at a glance: which jar has more) and **Lanterns** (reaction: A the moment a lantern glows green, never on red).
+- **Daily Jog** (alone): the same five laps for everybody on the same day, scored out of 500 with a bronze, silver or gold medal. A jog every day grows your streak of days in a row; the Bit's clock (the PocketBit's RTC) dates it. The last 7 days show as medals.
+- **Practice** (alone): one exercise at a time. Every exercise has its own level (1-9) that goes up when you do well and down when you struggle.
+- **Race** (2-8 players, one screen or linked Bits): everyone gets the same question, the first right answer scores, a wrong one locks you out of that question.
+- **Team** (2-8 players): every right answer counts towards one shared score and medal.
+- **Goal:** a gold medal (400 points) on a Daily Jog. Continue takes you back to the next lap of today's jog.
 
 ## ✨ Shaders
 
@@ -330,11 +350,14 @@ The full reference is in the studio's **Help** tab.
 
 ## 🌍 Share hub
 
-The **🌍 Share hub** button in the studio is where games, photos and clips are shared.
+Games, utility apps, photos and clips can be shared three ways: Bit to Bit with the **Share** app, by link or QR code, and on the **[BitKit Share website](https://dvrkstvr.github.io/bitkit/hub.html)**. The **🌍 Share hub** button in the studio does the last two.
+
+- **Bit to Bit: the Share app.** On the Utilities row (press Down on the home screen). Both Bits open Share; one picks a game, utility app, photo or clip and the other Bit, the other says yes, and it lands on its home screen (games and apps) or with its photos and clips. No internet: on the PocketBit it goes over ESP-NOW in 200-byte packets with acknowledgements and a hash check (`platform/device/bk_host.c`, "sharing"; up to 4 MB); in the studio between linked Bit windows. Lua side: `share(op, a, b)` and the `SHARE` table, see `studio/shareapp.js`.
+- **The website.** [`hub.html`](https://dvrkstvr.github.io/bitkit/hub.html), next to the studio on GitHub Pages: everything posted to the hub, with filters for games, utility apps, photos and clips, search, a page per post (`hub.html#post=12`) with a QR code, **▶ Play** (opens it in the studio) and **⬇ .bitkit** (copy it to `games/` on the PocketBit's memory card). It reads the same `hub` branch as the studio, so it needs no server either.
 
 - **Photos and clips.** 📷 (or F8) takes a photo of the screen, ⏺ (or F9) records a clip of up to 60 seconds. On the Bit (and the PocketBit): hold **Select** and press **L** for a photo or **R** for a clip. Photos are PNG, clips are GIF at 30 fps. They are made by `runtime/bk_capture.c`, plain C shared with the device, and land on the memory card in `captures/` (on the PocketBit: the SD card). Point the studio's memory card at the SD card and the Bit's photos and clips show up in the hub.
 - **Play links and QR codes, no server.** *Share this game* packs the whole game into a link (`…/bitkit/#play=1.…`, compressed): opening it plays the game. Small games fit a QR code; every hub post gets a short link (`#hub=12`) that always does.
-- **The hub.** *Post to the hub* opens a short GitHub form filled in by the studio (a free GitHub account is needed). A GitHub Action (`.github/workflows/hub.yml`, `tools/hub_publish.cjs`) checks the post and writes it to the `hub` branch, which the studio reads. No server, no keys and no cost. Posts by maintainers show at once; others show when a maintainer adds the label `hub-ok`. Close the issue or add `hub-hide` to take a post down.
+- **The hub.** *Post to the hub* opens (tick *It is a utility app* for a tool) a short GitHub form filled in by the studio (a free GitHub account is needed). A GitHub Action (`.github/workflows/hub.yml`, `tools/hub_publish.cjs`) checks the post and writes it to the `hub` branch, which the studio reads. No server, no keys and no cost. Posts by maintainers show at once; others show when a maintainer adds the label `hub-ok`. Close the issue or add `hub-hide` to take a post down.
 
 ## 🛠️ Build from source
 
@@ -376,6 +399,7 @@ docs/media/     README images
 - [ ] Local multiplayer over ESP-NOW
 - [x] Launcher and utility apps (music makers, settings, Game Boy / Game Boy Color / NES emulators with save states)
 - [x] Share hub: photos, clips, play links, QR codes and a hub on GitHub
+- [x] Share app (Bit to Bit over ESP-NOW) and the Share website for games and utility apps
 
 ## 🤝 Contributing
 

@@ -69,4 +69,5 @@ int  bk_host_link_players(void);                     /* players in the linked ga
 int  bk_host_racing(void);                           /* 1 while this Bit plays its own run in a linked race */
 void bk_host_set_race_pick(int on);                  /* Select on the home screen: race games that can also be played together */
 uint32_t bk_host_link_sync(uint32_t *frame);         /* lockstep frames run and a hash of their buttons and rnd() state */
+int  bk_host_shared(void);                            /* Share app transfers finished (sent or received) */
 int  bk_host_net_heard(void);                        /* net_send() events from other Bits so far */                       /* the game shell's _restart(): 1 title, 2 new game, 3 play */

@@ -2,6 +2,7 @@
    CI uses it to play every built-in game and app through the same C code the ESP32-S3 firmware runs:
      bitsim --test <flash dir> <data dir> [--frames N] [--report file.md] [--shots dir]
      bitsim --link <flash dir> <data dir> [--loss percent]   (two linked Bits, see link_sim.c)
+     bitsim --share <flash dir> <data dir> [--loss percent]  (the Share app between two Bits, see share_sim.c)
    <flash dir> is what tools/export_device.cjs writes (carts/, apps/, sys/home.lua). MIT License. */
 #include "bk_emu.h"
 #include "bk_host.h"
@@ -109,9 +110,11 @@ static int find_game(const char *name) {
 typedef struct { char name[64]; double avg, max; size_t peak; int err; } perf;
 
 #include "link_sim.c"
+#include "share_sim.c"
 
 int main(int argc, char **argv) {
   if (argc >= 4 && !strcmp(argv[1], "--link")) return link_test(argc, argv);
+  if (argc >= 4 && !strcmp(argv[1], "--share")) return share_test(argc, argv);
   if (argc < 4 || strcmp(argv[1], "--test")) {
     fprintf(stderr, "usage: bitsim --test <flash dir> <data dir> [--frames N] [--report file.md] [--shots dir] [-v]\n");
     return 2;

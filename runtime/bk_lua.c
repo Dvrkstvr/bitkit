@@ -453,6 +453,13 @@ static int l_level_map(lua_State *l) { BK->sys[0] = 4; BK->sys[1] = ci(l, 1); re
 /* _restart(mode): ask the host to load this cart again (game shell "New game" after playing).
    The host sets GAME_BOOT = mode before _init: 1 title, 2 new game, 3 straight into play. */
 static int l_restart(lua_State *l) { BK->sys[0] = 5; BK->sys[1] = ci(l, 1); return 0; }
+/* share(op, a, b): the Share app asks the host (command 6): op 0 "send me the state" (SHARE table), 1 send item a
+   to nearby Bit b, 2 answer the offer (a = 1 yes, 0 no), 3 stop the transfer. Packed: op<<24 | a<<12 | b. */
+static int l_share(lua_State *l) {
+  BK->sys[0] = 6;
+  BK->sys[1] = (int32_t)(((uint32_t)ci(l, 1) & 0xFF) << 24 | ((uint32_t)luaL_optinteger(l, 2, 0) & 0xFFF) << 12 | ((uint32_t)luaL_optinteger(l, 3, 0) & 0xFFF));
+  return 0;
+}
 /* _save_raw(str or nil): the host persists BK->save when dirty is set */
 static int l_save_raw(lua_State *l) {
   size_t n = 0;
@@ -519,7 +526,7 @@ static const luaL_Reg API[] = {
   {"btn", l_btn}, {"btnp", l_btnp}, {"btnr", l_btnr}, {"press", l_press},
   {"t", l_t}, {"time", l_time}, {"rnd", l_rnd}, {"srand", l_srand},
   {"sfx", l_sfx}, {"tone", l_tone}, {"voice", l_voice}, {"stop", l_stop},
-  {"print", l_print}, {"track", l_track}, {"launch", l_launch}, {"home", l_home}, {"_level_map", l_level_map}, {"_restart", l_restart},
+  {"print", l_print}, {"track", l_track}, {"launch", l_launch}, {"home", l_home}, {"_level_map", l_level_map}, {"_restart", l_restart}, {"share", l_share},
   {"net_send", l_net_send}, {"net_recv", l_net_recv},
   {"_save_raw", l_save_raw}, {"_load_raw", l_load_raw}, {"clock", l_clock},
   {NULL, NULL}

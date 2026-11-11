@@ -85,22 +85,61 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
     ' if t() == 62 then print("wreck", #loot - n1) end\n' +
     ' if t() == 90 then bx = boats[1].x end\n' +
     ' _u()\n' +
-    ' if t() == 130 then print("p1", p1_boat and 1 or 0, math.floor(boats[1].x - bx)) end\n' +
+    ' if t() == 130 then print("p1", role[1] == "boat" and 1 or 0, math.floor(boats[1].x - bx)) end\n' +
     'end\n';
   logs = []; setSave(null);
   if (M._bkw_load_ex(ents, s(D.code + mp)) !== 0) fail('3-player game did not load');
   for (let f = 1; f <= 140; f++) {
     M._bkw_input(2, f >= 5 && f < 40 ? 1 << B.right : 0, 0);
     M._bkw_input(3, 0, 0);
-    frame(f === 92 ? 1 << B.y : f > 95 ? 1 << B.right : 0);
+    frame(f === 92 ? 1 << B.y : f > 95 ? 1 << B.left : 0);
   }
   const L = k => (logs.find(l => l.startsWith(k + '\t') || l.startsWith(k + ' ')) || '').split(/\s+/).slice(1).map(Number);
   let q = L('pick'); if (q[0] !== 1 || q[1] !== 7 || q[2] !== 0) fail('rowboat picking up a crate: ' + q);
   q = L('unload'); if (q[0] !== 7 || q[1] !== 0) fail('unloading at the island: ' + q);
   q = L('spill'); if (q[0] !== 0 || q[1] !== 3) fail('spilling cargo on a rock: ' + q);
   q = L('wreck'); if (!(q[0] >= 2)) fail('a wreck should drop crates: ' + q);
-  q = L('p1'); if (q[0] !== 1 || !(q[1] > 10)) fail('player 1 hopping into a rowboat with Y: ' + q);
+  q = L('p1'); if (q[0] !== 1 || !(q[1] < -10)) fail('player 1 hopping into a rowboat with Y: ' + q);
   if (errors.length) { errors.forEach(e => fail('3 players: ' + e)); errors = []; }
+
+  // 5b. stations: one keeper at a time, swap only while docked, Y cycles lamp -> cannons -> boat,
+  //     a manned cannon aims with left / right and fires with A
+  const st = '\nlocal _u = _update\nfunction _update()\n' +
+    ' if t() == 2 then G.cannon = 2 end\n' +
+    ' if t() == 25 then boats[3].x, boats[3].y = 400, 100 end\n' +
+    ' if t() == 64 then a0 = angle end\n' +
+    ' _u()\n' +
+    ' local function R(n) return station_of(n) end\n' +
+    ' if t() == 12 then print("s_p2cannon", R(2), cannon_by[1], lamp_pn) end\n' +
+    ' if t() == 22 then print("s_fire", #balls, cannon_cd[1] > 0 and 1 or 0) end\n' +
+    ' if t() == 32 then print("s_undocked", R(3)) end\n' +
+    ' if t() == 42 then print("s_p1next", R(1), lamp_pn, cannon_by[2]) end\n' +
+    ' if t() == 52 then print("s_p2boat", R(2), cannon_by[1]) end\n' +
+    ' if t() == 62 then print("s_p2lamp", R(2), lamp_pn) end\n' +
+    ' if t() == 81 then print("s_p2aim", math.floor((angle - a0) * 100)) end\n' +
+    ' if t() == 92 then print("s_p1c1", R(1), cannon_by[1], cannon_by[2]) end\n' +
+    'end\n';
+  logs = []; setSave(null); M._bkw_players(3, 0);
+  if (M._bkw_load_ex(ents, s(D.code + st)) !== 0) fail('stations game did not load');
+  for (let f = 1; f <= 100; f++) {
+    let m2 = 0;
+    if (f === 10 || f === 50 || f === 60) m2 = 1 << B.y;
+    if (f === 20) m2 = 1 << B.a;
+    if (f >= 65 && f < 80) m2 = 1 << B.left;
+    M._bkw_input(2, m2, 0);
+    M._bkw_input(3, f === 30 ? 1 << B.y : 0, 0);
+    frame(f === 40 || f === 85 || f === 90 ? 1 << B.y : 0);
+  }
+  const eq = (k, want) => { const q = L(k); if (q.join() !== want.join()) fail(k + ': got ' + q + ' want ' + want); };
+  eq('s_p2cannon', [1, 2, 1]);        // lamp taken by P1, so P2 mans cannon 1
+  q = L('s_fire'); if (!(q[0] >= 1) || q[1] !== 1) fail('manned cannon firing with A: ' + q);
+  eq('s_undocked', [-1]);              // out at sea: Y does nothing
+  eq('s_p1next', [2, 0, 1]);           // keeper moves on to the next free station, the lamp is empty
+  eq('s_p2boat', [-1, 0]);             // no free station after cannon 1: back to the boat
+  eq('s_p2lamp', [0, 2]);              // docked boat takes the free lamp
+  q = L('s_p2aim'); if (!(q[0] < -20)) fail('the new keeper turning the beam: ' + q);
+  eq('s_p1c1', [1, 1, 0]);             // P1 back to the boat, then to the free cannon 1
+  if (errors.length) { errors.forEach(e => fail('stations: ' + e)); errors = []; }
 
   // 6. two linked Bits fed the same buttons stay identical
   {

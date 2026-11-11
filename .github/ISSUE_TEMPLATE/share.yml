@@ -1,5 +1,5 @@
 name: Share in the hub
-description: Post a game, a photo or a clip to the BitKit Share hub
+description: Post a game, a utility app, a photo or a clip to the BitKit Share hub
 title: "[Share] "
 labels: [share]
 body:
@@ -12,7 +12,7 @@ body:
     id: kind
     attributes:
       label: What is it?
-      options: [Game, Photo, Clip]
+      options: [Game, Utility app, Photo, Clip]
     validations:
       required: true
   - type: input
@@ -26,7 +26,7 @@ body:
     id: link
     attributes:
       label: Game
-      description: For a game, the play link from the studio (Share hub, Share this game). A long link comes as a .link.txt file; drag it here. A .bitkit file works too if you rename it to .json.
+      description: For a game or a utility app, the play link from the studio (Share hub, Share this game). A long link comes as a .link.txt file; drag it here. A .bitkit file works too if you rename it to .json.
   - type: textarea
     id: media
     attributes:

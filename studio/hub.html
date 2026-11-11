@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BitKit Share</title>
+<meta name="description" content="Games and utility apps people made with BitKit. Play them in your browser or put them on your PocketBit.">
+<!-- The BitKit Share website: games, utility apps, photos and clips people posted. It reads the same data as the
+     studio's Share hub (the repository's "hub" branch, written by tools/hub_publish.cjs from GitHub issues), so it
+     needs no server of its own. MIT License. -->
+<style>
+:root {
+  --bg: #12121c; --panel: #1b1b2a; --panel2: #232336; --line: #33334a;
+  --text: #e6e4f0; --dim: #8d8aa6; --accent: #8ad35a; --accent2: #3a86d0;
+  --game: #8ad35a; --app: #5ab8e8; --photo: #ffd23f; --clip: #ff8a5e;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+a { color: var(--accent2); }
+button, input { font: inherit; color: inherit; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 0 16px; }
+.btn { display: inline-flex; align-items: center; gap: 6px; background: var(--panel2); border: 1px solid var(--line); border-radius: 8px;
+  padding: 7px 14px; cursor: pointer; text-decoration: none; color: var(--text); white-space: nowrap; }
+.btn:hover { border-color: var(--dim); }
+.btn.primary { background: #2f6b3a; border-color: #4fa04a; }
+.btn.primary:hover { background: #3a7f46; }
+.btn.small { padding: 3px 10px; font-size: 13px; }
+.dim { color: var(--dim); }
+
+header { border-bottom: 1px solid var(--line); background: linear-gradient(180deg, #1d1838 0%, var(--bg) 100%); }
+.top { display: flex; align-items: center; gap: 12px; padding: 14px 0; }
+.logo { font-weight: 800; letter-spacing: .04em; font-size: 18px; display: flex; align-items: center; gap: 10px; color: var(--text); text-decoration: none; }
+.logo i { display: inline-grid; grid-template-columns: repeat(3, 6px); gap: 2px; }
+.logo i b { width: 6px; height: 6px; background: var(--accent); border-radius: 1px; }
+.logo i b:nth-child(2n) { background: var(--app); }
+.top .grow { flex: 1; }
+.hero { padding: 28px 0 34px; }
+.hero h1 { font-size: clamp(28px, 5vw, 44px); line-height: 1.1; margin: 0 0 10px; letter-spacing: -.01em; }
+.hero h1 em { font-style: normal; color: var(--accent); }
+.hero p { margin: 0 0 18px; max-width: 640px; color: #c4c1d8; font-size: 17px; }
+.hero .row { display: flex; gap: 10px; flex-wrap: wrap; }
+
+.bar { position: sticky; top: 0; z-index: 5; background: rgba(18, 18, 28, .94); backdrop-filter: blur(6px); border-bottom: 1px solid var(--line); }
+.bar .wrap { display: flex; gap: 10px; align-items: center; padding-top: 10px; padding-bottom: 10px; flex-wrap: wrap; }
+.seg { display: flex; gap: 4px; flex-wrap: wrap; }
+.seg button { background: transparent; border: 1px solid transparent; border-radius: 999px; padding: 4px 12px; cursor: pointer; color: var(--dim); }
+.seg button:hover { color: var(--text); }
+.seg button.on { background: var(--panel2); border-color: var(--line); color: var(--text); }
+.seg button .n { font-size: 12px; opacity: .7; margin-left: 4px; }
+.search { flex: 1; min-width: 160px; max-width: 280px; margin-left: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+
+main.wrap { padding-top: 22px; padding-bottom: 40px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; }
+.card:hover { border-color: #4a4a68; }
+.pic { aspect-ratio: 4 / 3; background: #0b0b12; display: block; width: 100%; border: 0; padding: 0; cursor: pointer; position: relative; overflow: hidden; }
+.pic img, .pic video { width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; display: block; }
+.pic .ph { position: absolute; inset: 0; display: grid; place-items: center; font-size: 46px;
+  background: repeating-linear-gradient(45deg, #16162a 0 10px, #1a1a30 10px 20px); }
+.tag { position: absolute; left: 8px; top: 8px; font-size: 12px; font-weight: 700; padding: 1px 8px; border-radius: 999px; background: rgba(0, 0, 0, .7); }
+.tag.game { color: var(--game); } .tag.app { color: var(--app); } .tag.photo { color: var(--photo); } .tag.clip { color: var(--clip); }
+.meta { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 4px; flex: 1; }
+.meta h3 { margin: 0; font-size: 16px; line-height: 1.25; }
+.meta h3 button { all: unset; cursor: pointer; }
+.meta h3 button:hover { text-decoration: underline; }
+.by { font-size: 13px; color: var(--dim); }
+.about { font-size: 13px; color: #c4c1d8; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.acts { display: flex; gap: 6px; flex-wrap: wrap; margin-top: auto; padding-top: 8px; }
+.empty { background: var(--panel); border: 1px dashed var(--line); border-radius: 12px; padding: 30px; text-align: center; color: var(--dim); }
+
+section.how { border-top: 1px solid var(--line); padding: 34px 0 10px; }
+section.how h2 { margin: 0 0 14px; font-size: 22px; }
+.ways { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; }
+.way { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+.way h3 { margin: 0 0 6px; font-size: 16px; }
+.way p { margin: 0 0 10px; font-size: 14px; color: #c4c1d8; }
+.way ol { margin: 0 0 10px; padding-left: 18px; font-size: 14px; color: #c4c1d8; }
+code { background: var(--panel2); border-radius: 4px; padding: 0 5px; font-size: 13px; }
+footer { border-top: 1px solid var(--line); padding: 18px 0 30px; margin-top: 30px; font-size: 13px; color: var(--dim); }
+
+dialog { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 14px; padding: 0; width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 32px); }
+dialog::backdrop { background: rgba(5, 5, 10, .75); }
+.dlg-head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.dlg-head h2 { margin: 0; font-size: 18px; flex: 1; }
+.dlg-body { padding: 16px; display: grid; gap: 14px; }
+.shots { display: grid; gap: 8px; }
+.shots img, .shots video { width: 100%; image-rendering: pixelated; border-radius: 8px; background: #0b0b12; }
+.share-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.share-row input { flex: 1; min-width: 180px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; font-size: 13px; }
+.qrbox { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.qrbox canvas { border-radius: 6px; width: 132px; height: 132px; image-rendering: pixelated; }
+.toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 14px; z-index: 50; }
+@media (max-width: 560px) { .search { max-width: none; margin-left: 0; } .hero p { font-size: 15px; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div class="top">
+      <a class="logo" href="./hub.html"><i><b></b><b></b><b></b><b></b><b></b><b></b></i> BitKit Share</a>
+      <span class="grow"></span>
+      <a class="btn small" href="./">Open the studio</a>
+    </div>
+    <div class="hero">
+      <h1>Games and <em>utility apps</em><br>made with BitKit</h1>
+      <p>Play them right here in your browser, open them in the studio to see how they are made, or put them on your PocketBit. Made something? Share it.</p>
+      <div class="row"><a class="btn primary" href="#share">⇪ Share yours</a><a class="btn" id="randomPlay" href="./">🎲 Play something</a></div>
+    </div>
+  </div>
+</header>
+
+<div class="bar"><div class="wrap">
+  <div class="seg" id="filters" role="tablist"></div>
+  <input class="search" id="search" type="search" placeholder="Search names, makers…" aria-label="Search">
+</div></div>
+
+<main class="wrap">
+  <div id="grid" class="grid" aria-live="polite"><div class="empty">Loading…</div></div>
+
+  <section class="how" id="share">
+    <h2>Share yours</h2>
+    <div class="ways">
+      <div class="way">
+        <h3>🌍 From the studio</h3>
+        <p>Open your game in the studio and press <b>Share hub</b>, then <b>Share this game</b>. Tick <i>It is a utility app</i> for a tool. You get a play link and a QR code, and <b>Post to the hub</b> puts it here.</p>
+        <a class="btn small" href="./">Open the studio</a>
+      </div>
+      <div class="way">
+        <h3>📡 Bit to Bit</h3>
+        <p>No internet needed. Open <b>Share</b> on the Utilities row of both PocketBits (press Down on the home screen), pick a game, app, photo or clip and the other Bit. It lands on their home screen.</p>
+      </div>
+      <div class="way">
+        <h3>📝 Straight to the form</h3>
+        <p>Post a play link, a <code>.bitkit</code> file, photos or clips with a short GitHub form (a free account). Posts from new people show up after a quick look.</p>
+        <a class="btn small" id="formLink" href="#" target="_blank" rel="noopener">Open the form ↗</a>
+      </div>
+      <div class="way">
+        <h3>🎮 On your PocketBit</h3>
+        <ol><li>Press <b>⬇ .bitkit</b> on a game or app.</li><li>Copy it to <code>games/</code> on the Bit's memory card.</li><li>It is on the home screen next time.</li></ol>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer><div class="wrap">
+  Everything here was posted by people who made it, under the MIT licence. Something wrong with a post? Comment on it on GitHub (each post has a link) and it can be taken down.
+  · <a href="https://github.com/Dvrkstvr/bitkit">BitKit on GitHub</a>
+</div></footer>
+
+<dialog id="dlg" aria-labelledby="dlgTitle"><div class="dlg-head"><h2 id="dlgTitle"></h2><button class="btn small" id="dlgClose" aria-label="Close">✕</button></div><div class="dlg-body" id="dlgBody"></div></dialog>
+
+<script src="share.js"></script>
+<script>
+'use strict';
+(() => {
+  const S = window.BKShare;
+  const KIND = { game: '🎮 Game', app: '🧰 Utility app', photo: '📷 Photo', clip: '🎞 Clip' };
+  const FILTERS = [['all', 'Everything'], ['game', '🎮 Games'], ['app', '🧰 Utility apps'], ['photo', '📷 Photos'], ['clip', '🎞 Clips']];
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  const isVid = m => /\.(mp4|webm)$/i.test(m);
+  const kindOf = it => it.kind === 'app' ? 'app' : it.kind || 'game';
+  const playUrl = it => './#hub=' + it.id;              // the studio, next to this page, opens and plays it
+  const postUrl = it => S.SITE + 'hub.html#post=' + it.id;
+  let items = [], filter = 'all', query = '';
+  try { const f = new URLSearchParams(location.search).get('show'); if (FILTERS.some(x => x[0] === f)) filter = f; } catch (e) { /* plain page */ }
+
+  $('formLink').href = S.ISSUE_URL + '?' + new URLSearchParams({ template: 'share.yml', labels: 'share', title: '[Share] ' }).toString();
+
+  function toast(t) {
+    const d = document.createElement('div'); d.className = 'toast'; d.textContent = t; document.body.appendChild(d);
+    setTimeout(() => d.remove(), 2200);
+  }
+  async function copy(t) {
+    try { await navigator.clipboard.writeText(t); toast('Copied'); } catch (e) { toast('Copy it by hand'); }
+  }
+  async function download(it) {
+    try {
+      const r = await fetch(S.HUB_RAW + it.cart); if (!r.ok) throw new Error(r.status);
+      const blob = new Blob([await r.arrayBuffer()], { type: 'application/json' });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+      a.download = (it.title || 'game').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '.bitkit'; a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    } catch (e) { toast('Could not download it (' + e.message + ')'); }
+  }
+  const matches = it => (filter === 'all' || kindOf(it) === filter) &&
+    (!query || (it.title + ' ' + it.author + ' ' + (it.text || '')).toLowerCase().includes(query));
+
+  function filters() {
+    const n = k => k === 'all' ? items.length : items.filter(it => kindOf(it) === k).length;
+    $('filters').innerHTML = FILTERS.map(([k, label]) => `<button role="tab" data-f="${k}" class="${filter === k ? 'on' : ''}" aria-selected="${filter === k}">${label}<span class="n">${n(k)}</span></button>`).join('');
+    $('filters').querySelectorAll('button').forEach(b => { b.onclick = () => { filter = b.dataset.f; render(); }; });
+  }
+  function pic(it, i) {
+    const m = (it.media || [])[0], k = kindOf(it);
+    const inner = m ? (isVid(m) ? `<video src="${esc(S.HUB_RAW + m)}" muted loop autoplay playsinline></video>` : `<img src="${esc(S.HUB_RAW + m)}" alt="" loading="lazy">`)
+      : `<span class="ph">${KIND[k].split(' ')[0]}</span>`;
+    return `<button class="pic" data-open="${i}" aria-label="More about ${esc(it.title)}">${inner}<span class="tag ${k}">${KIND[k]}</span></button>`;
+  }
+  function acts(it, i, big) {
+    return `${it.cart ? `<a class="btn ${big ? '' : 'small'} primary" href="${playUrl(it)}">▶ Play</a><button class="btn ${big ? '' : 'small'}" data-dl="${i}" title="For your PocketBit: copy it to games/ on the memory card">⬇ .bitkit</button>` : ''}
+      ${big ? '' : `<button class="btn small" data-open="${i}">Link / QR</button>`}`;
+  }
+  function render() {
+    filters();
+    const list = items.map((it, i) => [it, i]).filter(([it]) => matches(it));
+    const grid = $('grid');
+    if (!items.length) { grid.innerHTML = `<div class="empty">Nothing here yet. Be the first: <a href="#share">share a game or a utility app</a>.</div>`; return; }
+    if (!list.length) { grid.innerHTML = `<div class="empty">Nothing matches. <a href="#" id="clearF">Show everything</a></div>`; $('clearF').onclick = e => { e.preventDefault(); filter = 'all'; query = ''; $('search').value = ''; render(); }; return; }
+    grid.innerHTML = list.map(([it, i]) => `<article class="card">${pic(it, i)}<div class="meta">
+      <h3><button data-open="${i}">${esc(it.title)}</button></h3><span class="by">by ${esc(it.author || 'someone')}</span>
+      ${it.text ? `<span class="about">${esc(it.text)}</span>` : ''}<div class="acts">${acts(it, i)}</div></div></article>`).join('');
+    wire(grid);
+  }
+  function wire(root) {
+    root.querySelectorAll('[data-open]').forEach(b => { b.onclick = () => openPost(items[+b.dataset.open]); });
+    root.querySelectorAll('[data-dl]').forEach(b => { b.onclick = () => download(items[+b.dataset.dl]); });
+  }
+  function openPost(it) {
+    if (!it) return;
+    const i = items.indexOf(it), k = kindOf(it), link = postUrl(it), play = S.SITE + '#hub=' + it.id;
+    $('dlgTitle').textContent = it.title;
+    $('dlgBody').innerHTML = `<div class="by">${KIND[k]} by ${esc(it.author || 'someone')}${it.date ? ' · ' + esc(new Date(it.date).toLocaleDateString()) : ''}</div>
+      ${(it.media || []).length ? `<div class="shots">${it.media.map(m => isVid(m) ? `<video src="${esc(S.HUB_RAW + m)}" controls muted loop autoplay playsinline></video>` : `<img src="${esc(S.HUB_RAW + m)}" alt="">`).join('')}</div>` : ''}
+      ${it.text ? `<p style="margin:0">${esc(it.text)}</p>` : ''}
+      ${it.cart ? `<div class="share-row">${acts(it, i, true)}</div>` : ''}
+      <div class="qrbox"><div id="qr"></div><div style="flex:1;min-width:200px">
+        <div class="dim" style="font-size:13px;margin-bottom:6px">${it.cart ? 'Scan to play it on a phone, or pass the link on.' : 'Scan or pass the link on.'}</div>
+        <div class="share-row"><input readonly value="${esc(it.cart ? play : link)}" id="postLink"><button class="btn small" id="copyLink">Copy</button></div>
+        ${it.url ? `<div style="margin-top:8px;font-size:13px"><a href="${esc(it.url)}" target="_blank" rel="noopener">Comments on GitHub ↗</a></div>` : ''}
+      </div></div>`;
+    const cv = S.qrCanvas(it.cart ? play : link, 4); if (cv) $('qr').appendChild(cv);
+    $('copyLink').onclick = () => copy($('postLink').value);
+    $('postLink').onclick = e => e.target.select();
+    wire($('dlgBody'));
+    if (location.hash !== '#post=' + it.id) history.replaceState(null, '', '#post=' + it.id);
+    if (!$('dlg').open) $('dlg').showModal();
+  }
+  $('dlgClose').onclick = () => $('dlg').close();
+  $('dlg').addEventListener('close', () => { if (/^#post=/.test(location.hash)) history.replaceState(null, '', location.pathname + location.search); });
+  $('dlg').addEventListener('click', e => { if (e.target === $('dlg')) $('dlg').close(); });
+  $('search').oninput = e => { query = e.target.value.trim().toLowerCase(); render(); };
+  function fromHash() { const m = /#post=(\d+)/.exec(location.hash); if (m) openPost(items.find(it => String(it.id) === m[1])); }
+  window.addEventListener('hashchange', fromHash);
+  $('randomPlay').onclick = e => {
+    const games = items.filter(it => it.cart);
+    if (!games.length) { e.preventDefault(); toast('No games yet: be the first!'); return; }
+    e.currentTarget.href = playUrl(games[Math.floor(Math.random() * games.length)]);
+  };
+
+  (async () => {
+    try {
+      const r = await fetch(S.HUB_RAW + 'index.json?t=' + Math.floor(Date.now() / 60000), { cache: 'no-store' });
+      if (r.status === 404) items = [];
+      else if (!r.ok) throw new Error('the hub answered ' + r.status);
+      else items = ((await r.json()).items || []).slice().sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+      render(); fromHash();
+    } catch (e) {
+      filters();
+      $('grid').innerHTML = `<div class="empty">Could not reach the hub right now (${esc(e.message)}). Try again in a moment.</div>`;
+    }
+  })();
+  window.bkHubPage = { get items() { return items; } };
+})();
+</script>
+</body>
+</html>
