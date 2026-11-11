@@ -2,6 +2,7 @@
    Core 1 runs the game loop (buttons → Lua frame → sound → picture); core 0 has the USB console and the radio.
    The loop is the same one platform/sim runs in CI (platform/device/bk_host.c). MIT License. */
 #include "bit.h"
+#include "bk_emu.h"
 #include "bk_host.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
@@ -109,6 +110,10 @@ void app_main(void) {
   cfg.mem_realloc = psram_realloc;
   cfg.mem_free = psram_free;
   cfg.log = logger;
+  /* the emulator apps (Game Boy, GBC, NES) find your ROMs here; battery saves and states go next to them */
+  const char *roms = stor.sd ? "/sdcard/roms" : "/flash/roms";
+  mkdir(roms, 0775);
+  bk_emu_fs_init(roms);
   if (bk_host_init(&cfg)) { ESP_LOGE(TAG, "the host did not start (out of memory?)"); return; }
 
   console_q = xQueueCreate(4, sizeof(char *));

@@ -56,6 +56,45 @@
   ptr.pressN = [0, ptr.press, ptr.press2].concat([3, 4, 5, 6, 7, 8].map(() => RT._malloc(16)));   // button pressure, per player
   const DEFAULT_PAL = RT.HEAPU8.slice(ptr.pal, ptr.pal + 768);
 
+  /* ------------------------------------------------------------ emulator apps: the studio keeps their games
+     (studio/roms.js), the runtime asks for them through these (runtime/bk_emu.h, platform/web/main_web.c) */
+  const emuHost = { picks: [], token: 0 };
+  function emuNotify(what, ok) { const p = RT.stringToNewUTF8(what); RT._bkw_emu_notify(p, ok ? 1 : 0); RT._free(p); }
+  const emuStill = (tok, playing) => tok === emuHost.token && bit.playing === playing && running;
+  RT.emuRoms = kind => { emuHost.picks = BKRoms.list(kind); return BKRoms.luaList(emuHost.picks); };
+  RT.emuOpen = async i => {
+    const r = emuHost.picks[i - 1], tok = ++emuHost.token, playing = bit.playing;
+    let rom = null, sav = null;
+    try { [rom, sav] = r ? await Promise.all([BKRoms.bytes(r.file), BKRoms.getSave(r.file)]) : [null, null]; } catch (e) { log('Could not read the game: ' + e.message, 'err'); }
+    if (!emuStill(tok, playing)) return;
+    const p = rom ? RT._bkw_emu_rom_alloc(rom.length) : 0;
+    if (!p) { emuNotify('open', false); return; }
+    RT.HEAPU8.set(rom, p);
+    const np = RT.stringToNewUTF8(r.file), kind = RT._bkw_emu_start(np);
+    RT._free(np);
+    if (!kind) { log(`${r.file}: ${RT.UTF8ToString(RT._bkw_emu_error())}`, 'err'); emuNotify('open', false); return; }
+    if (sav) {
+      const lp = RT._malloc(4), sp = RT._bkw_emu_sram(lp), n = RT.HEAPU32[lp >> 2];
+      RT._free(lp);
+      if (sp && n) { RT.HEAPU8.set(new Uint8Array(sav).subarray(0, n), sp); RT._bkw_emu_sram_loaded(); }
+    }
+    log(`▶ ${r.name} (${['', 'Game Boy', 'Game Boy Color', 'NES'][kind]})`, 'sys');
+    emuNotify('open', true);
+  };
+  RT.emuSram = (file, data) => { BKRoms.putSave(file, data).catch(e => log('Could not keep the battery save: ' + e.message, 'err')); };
+  RT.emuStateSave = (file, slot, data) => { BKRoms.putState(file, slot, data).catch(e => log('Could not keep the save state: ' + e.message, 'err')); };
+  RT.emuStateLoad = async (file, slot) => {
+    const tok = emuHost.token, playing = bit.playing;
+    let d = null;
+    try { d = await BKRoms.getState(file, slot); } catch (e) { d = null; }
+    if (!emuStill(tok, playing)) return;
+    let ok = false;
+    if (d) { const b = new Uint8Array(d), p = RT._malloc(b.length); RT.HEAPU8.set(b, p); ok = !!RT._bkw_emu_state_load(p, b.length); RT._free(p); }
+    emuNotify('load', ok);
+  };
+  BKRoms.refresh().catch(() => {});
+  BKRoms.onChange(() => { try { if (running && /^app:/.test(bit.playing || '')) emuNotify('roms', true); } catch (e) { /* not started yet */ } });
+
   /* ------------------------------------------------------------ cart */
   const NEW_CODE = `-- my game
 -- _init runs once, _update and _draw run 60 times a second.
@@ -2805,6 +2844,51 @@ display()                                   -- off</pre><p class="dim">The Help 
       <p class="dim small">This is a quick look at your code. Play it through once to be sure. <a href="${RULES_URL}" target="_blank" rel="noopener">Read the rules</a></p>`, [['Close', closeModal, 'primary']]);
   };
   BKStore.init().then(showCartFile, () => {});
+
+  /* ------------------------------------------------------------ ROMs for the emulator apps (Game Boy, Game Boy Color, NES) */
+  const romPick = document.createElement('input');
+  romPick.type = 'file'; romPick.multiple = true; romPick.accept = '.gb,.gbc,.cgb,.nes'; romPick.hidden = true;
+  document.body.appendChild(romPick);
+  async function addRoms(files, reopen) {
+    const { added, skipped } = await BKRoms.add([...files]);
+    if (added.length) toast(added.length === 1 ? `Added ${added[0]}` : `Added ${added.length} games`);
+    if (skipped.length) log(`Not a Game Boy, Game Boy Color or NES ROM (or too big): ${skipped.join(', ')}`, 'err');
+    if (reopen) showRoms();
+  }
+  romPick.onchange = () => { if (romPick.files.length) addRoms(romPick.files, !modalEl.hidden); romPick.value = ''; };
+  function showRoms() {
+    const mine = BKRoms.all.filter(r => !r.test);
+    const KIND = { gb: 'Game Boy', gbc: 'Game Boy Color', nes: 'NES' };
+    const size = n => n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.round(n / 1024) + ' KB';
+    const rows = mine.map((r, i) => `<div class="lib-row"><div class="grow"><b>${escapeHtml(r.name)}</b>
+      <div class="dim small">${KIND[r.kind]} · ${size(r.size)}${r.save ? ' · battery save' : ''}${Object.keys(r.states).length ? ` · ${Object.keys(r.states).length} save state${Object.keys(r.states).length > 1 ? 's' : ''}` : ''}</div></div>
+      <button class="tiny danger" data-romdel="${i}" title="Remove the game, its battery save and its save states from this browser">Delete</button></div>`).join('');
+    modal('ROMs', `<div class="games">
+      <div class="games-head"><b>Games for the emulators</b><span class="grow"></span><button id="romAdd" class="tiny primary">＋ Add ROM files…</button></div>
+      <div class="lib-list">${rows || '<p class="dim">None yet. Add .gb, .gbc or .nes files, or drop them on the Bit\'s screen.</p>'}</div>
+      <p class="dim small">They are played by the Game Boy, Game Boy Color and NES apps on the Bit's home screen (press Down for the Utilities row).
+        They stay in this browser with their battery saves and save states. On a PocketBit, put them in <b>/roms</b> on the SD card.
+        Only use games you own; BitKit brings just its own test cards.</p></div>`,
+      [['Close', closeModal, 'primary']], 'wide');
+    $('romAdd').onclick = () => romPick.click();
+    document.querySelectorAll('#modal [data-romdel]').forEach(b => b.onclick = async () => {
+      const r = mine[+b.dataset.romdel];
+      if (!await ask(`Delete ${r.name}?`, 'The game, its battery save and its save states are removed from this browser.', 'Delete')) { showRoms(); return; }
+      await BKRoms.remove(r.file); showRoms();
+    });
+  }
+  $('btnRoms').onclick = () => { BKRoms.refresh().then(showRoms, showRoms); };
+  // drop ROM files on the Bit's screen
+  const dropOn = $('gameWrap');
+  dropOn.addEventListener('dragover', e => { if ([...(e.dataTransfer.items || [])].some(it => it.kind === 'file')) { e.preventDefault(); dropOn.classList.add('drop'); } });
+  dropOn.addEventListener('dragleave', () => dropOn.classList.remove('drop'));
+  dropOn.addEventListener('drop', e => {
+    dropOn.classList.remove('drop');
+    const files = [...(e.dataTransfer.files || [])].filter(f => BKRoms.kindOf(f.name));
+    if (!files.length) return;
+    e.preventDefault(); e.stopPropagation();
+    addRoms(files, false);
+  });
 
   /* in-page dialogs (native confirm() is unavailable in some embeds) */
   const modalEl = $('modal');

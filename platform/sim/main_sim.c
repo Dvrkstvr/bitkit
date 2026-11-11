@@ -2,6 +2,7 @@
    CI uses it to play every built-in game and app through the same C code the ESP32-S3 firmware runs:
      bitsim --test <flash dir> <data dir> [--frames N] [--report file.md] [--shots dir]
    <flash dir> is what tools/export_device.cjs writes (carts/, apps/, sys/home.lua). MIT License. */
+#include "bk_emu.h"
 #include "bk_host.h"
 #include <dirent.h>
 #include <stdio.h>
@@ -86,6 +87,8 @@ static void setup(const char *flash, const char *data) {
   snprintf(p_extra, sizeof(p_extra), "%s/games", data);
   snprintf(p_caps, sizeof(p_caps), "%s/captures", data);
   mkdir(data, 0755); mkdir(p_saves, 0755); mkdir(p_extra, 0755); mkdir(p_caps, 0755);
+  { static char roms[512]; snprintf(roms, sizeof(roms), "%s/roms", data); mkdir(roms, 0755);
+    bk_emu_fs_init(roms); }   /* the SD card's /roms: CI puts the test cards here (tools/make_test_roms.py) */
   memset(&cfg, 0, sizeof(cfg));
   cfg.home_lua = p_home;
   cfg.boot_lua = p_boot;

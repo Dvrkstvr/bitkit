@@ -10,7 +10,7 @@ global.window = {};
 const ROOT = path.join(__dirname, '..');
 // the same files, in the same order, as studio/index.html (the ones that register games, apps and tools)
 for (const f of ['demo', 'windrow', 'harbour', 'sweep', 'tracks', 'kart', 'crossgate', 'tinwing', 'deepglow', 'music', 'hexbeat',
-  'loopbox', 'bitapps', 'themes', 'puffball', 'hedgehogs', 'cauldron', 'entities', 'cutscenes', 'home', 'rules']) {
+  'loopbox', 'bitapps', 'emuapps', 'themes', 'puffball', 'hedgehogs', 'cauldron', 'entities', 'cutscenes', 'home', 'rules']) {
   const file = path.join(ROOT, 'studio', f + '.js');
   if (fs.existsSync(file)) eval(fs.readFileSync(file, 'utf8'));
 }

@@ -14,7 +14,8 @@ how to build and flash it, and what has and hasn't been tried on real hardware.
 | Home screen with games, icons and the Utilities row | ✅ | ✅ same `home.js` cart | `device` CI job |
 | Built-in games (all demos) | ✅ | ✅ exported by `tools/export_device.cjs` into the internal flash | `device` CI job |
 | Your own games | memory card folder | ✅ `.bitkit` files in `/sdcard/games` (the studio's own file, as is) | `device` CI job |
-| Apps: Hexbeat, Loopbox, Settings, Themes | ✅ | ✅ | `device` CI job |
+| Apps: Hexbeat, Loopbox, Game Boy, GBC, NES, Settings, Themes | ✅ | ✅ | `device` CI job |
+| Emulator apps: Game Boy, Game Boy Color, NES | ROMs in the browser | ✅ same C cores; your ROMs in `/sdcard/roms`, battery saves and states next to them | `device` CI job (test cards) |
 | Bit themes: boot animation, themed home screen, owner's name in games (`player_name`) | ✅ | ✅ "Bit theme" save, same Lua (docs/THEMES.md) | `device` CI job |
 | Save files, Continue, Delete save | ✅ | ✅ `<card>/bitkit/saves/<game>.sav` (or the internal flash) | `device` CI job |
 | Bit settings: screen look, strength, brightness, volume | ✅ | ✅ look over every game, backlight PWM, volume | `device` CI job |

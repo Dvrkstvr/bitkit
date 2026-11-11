@@ -1,6 +1,7 @@
 /* BitKit runtime: Lua 5.4 API bindings. MIT License. */
 #include "bk.h"
 #include "bk_prelude.h"
+#include "bk_emu.h"
 #include "lua.h"
 #include "lauxlib.h"
 #include "lualib.h"
@@ -585,6 +586,7 @@ int bk_lua_load(const char *code) { return bk_lua_load_ex(0, code); }
 
 int bk_lua_load_ex(const char *data, const char *code) {
   bk_lua_close();
+  bk_emu_close();   /* a cart starting ends any emulated game (its battery save goes to the host first) */
   err_buf[0] = 0;
   L = alloc_fn ? lua_newstate((lua_Alloc)alloc_fn, alloc_ud) : luaL_newstate();
   if (!L) { snprintf(err_buf, sizeof(err_buf), "not enough memory to start the game"); log_msg(err_buf, 1); return 1; }
@@ -607,6 +609,7 @@ int bk_lua_load_ex(const char *data, const char *code) {
   lua_pushglobaltable(L);
   luaL_setfuncs(L, API, 0);
   lua_pop(L, 1);
+  bk_emu_lua_open(L);
   lua_sethook(L, hook, LUA_MASKCOUNT, HOOK_STEP);
 
   bk_reset_draw_state();
