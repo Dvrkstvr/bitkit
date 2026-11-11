@@ -94,6 +94,7 @@ window.BKMyBit = (function () {
       data = `BIT = { games = {${rows.join(',')}}, sel = 1, studio = false, link = false, source = "", theme = ${T.toLua(t)}, me = ${T.toLua(me)} }`;
     }
     if (t.look !== 'game') data += `\ndisplay(${luaStr(t.look)})`;
+    if (window.BKBitLang) window.BKBitLang(M);
     const pc = M.stringToNewUTF8(code), pd = M.stringToNewUTF8(data);
     const rc = M._bkw_load_ex(pd, pc);
     M._free(pc); M._free(pd);

@@ -224,9 +224,10 @@ int main(int argc, char **argv) {
   int settings = find_game("Settings");
   if (settings) {
     bk_host_launch(settings); ticks(2, 0);
-    bk_host_eval("save({look = 'sepia', strength = 10, bright = 4, volume = 5, name = 'Ada', color = 12, bit = 'Moss'})"); ticks(2, 0);
+    bk_host_eval("save({look = 'sepia', strength = 10, bright = 4, volume = 5, name = 'Ada', color = 12, bit = 'Moss', lang = 'de'})"); ticks(2, 0);
     const bk_bit_settings *s = bk_host_settings();
     if (strcmp(s->look, "sepia") || s->bright != 4 || s->volume != 5) FAIL("Bit settings not read after the Settings app saved them (%s %d %d)", s->look, s->bright, s->volume);
+    if (strcmp(s->lang, "de") || strcmp(bk_lang_get(), "de")) FAIL("the language from the Settings app is %s / %s, expected de", s->lang, bk_lang_get());
     if (bk_host_backlight() != 610) FAIL("backlight for brightness 4 is %d per mille, expected 610", bk_host_backlight());
     bk_host_go_home();
     bk_host_init(&cfg);
@@ -237,6 +238,10 @@ int main(int argc, char **argv) {
     bk_host_eval("print('who', player_name(1))");
     const char *who = find_log("who");
     if (!who || strcmp(who, "who\tAda")) FAIL("player_name(1) on the device: %s (expected Ada)", who ? who : "nothing");
+    /* the language reaches games too: lang(), and the game shell's own words */
+    bk_host_eval("print('lng', lang(), tr('Continue'))");
+    const char *lng = find_log("lng");
+    if (!lng || strcmp(lng, "lng\tde\tWeiterspielen")) FAIL("the language in a game on the device: %s (expected de, Weiterspielen)", lng ? lng : "nothing");
     /* the look goes over the picture, not into the game's own display{} */
     ticks(5, 0);
     int32_t own = BK->display.sat;

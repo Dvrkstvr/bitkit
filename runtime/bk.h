@@ -127,6 +127,12 @@ void bk_shade(float k);   /* darken the screen inside the clip rectangle: 0 noth
 void bk_circ(int cx, int cy, int r, int c);
 void bk_circfill(int cx, int cy, int r, int c);
 int  bk_text(const char *s, int x, int y, int c, int scale);
+int  bk_glyph_next(const char **s);       /* next letter of UTF-8 or Windows-1252 text as a font code 0..255; 0 = end */
+int  bk_text_len(const char *s, int *lines); /* letters in the widest line */
+/* The Bit's language ("en", "de", "fr", "es"...): lang() in games, tr() and texts{} pick their words by it. Hosts set it
+   from the Settings app; it stays the same for every game until changed. */
+void bk_lang_set(const char *code);
+const char *bk_lang_get(void);
 void bk_spr(int n, int x, int y, int w, int h, int flipx, int flipy, int scale);
 void bk_map(int cx, int cy, int cw, int ch, int sx, int sy);
 /* 2.5D: a perspective floor drawn from the tile map (SNES-style ground plane) and scaled sprites.

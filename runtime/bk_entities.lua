@@ -414,7 +414,7 @@ N.wait = function(e, n, p)
   return 2
 end
 N.anim = function(e, n, p) e.anim_req = p.name return 1 end
-N.say = function(e, n, p) e.say, e.say_t = p.text or "...", p.frames or 2 return 1 end
+N.say = function(e, n, p) e.say, e.say_t = tr(p.text or "..."), p.frames or 2 return 1 end
 N.sound = function(e, n, p) sfx(p.note or "C5", p.wave or 0, p.vol or 0.4, p.frames or 8) return 1 end
 N.shoot = function(e, n, p)
   local b = ents_spawn(p.type or "", 0, 0)
@@ -774,7 +774,7 @@ CUT_STEP.say = {
     local e = who(p.who)
     local name = p.name
     if not name or name == "" then name = (e and p.who ~= "player") and p.who:gsub("^%l", string.upper):gsub("_", " ") or "" end
-    BOX = {who = e, name = name, text = tostring(p.text or ""), n = 0}
+    BOX = {who = e, name = tr(name), text = tr(tostring(p.text or "")), n = 0}   -- the Bit's language (texts{})
     if e and e ~= PLAYER and PLAYER ~= DUMMY then e.dir = (PLAYER.x > e.x) and 1 or -1 end
   end,
   update = function(s, p, skip)
@@ -984,7 +984,7 @@ function _bk_overlay()
     for i = 1, math.min(#lines, BOX.name ~= "" and 4 or 5) do text(lines[i], tx, ty + (i - 1) * 10, 13) end
     if BOX.n >= #BOX.text and (time() * 2) % 2 < 1.2 then text("v", x + w - 14, y + h - 12, 27) end
   end
-  if CUT and BARS >= 20 then text("START skip", 232, 226, 29) end
+  if CUT and BARS >= 20 then local s = tr("START skip") text(s, 312 - #s * 8, 226, 29) end
 end
 
 function ents_target(x, y) TX, TY = x, y end

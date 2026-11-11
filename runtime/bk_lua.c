@@ -177,9 +177,160 @@ static int l_display(lua_State *l) {
 static int l_circ(lua_State *l) { bk_circ(ci(l, 1), ci(l, 2), ci(l, 3), ci(l, 4)); return 0; }
 static int l_circfill(lua_State *l) { bk_circfill(ci(l, 1), ci(l, 2), ci(l, 3), ci(l, 4)); return 0; }
 
+/* ---- languages ----
+   texts{de = {["Start"] = "Los"}, fr = {...}} adds a cart's words (kept in _TEXTS); _SYSTEXT holds the Bit's own (game shell,
+   bk_lang.lua). A word is looked up as written, then with its numbers swapped for # ("SCORE 120" finds "SCORE #"). */
+static char cur_lang[8] = "en";
+void bk_lang_set(const char *code) {
+  char t[8]; size_t n = 0;
+  for (; code && code[n] && n < sizeof(t) - 1; n++) {
+    char ch = code[n];
+    if (ch >= 'A' && ch <= 'Z') ch = (char)(ch + 32);
+    if (!((ch >= 'a' && ch <= 'z') || ch == '-' || ch == '_')) { n = 0; break; }
+    t[n] = ch;
+  }
+  t[n] = 0;
+  snprintf(cur_lang, sizeof(cur_lang), "%s", n ? t : "en");
+}
+const char *bk_lang_get(void) { return cur_lang; }
+
+/* t[lang][key] for the table at index t (absolute); pushes the word and returns 1, or returns 0 */
+static int tx_in(lua_State *l, int t, int key) {
+  if (lua_type(l, t) != LUA_TTABLE) return 0;
+  if (lua_getfield(l, t, cur_lang) != LUA_TTABLE) { lua_pop(l, 1); return 0; }
+  lua_pushvalue(l, key);
+  if (lua_rawget(l, -2) == LUA_TSTRING) { lua_remove(l, -2); return 1; }
+  lua_pop(l, 2);
+  return 0;
+}
+/* the word for the key at index key in the cart's texts (and the Bit's own when sys): pushes it, or returns 0 */
+static int tx_key(lua_State *l, int key, int sys) {
+  int found = 0;
+  if (lua_getglobal(l, "_TEXTS") == LUA_TTABLE) {
+    int list = lua_gettop(l);
+    for (lua_Integer i = (lua_Integer)lua_rawlen(l, list); i >= 1 && !found; i--) {
+      lua_rawgeti(l, list, i);
+      found = tx_in(l, lua_gettop(l), key);
+      if (found) lua_remove(l, -2); else lua_pop(l, 1);
+    }
+  }
+  if (found) { lua_remove(l, -2); return 1; }
+  lua_pop(l, 1);
+  if (!sys) return 0;
+  lua_getglobal(l, "_SYSTEXT");
+  found = tx_in(l, lua_gettop(l), key);
+  lua_remove(l, found ? -2 : -1);
+  return found;
+}
+static int is_dig(char c) { return c >= '0' && c <= '9'; }
+/* s translated for the current language: pushes it and returns 1, or returns 0 (no words for it) */
+static int tx_find(lua_State *l, const char *s, size_t len, int sys) {
+  lua_pushlstring(l, s, len);
+  int k = lua_gettop(l);
+  if (tx_key(l, k, sys)) { lua_remove(l, k); return 1; }
+  lua_pop(l, 1);
+  /* numbers -> #: "LAP 2/3" finds "LAP #/#", and the numbers go back in order */
+  size_t nd = 0;
+  for (size_t i = 0; i < len; i++) if (is_dig(s[i])) { nd = 1; break; }
+  if (!nd || len > 200) return 0;
+  char tpl[208]; const char *num[16]; size_t nlen[16]; int nn = 0; size_t o = 0;
+  for (size_t i = 0; i < len;) {
+    if (is_dig(s[i])) {
+      size_t j = i;
+      while (j < len && (is_dig(s[j]) || (s[j] == '.' && j + 1 < len && is_dig(s[j + 1]) && j > i))) j++;
+      if (nn < 16) { num[nn] = s + i; nlen[nn] = j - i; nn++; }
+      tpl[o++] = '#'; i = j;
+    } else tpl[o++] = s[i++];
+  }
+  lua_pushlstring(l, tpl, o);
+  k = lua_gettop(l);
+  if (!tx_key(l, k, sys)) { lua_pop(l, 1); return 0; }
+  size_t rl; const char *r = lua_tolstring(l, -1, &rl);
+  luaL_Buffer b; luaL_buffinit(l, &b);
+  int ni = 0;
+  for (size_t i = 0; i < rl; i++) {
+    if (r[i] == '#' && ni < nn) { luaL_addlstring(&b, num[ni], nlen[ni]); ni++; }
+    else luaL_addchar(&b, r[i]);
+  }
+  luaL_pushresult(&b);
+  lua_replace(l, k);
+  lua_settop(l, k);
+  return 1;
+}
+/* the string at the top of the stack in the Bit's one-byte encoding (UTF-8 letters -> Windows-1252), so #s counts letters */
+static void to_1252(lua_State *l) {
+  size_t n; const char *s = lua_tolstring(l, -1, &n);
+  int multi = 0;
+  for (size_t i = 0; i < n; i++) if ((unsigned char)s[i] >= 0xC2) { multi = 1; break; }
+  if (!multi) return;
+  luaL_Buffer b; luaL_buffinit(l, &b);
+  const char *p = s; int c;
+  while ((c = bk_glyph_next(&p))) luaL_addchar(&b, (char)c);
+  luaL_pushresult(&b);
+  lua_remove(l, -2);
+}
+/* _texts_auto(on): text() translating on its own (texts(false) in bk_lang.lua) */
+static int l_texts_auto(lua_State *l) {
+  if (lua_toboolean(l, 1)) lua_pushnil(l); else lua_pushboolean(l, 1);
+  lua_setfield(l, LUA_REGISTRYINDEX, "bk_tx_off");
+  return 0;
+}
+/* lang() -> "en", "de", ... the language picked in the Bit's Settings */
+static int l_lang(lua_State *l) { lua_pushstring(l, cur_lang); return 1; }
+/* tr("Start") -> the word for the Bit's language (from texts{} or the Bit's own), else the string as it is.
+   tr("%d coins", n) translates, then formats. tr{en = "Start", de = "Los"} picks one (en when there's none). */
+static int l_tr(lua_State *l) {
+  int n = lua_gettop(l);
+  if (lua_type(l, 1) == LUA_TTABLE) {
+    if (lua_getfield(l, 1, cur_lang) != LUA_TSTRING) { lua_pop(l, 1); lua_getfield(l, 1, "en"); }
+    if (!lua_isstring(l, -1)) { lua_pop(l, 1); lua_rawgeti(l, 1, 1); }
+    if (!lua_isstring(l, -1)) { lua_pop(l, 1); lua_pushliteral(l, ""); }
+  } else {
+    size_t len; const char *s = luaL_tolstring(l, 1, &len);
+    if (!tx_find(l, s, len, 1)) lua_pushvalue(l, -1);
+    lua_remove(l, -2);
+  }
+  if (n > 1) {
+    lua_getglobal(l, "string"); lua_getfield(l, -1, "format"); lua_remove(l, -2);
+    lua_insert(l, -2);
+    for (int i = 2; i <= n; i++) lua_pushvalue(l, i);
+    lua_call(l, n, 1);
+  }
+  to_1252(l);
+  return 1;
+}
+/* textw(s, [scale]) -> how wide text(s) is in pixels (the widest line) */
+static int l_textw(lua_State *l) {
+  int sc = opti(l, 2, 1);
+  const char *s = luaL_tolstring(l, 1, NULL);
+  lua_pushinteger(l, bk_text_len(s, NULL) * 8 * (sc < 1 ? 1 : sc));
+  return 1;
+}
+
+/* text() draws a cart's own words in the Bit's language when texts{} has them (texts(false) turns that off). A word
+   that gets longer or shorter keeps its place: centred on the screen stays centred, at the right edge stays there. */
 static int l_text(lua_State *l) {
   int x = opti(l, 2, 0), y = opti(l, 3, 0), c = opti(l, 4, 13), sc = opti(l, 5, 1);
-  const char *s = luaL_tolstring(l, 1, NULL);
+  size_t len;
+  const char *s = luaL_tolstring(l, 1, &len);
+  if (sc < 1) sc = 1;
+  int on = 0;
+  if (lua_type(l, 1) == LUA_TSTRING) { on = lua_getfield(l, LUA_REGISTRYINDEX, "bk_tx_off") == LUA_TNIL; lua_pop(l, 1); }
+  if (on) {
+    if (tx_find(l, s, len, 0)) {
+      int lines, lines2;
+      int n0 = bk_text_len(s, &lines);
+      const char *t = lua_tostring(l, -1);
+      int n1 = bk_text_len(t, &lines2);
+      if (n1 != n0 && lines == 1 && lines2 == 1) {
+        int sx = x - BK->cam_x, w0 = n0 * 8 * sc, mid = sx + w0 / 2;
+        if (sx > 8 && mid >= 156 && mid <= 164) x -= (n1 - n0) * 4 * sc;
+        else if (sx >= 160 && sx + w0 >= 300) x -= (n1 - n0) * 8 * sc;
+        if (x - BK->cam_x < 0 && sx >= 0) x = BK->cam_x;
+      }
+      s = t;
+    }
+  }
   int w = bk_text(s, x, y, c, sc);
   lua_pushinteger(l, w);
   return 1;
@@ -520,7 +671,7 @@ static int l_print(lua_State *l) {
 static const luaL_Reg API[] = {
   {"cls", l_cls}, {"pset", l_pset}, {"pget", l_pget}, {"line", l_line},
   {"rect", l_rect}, {"rectfill", l_rectfill}, {"shade", l_shade}, {"tint", l_tint}, {"fog", l_fog}, {"dither", l_dither}, {"remap", l_remap}, {"wave", l_wave}, {"ripple", l_ripple}, {"pixelate", l_pixelate}, {"glitch", l_glitch}, {"display", l_display}, {"sprfx", l_sprfx}, {"raster", l_raster}, {"circ", l_circ}, {"circfill", l_circfill},
-  {"text", l_text}, {"font", l_font}, {"sget", l_sget}, {"sset", l_sset}, {"spr", l_spr}, {"map", l_map}, {"floor", l_floorplane}, {"floorh", l_floorh}, {"hset", l_hset}, {"hget", l_hget}, {"depth", l_depth}, {"project", l_project}, {"sspr", l_sspr}, {"mget", l_mget}, {"mset", l_mset},
+  {"text", l_text}, {"textw", l_textw}, {"lang", l_lang}, {"tr", l_tr}, {"_texts_auto", l_texts_auto}, {"font", l_font}, {"sget", l_sget}, {"sset", l_sset}, {"spr", l_spr}, {"map", l_map}, {"floor", l_floorplane}, {"floorh", l_floorh}, {"hset", l_hset}, {"hget", l_hget}, {"depth", l_depth}, {"project", l_project}, {"sspr", l_sspr}, {"mget", l_mget}, {"mset", l_mset},
   {"fget", l_fget}, {"fset", l_fset}, {"camera", l_camera}, {"clip", l_clip},
   {"pal", l_pal}, {"palt", l_palt}, {"palette", l_palette},
   {"btn", l_btn}, {"btnp", l_btnp}, {"btnr", l_btnr}, {"press", l_press},

@@ -2,6 +2,7 @@
 #include "bk.h"
 #include "bk_emu.h"
 #include "bk_font.h"
+#include "bk_font_latin.h"
 #include <string.h>
 #include <math.h>
 #include <stdlib.h>
@@ -364,14 +365,50 @@ void bk_font(int style, int outline) {
 static void text_px(int x, int y, int c, int scale) {
   if (scale == 1) px(x, y, c); else bk_rectfill(x, y, scale, scale, c);
 }
+/* Text is UTF-8 (cart source) or the Bit's one-byte encoding, Windows-1252 (what tr() gives back, so #s counts letters).
+   bk_glyph_next reads one letter as a code 0..255 of the font: a UTF-8 sequence that has a glyph becomes its 1252 code,
+   other UTF-8 letters become '?', and a byte that doesn't start a whole UTF-8 sequence is a 1252 code itself. 0 = end. */
+static const struct { uint16_t u; uint8_t c; } W1252[] = {
+  {0x20AC, 0x80}, {0x201A, 0x82}, {0x201E, 0x84}, {0x2026, 0x85}, {0x2039, 0x8B}, {0x0152, 0x8C}, {0x2018, 0x91}, {0x2019, 0x92},
+  {0x201C, 0x93}, {0x201D, 0x94}, {0x2022, 0x95}, {0x2013, 0x96}, {0x2014, 0x97}, {0x2122, 0x99}, {0x0160, 0x8A}, {0x0161, 0x9A},
+  {0x203A, 0x9B}, {0x0153, 0x9C}, {0x017D, 0x8E}, {0x017E, 0x9E}, {0x0178, 0x9F},
+};
+int bk_glyph_next(const char **sp) {
+  const unsigned char *p = (const unsigned char *)*sp;
+  unsigned b = p[0];
+  if (!b) return 0;
+  if (b < 0x80) { *sp += 1; return (int)b; }
+  int n = b >= 0xF0 && b < 0xF8 ? 3 : b >= 0xE0 ? 2 : b >= 0xC2 && b < 0xE0 ? 1 : 0;
+  if (b >= 0xF8) n = 0;
+  int ok = n > 0;
+  for (int i = 1; ok && i <= n; i++) if ((p[i] & 0xC0) != 0x80) ok = 0;
+  if (!ok) { *sp += 1; return (int)b; }              /* a 1252 byte */
+  uint32_t u = n == 1 ? ((b & 0x1Fu) << 6) | (p[1] & 0x3Fu)
+             : n == 2 ? ((b & 0x0Fu) << 12) | ((p[1] & 0x3Fu) << 6) | (p[2] & 0x3Fu)
+             : ((b & 0x07u) << 18) | ((p[1] & 0x3Fu) << 12) | ((p[2] & 0x3Fu) << 6) | (p[3] & 0x3Fu);
+  *sp += n + 1;
+  if (u >= 0xA0 && u <= 0xFF) return (int)u;
+  for (size_t i = 0; i < sizeof(W1252) / sizeof(W1252[0]); i++) if (W1252[i].u == u) return W1252[i].c;
+  return '?';
+}
+/* letters in the widest line of s (what text() would draw), and the number of lines */
+int bk_text_len(const char *s, int *lines) {
+  int n = 0, w = 0, ln = 1, c;
+  while ((c = bk_glyph_next(&s))) {
+    if (c == '\n') { if (n > w) w = n; n = 0; ln++; continue; }
+    n++;
+  }
+  if (lines) *lines = ln;
+  return n > w ? n : w;
+}
 int bk_text(const char *s, int x, int y, int c, int scale) {
   if (scale < 1) scale = 1;
   int x0 = x, maxw = 0;
-  for (; *s; s++) {
-    unsigned ch = (unsigned char)*s;
+  for (;;) {
+    unsigned ch = (unsigned)bk_glyph_next(&s);
+    if (!ch) break;
     if (ch == '\n') { if (x - x0 > maxw) maxw = x - x0; x = x0; y += 8 * scale; continue; }
-    if (ch > 127) ch = '?';
-    const uint8_t *g = bk_font8x8[ch];
+    const uint8_t *g = ch < 128 ? bk_font8x8[ch] : bk_font8x8_hi[ch - 128];
     uint16_t r[10] = {0};               /* rows -1..8, bit k = pixel k-1 (room for the outline and the spill) */
     for (int j = 0; j < 8; j++) {
       uint16_t v = (uint16_t)(g[j] << 1);

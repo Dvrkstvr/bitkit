@@ -36,6 +36,7 @@ end
 
 local function ctext(s, y, c, sc)
   sc = sc or 1
+  s = tr(s)                    -- the Bit's language (texts{} at the end)
   text(s, 160 - #s * 4 * sc, y, c, sc)
 end
 
@@ -60,16 +61,17 @@ local function both_modes(g) return g.race and (g.pmax or 1) >= 2 end
 -- "1 player", "1-8 players"
 local function plabel(g)
   if not g.pmax then return nil end
-  if g.pmax == 1 then return "1 player" end
-  return (g.pmin == g.pmax and tostring(g.pmax) or (g.pmin .. "-" .. g.pmax)) .. " players"
+  if g.pmax == 1 then return tr("1 player") end
+  return tr("%s players", g.pmin == g.pmax and tostring(g.pmax) or (g.pmin .. "-" .. g.pmax))
 end
 
 local function draw_linked()
   local n, ready = linked()
   if n < 2 then return end
   local me = mget(1, 0)
-  text("LINKED", 8, 23, TC.dim)
-  local x = 58
+  local lb = tr("LINKED")
+  text(lb, 8, 23, TC.dim)
+  local x = 18 + #lb * 8
   for i = 1, math.min(n, 12) do
     local num, st = mget(1 + i, 0), mget(1 + i, 1)
     local s = tostring(num)
@@ -81,7 +83,7 @@ local function draw_linked()
   end
   if n > 12 then text("+" .. (n - 12), x, 23, TC.dim) end
   local busy = n - ready
-  if busy > 0 then text(busy .. " in a game", 320 - 8 - #(busy .. " in a game") * 8, 23, TC.dim) end
+  if busy > 0 then local s = tr("%d in a game", busy) text(s, 320 - 8 - #s * 8, 23, TC.dim) end
 end
 
 local function icon(g, x, y, sc, ghost)
@@ -143,10 +145,11 @@ local function draw_players(g, x, y)
   rectfill(x + 4, y + 2, 3, 3, TC.card) rectfill(x + 3, y + 6, 5, 4, TC.card)
   text(s, x + 11, y + 2, TC.card)
   if g.race then
-    local rx = x + w + 3
-    rectfill(rx, y, 44, 12, TC.card) rect(rx, y, 44, 12, TC.accent)
+    local rx, rs = x + w + 3, tr("RACE")
+    local rw = #rs * 8 + 12
+    rectfill(rx, y, rw, 12, TC.card) rect(rx, y, rw, 12, TC.accent)
     rectfill(rx + 3, y + 2, 1, 8, TC.text) rectfill(rx + 4, y + 2, 4, 3, TC.accent)
-    text("RACE", rx + 10, y + 2, TC.text)
+    text(rs, rx + 10, y + 2, TC.text)
   end
 end
 
@@ -166,7 +169,7 @@ local function draw_row(list, s, sl, dy, label, sub)
     rectfill(cx + 64, cy - 2, 16, 14, TC.accent)
     rectfill(cx + 68, cy + 1, 3, 8, TC.card) rectfill(cx + 73, cy + 1, 3, 8, TC.card)
   end
-  local name = g.name
+  local name = g.app and tr(g.name) or g.name   -- apps have names in the Bit's language, games keep theirs
   if #name > 18 then name = string.sub(name, 1, 17) .. "." end
   ctext(name, 146 + dy, TC.text, 2)
   if g.paused then ctext("paused where you left it", 168 + dy, TC.accent)
@@ -192,17 +195,17 @@ function _draw()
   else
     draw_row(GAMES, sel, slide, dy, #APPS > 0 and "GAMES" or "", function(g)
       local s = plabel(g) or ""
-      if g.race then s = s .. (g.pmax > 1 and ", or race" or ", race when linked") end
+      if g.race then s = s .. tr(g.pmax > 1 and ", or race" or ", race when linked") end
       if g.file and g.file ~= "" then s = s .. (s ~= "" and "   " or "") .. g.file end
       if #s > 38 then s = string.sub(s, 1, 37) .. "." end
       return s
     end)
   end
   if #APPS > 0 then
-    draw_row(APPS, asel, aslide, dy + ROWH, "UTILITIES", function(g) return g.sub or "utility" end)
+    draw_row(APPS, asel, aslide, dy + ROWH, "UTILITIES", function(g) return tr(g.sub or "utility") end)
     -- the edge of the other row, so it is clear there is more
     if row == 0 then ctext("v  UTILITIES  v", 205 + dy + math.floor(math.sin(tt / 15) * 1.5), TC.accent)
-    elseif n > 0 then text("^ GAMES", 312 - 7 * 8, 22 + dy + ROWH + math.floor(math.sin(tt / 15) * 1.5), TC.accent) end
+    elseif n > 0 then local s = tr("^ GAMES") text(s, 312 - #s * 8, 22 + dy + ROWH + math.floor(math.sin(tt / 15) * 1.5), TC.accent) end
   end
   clip()
 
@@ -221,22 +224,74 @@ function _draw()
   -- bottom bar
   theme_bar(T, 222, 18, false)
   local _, ready = linked()
-  local hint = n > 0 and "A play   < > choose" or ""
+  local hint = n > 0 and tr("A play   < > choose") or ""
   if n > 0 and ready > 1 then
     local g = BIT.games[GAMES[sel]]
     local how, np = plan(g)
-    if how == "together" then hint = "A play on " .. np .. " Bits"
-    elseif how == "race" then hint = "A race on " .. np .. " Bits"
-    elseif g.net then hint = "A play   the others join in the game"
-    else hint = "A play alone (1 player)" end
-    if both_modes(g) then hint = hint .. (how == "race" and "   SEL together" or "   SEL race") end
+    if how == "together" then hint = tr("A play on %d Bits", np)
+    elseif how == "race" then hint = tr("A race on %d Bits", np)
+    elseif g.net then hint = tr("A play   the others join in the game")
+    else hint = tr("A play alone (1 player)") end
+    if both_modes(g) then hint = hint .. tr(how == "race" and "   SEL together" or "   SEL race") end
   end
-  if n > 0 and BIT.games[GAMES[sel]].paused then hint = "A continue   X restart" end
-  if BIT.studio and n > 0 then hint = hint .. "   Y edit" end
+  if n > 0 and BIT.games[GAMES[sel]].paused then hint = tr("A continue   X restart") end
+  if BIT.studio and n > 0 then hint = hint .. tr("   Y edit") end
   if row == 1 then
-    hint = BIT.games[APPS[asel]].paused and "A continue   X restart" or "A open   < > choose"
+    hint = tr(BIT.games[APPS[asel]].paused and "A continue   X restart" or "A open   < > choose")
   end
   text(hint, 8, 227, bt)
   if #APPS == 0 and n > 0 then ctext("hold START+SELECT to come back", 204, TC.dim) end
 end
+
+texts{
+  de = {
+    ["1 player"] = "1 Spieler", ["%s players"] = "%s Spieler", ["%d in a game"] = "%d im Spiel", ["LINKED"] = "VERBUNDEN",
+    ["RACE"] = "RENNEN", ["paused where you left it"] = "pausiert, wo du aufgehört hast", ["open in the studio"] = "im Studio offen",
+    ["No games on this Bit yet"] = "Noch keine Spiele auf diesem Bit", ["Save a cart to the Bit from the studio,"] = "Speichere ein Spiel aus dem Studio,",
+    ["or choose a folder in the Library."] = "oder wähle einen Ordner in der Bibliothek.", ["GAMES"] = "SPIELE",
+    [", or race"] = ", oder Rennen", [", race when linked"] = ", Rennen wenn verbunden", ["UTILITIES"] = "WERKZEUGE", ["utility"] = "Werkzeug",
+    ["v  UTILITIES  v"] = "v  WERKZEUGE  v", ["^ GAMES"] = "^ SPIELE",
+    ["A play   < > choose"] = "A spielen   < > wählen", ["A play on %d Bits"] = "A auf %d Bits spielen", ["A race on %d Bits"] = "A Rennen auf %d Bits",
+    ["A play   the others join in the game"] = "A spielen   die anderen kommen im Spiel dazu", ["A play alone (1 player)"] = "A allein spielen (1 Spieler)",
+    ["   SEL together"] = "   SEL zusammen", ["   SEL race"] = "   SEL Rennen", ["A continue   X restart"] = "A weiter   X neu starten",
+    ["   Y edit"] = "   Y bearbeiten", ["A open   < > choose"] = "A öffnen   < > wählen", ["hold START+SELECT to come back"] = "START+SELECT halten, um zurückzukommen",
+    -- apps on the Utilities row: their names and what they do
+    ["Settings"] = "Einstellungen", ["Themes"] = "Designs", ["Share"] = "Teilen",
+    ["tracker"] = "Tracker", ["loops and piano roll"] = "Loops und Pianorolle", ["screen, sound, language, name"] = "Bild, Ton, Sprache, Name",
+    ["make this Bit yours"] = "mach dieses Bit zu deinem", ["send to a nearby Bit"] = "an ein Bit in der Nähe senden",
+    ["emulator: your own ROMs"] = "Emulator: deine eigenen ROMs",
+  },
+  fr = {
+    ["1 player"] = "1 joueur", ["%s players"] = "%s joueurs", ["%d in a game"] = "%d en jeu", ["LINKED"] = "RELIÉS",
+    ["RACE"] = "COURSE", ["paused where you left it"] = "en pause là où tu l'as laissé", ["open in the studio"] = "ouvert dans le studio",
+    ["No games on this Bit yet"] = "Pas encore de jeux sur ce Bit", ["Save a cart to the Bit from the studio,"] = "Enregistre un jeu depuis le studio,",
+    ["or choose a folder in the Library."] = "ou choisis un dossier dans la bibliothèque.", ["GAMES"] = "JEUX",
+    [", or race"] = ", ou course", [", race when linked"] = ", course si reliés", ["UTILITIES"] = "OUTILS", ["utility"] = "outil",
+    ["v  UTILITIES  v"] = "v  OUTILS  v", ["^ GAMES"] = "^ JEUX",
+    ["A play   < > choose"] = "A jouer   < > choisir", ["A play on %d Bits"] = "A jouer sur %d Bits", ["A race on %d Bits"] = "A course sur %d Bits",
+    ["A play   the others join in the game"] = "A jouer   les autres rejoignent en jeu", ["A play alone (1 player)"] = "A jouer seul (1 joueur)",
+    ["   SEL together"] = "   SEL ensemble", ["   SEL race"] = "   SEL course", ["A continue   X restart"] = "A continuer   X recommencer",
+    ["   Y edit"] = "   Y modifier", ["A open   < > choose"] = "A ouvrir   < > choisir", ["hold START+SELECT to come back"] = "maintiens START+SELECT pour revenir",
+    ["Settings"] = "Paramètres", ["Themes"] = "Thèmes", ["Share"] = "Partager",
+    ["tracker"] = "tracker", ["loops and piano roll"] = "boucles et piano roll", ["screen, sound, language, name"] = "écran, son, langue, nom",
+    ["make this Bit yours"] = "personnalise ce Bit", ["send to a nearby Bit"] = "envoyer à un Bit proche",
+    ["emulator: your own ROMs"] = "émulateur : tes propres ROM",
+  },
+  es = {
+    ["1 player"] = "1 jugador", ["%s players"] = "%s jugadores", ["%d in a game"] = "%d jugando", ["LINKED"] = "CONECTADOS",
+    ["RACE"] = "CARRERA", ["paused where you left it"] = "en pausa donde lo dejaste", ["open in the studio"] = "abierto en el estudio",
+    ["No games on this Bit yet"] = "Aún no hay juegos en este Bit", ["Save a cart to the Bit from the studio,"] = "Guarda un juego desde el estudio,",
+    ["or choose a folder in the Library."] = "o elige una carpeta en la biblioteca.", ["GAMES"] = "JUEGOS",
+    [", or race"] = ", o carrera", [", race when linked"] = ", carrera si conectados", ["UTILITIES"] = "UTILIDADES", ["utility"] = "utilidad",
+    ["v  UTILITIES  v"] = "v  UTILIDADES  v", ["^ GAMES"] = "^ JUEGOS",
+    ["A play   < > choose"] = "A jugar   < > elegir", ["A play on %d Bits"] = "A jugar en %d Bits", ["A race on %d Bits"] = "A carrera en %d Bits",
+    ["A play   the others join in the game"] = "A jugar   los demás se unen en el juego", ["A play alone (1 player)"] = "A jugar solo (1 jugador)",
+    ["   SEL together"] = "   SEL juntos", ["   SEL race"] = "   SEL carrera", ["A continue   X restart"] = "A seguir   X reiniciar",
+    ["   Y edit"] = "   Y editar", ["A open   < > choose"] = "A abrir   < > elegir", ["hold START+SELECT to come back"] = "mantén START+SELECT para volver",
+    ["Settings"] = "Ajustes", ["Themes"] = "Temas", ["Share"] = "Compartir",
+    ["tracker"] = "tracker", ["loops and piano roll"] = "bucles y piano roll", ["screen, sound, language, name"] = "pantalla, sonido, idioma",
+    ["make this Bit yours"] = "haz tuyo este Bit", ["send to a nearby Bit"] = "enviar a un Bit cercano",
+    ["emulator: your own ROMs"] = "emulador: tus propias ROM",
+  },
+}
 `;
