@@ -107,7 +107,7 @@ const runtime = require('../studio/runtime.js');
   run(30, f => A | bit('right'));
   shot('flight');
   // the chase camera stays behind the plane while it turns (it used to share a field with the model maths)
-  for (let f = 0; f < 90; f++) { run(1, () => A | bit(f < 60 ? 'right' : 'left')); if (!(+st()[14] < 0.5)) { fail('the camera should stay behind the plane in a turn, lag ' + st()[14]); break; } }
+  for (let f = 0; f < 90; f++) { run(1, () => A | bit(f < 60 ? 'right' : 'left')); if (!(+st()[14] < 0.12)) { fail('the camera should stay right behind the plane in a turn, lag ' + st()[14]); break; } }
   run(40);
   const bat = +st()[6];
   run(120);

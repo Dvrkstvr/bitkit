@@ -920,8 +920,8 @@ end
 
 function fly_draw()
   if not P then return end
-  -- the camera swings round behind the plane a little late, and pulls back as you speed up
-  P.cam = P.cam + angdiff(P.h, P.cam) * 0.09
+  -- the camera sits right behind the plane and pulls back as you speed up
+  P.cam = P.cam + angdiff(P.h, P.cam) * 0.35   -- locked behind the plane, with just a touch of give
   P.cz = P.cz + (P.z + F_UP - P.cz) * 0.14
   P.foc = P.foc + (F_FOC / (1 + clamp(P.spd - BASE_SPEED, -0.6, 2) * 0.16) - P.foc) * 0.05
   P.camp = P.camp + (P.pitch - P.camp) * 0.1
