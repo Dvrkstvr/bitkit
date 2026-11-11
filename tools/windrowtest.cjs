@@ -152,6 +152,45 @@ require('../studio/runtime.js')({ onLog: (m, e) => { (e ? errors : logs).push(m)
   check('the goal is reached', get('GAME.state'), 'won');
   if (errors.length) { errors.forEach(e => fail('mill: ' + e)); errors = []; }
 
+  // 7b. animals: mend the hen house by hand, buy a hen, fill the trough, gather the egg, pet her; goats give milk
+  load(null); run(5);
+  ev('G.coins = 1000 G.inv = { wood = 40, stone = 20, fibre = 10, radish = 3 } px, py, dx, dy = 19 * 16 + 8, 24 * 16 + 14, 0, -1');
+  tap('a'); check('A at the ruined hen house offers to mend it', get('ui, ui_kind'), 'build coop');
+  tap('a'); check('mending it takes coins, wood and fibre', get('G.coop, G.coins, G.inv.wood, G.inv.fibre'), '1 940 30 4');
+  ev('ui = "shop" local L = shop_items() for i, it in ipairs(L) do if it.name == "Hen" then ui_sel = i end end');
+  tap('a'); tap('b');
+  check('Marrow sells a hen once the house stands', get('#G.an, G.an[1].k, G.coins, #ANIM'), '1 h 820 1');
+  ev('px, py, dx, dy = 19 * 16 + 8, 26 * 16 + 14, 0, -1');
+  tap('a');
+  check('food from the bag goes in the trough', get('G.feed, G.inv.radish'), '2 2');
+  ev('new_day() G.clk = 100');
+  check('a fed hen lays an egg overnight and eats a helping', get('G.feed, (function() local n = 0 for _, o in ipairs(FORAGE) do if is_egg(o) then n = n + 1 end end return n end)()'), '1 1');
+  ev('local o for _, f in ipairs(FORAGE) do if is_egg(f) then o = f end end ANIM[1].x, ANIM[1].y, ANIM[1].wait = 9999, 9999, 9999 px, py, dx, dy = o.x * 16 + 8, o.y * 16 + 14, 0, 1');
+  tap('a');
+  check('you gather the egg by hand', num('have("egg") + have("bigegg")'), 1);
+  ev('ANIM[1].x, ANIM[1].y, ANIM[1].wait = 6 * 16 + 8, 24 * 16 + 12, 9999 px, py, dx, dy = 6 * 16 + 8, 23 * 16 + 12, 0, 1');
+  tap('a');
+  check('a pat a day wins her heart', get('G.an[1].love, G.an[1].p'), '16 1');
+  tap('a');
+  check('but only one a day', num('G.an[1].love'), 16);
+  ev('toast_t = 0 G.shed = 1 add_animal("g") G.feed = 5 new_day() G.clk = 100 ANIM[1].x = 9999 ANIM[2].x, ANIM[2].y, ANIM[2].wait = 6 * 16 + 8, 24 * 16 + 12, 9999');
+  if (shotDir) {
+    ev('add_animal("h") SX, SY = px, py ANIM[1].x, ANIM[1].y = 14 * 16, 23 * 16 + 8 ANIM[3].x, ANIM[3].y, ANIM[3].wait = 11 * 16, 25 * 16, 9999 ANIM[2].x, ANIM[2].y = 16 * 16, 24 * 16 + 12 px, py, dx, dy = 18 * 16 + 8, 26 * 16 + 4, 0, -1 G.feed = 8');
+    run(2); shot('windrow-pasture');
+    ev('table.remove(G.an) table.remove(ANIM) px, py, dx, dy = SX, SY, 0, 1 ANIM[1].x = 9999 ANIM[2].x, ANIM[2].y = 6 * 16 + 8, 24 * 16 + 12 G.feed = 4');
+  }
+  tap('a');
+  check('no pail, no milk', get('G.an[2].m, have("milk")'), '1 0');
+  ev('G.pail = 1 toast_t = 0');
+  tap('a');
+  check('with a pail you milk the goat by hand', get('G.an[2].m, have("milk")'), '0 1');
+  ev('G.feed = 0 G.an[1].love = 30 new_day()');
+  check('hungry animals lose heart and give nothing', get('G.an[1].love, G.an[2].m'), '22 0');
+  ev('persist()');
+  load(getSave()); run(3);
+  check('the animals are in the save', get('#G.an, G.an[2].k, G.coop, G.shed, G.pail, #ANIM'), '2 g 1 1 1 2');
+  if (errors.length) { errors.forEach(e => fail('animals: ' + e)); errors = []; }
+
   // 8. all four seasons draw, with rain, snow and nightfall
   load(null);
   for (const [d, name] of [[3, 'spring'], [10, 'summer'], [17, 'autumn'], [24, 'winter']]) {

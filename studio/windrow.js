@@ -2,12 +2,14 @@
    bucket on an overgrown plot, forage in the woods for your first coins, and rebuild the valley's old windmill.
    Original world, art and code. MIT License. */
 (function () {
-  const code = `-- Windrow: a farming game. Slice 1: the farm, hand work and foraging.
+  const code = `-- Windrow: a farming game. So far: the farm, hand work, foraging and animals.
 -- You arrive with a digging stick, a leaky bucket and four radish seeds. The plot is overgrown: pull the
 -- weeds, dig the soil, plant, water and sell at the crate. Forage in Bramble Woods (west) for your first
 -- coins. Marrow's wagon sells seeds, tools and the deeds to more land.
 --   D-pad: walk     A: use your hands (dig, plant, pick, pull, talk)     B: water (fill up at a pond)
 --   L / R: pick seeds     X: your bag     Y: look at what is in front of you     Start: pause
+-- South of the fields lies the pasture. Mend the hen house and the goat shed with wood, fibre and stone, buy
+-- hens and goats from Marrow, fill the trough from your bag, pet them, gather eggs and milk the goats by hand.
 -- The farm is kept with save(). clock() tells how long the Bit was off: the farm lives on while you are
 -- away (a few days at most), and anything you watered keeps growing.
 
@@ -36,6 +38,10 @@ FOUND = {
   { key = "berry", name = "Brambleberry", sell = 9, spr = 96 },
   { key = "mushroom", name = "Pennybun", sell = 12, spr = 100 },
   { key = "cone", name = "Pine cone", sell = 6, spr = 102 },
+  { key = "egg", name = "Egg", sell = 18, spr = 110 },
+  { key = "bigegg", name = "Big egg", sell = 42, spr = 164 },
+  { key = "milk", name = "Goat milk", sell = 34, spr = 166 },
+  { key = "cream", name = "Creamy milk", sell = 70, spr = 168 },
   { key = "wood", name = "Wood", spr = 104, mat = true },
   { key = "stone", name = "Stone", spr = 106, mat = true },
   { key = "fibre", name = "Fibre", spr = 108, mat = true },
@@ -54,9 +60,19 @@ MILL = {
   { name = "Set the millstone", coins = 4000, need = { stone = 30 }, crops = 120 },
 }
 
+-- what you can mend in the pasture, and who lives there
+BUILD = {
+  coop = { name = "Hen house", coins = 60, need = { wood = 10, fibre = 6 }, about = "Room for 4 hens. Fed hens lay an egg a day." },
+  shed = { name = "Goat shed", coins = 200, need = { wood = 20, stone = 10 }, about = "Room for 2 goats. Milk them by hand." },
+}
+HEN_NAMES = { "Pip", "Dot", "Clover", "Bean" }
+GOAT_NAMES = { "Thistle", "Burr" }
+PASTURE = { x = 4, y = 22, w = 14, h = 4 }
+
 -- ---------------------------------------------------------------- the world
 -- . grass  : path  ~ water  T tree  B brambles  1-3 plots  h hut  c crate  W wagon  N Marrow  m mill
 -- X washed-out road  t tin box  M old mine  o standing stone  S fallen pine
+-- p pasture  k hen house  g goat shed  r feeding trough
 FARM = {
   "BBBBBBBBBBBBBBXXBBBBBBBBBBBBBB",
   "B.T....hhh....::.....T...mmm.B",
@@ -79,6 +95,12 @@ FARM = {
   "B...3333333333333333333333...B",
   "B...3333333333333333333333...B",
   "B.T.......................t..B",
+  "B............................B",
+  "B...pppppppppppppp.kk.gg.....B",
+  "B...pppppppppppppp.kk.gg.....B",
+  "B...pppppppppppppp...........B",
+  "B...pppppppppppppp.r.........B",
+  "B..........................T.B",
   "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
 }
 WOODS = {
@@ -109,7 +131,7 @@ PLOTS = {
   { x = 17, y = 8, w = 10, h = 6, name = "East meadow", cost = 350 },
   { x = 4, y = 15, w = 22, h = 5, name = "Long acre", cost = 1200 },
 }
-SOLID = "TB~hcWNmXMoStF"
+SOLID = "TB~hcWNmXMoStFkgr"
 
 function hash(x, y, s)
   local n = (x * 374761393 + y * 668265263 + s * 982451653) & 0x7fffffff
@@ -198,8 +220,11 @@ function each_cell(fn)
   end
 end
 
+function is_egg(o) return o.k == "egg" or o.k == "bigegg" end
 function grow_forage()
+  local old = FORAGE or {}
   FORAGE = {}
+  for _, o in ipairs(old) do if is_egg(o) then FORAGE[#FORAGE + 1] = o end end       -- eggs wait for you
   local s, eat = season(), ({ "garlic", "berry", "mushroom", "cone" })[season()]
   local function put(a, n, seed)
     local A, used = AREAS[a], {}
@@ -237,7 +262,135 @@ function new_day()
     elseif f.k == 4 and f.c == 0 and r < 60 then f.k = 0 end    -- bare soil grasses over
   end)
   grow_forage()
+  animals_night()
   return grew
+end
+
+-- ---------------------------------------------------------------- animals
+function herd(k)
+  local n = 0
+  for _, a in ipairs(G.an) do if a.k == k then n = n + 1 end end
+  return n
+end
+function animal_name(a) return (a.k == "h" and HEN_NAMES or GOAT_NAMES)[a.n] or "Friend" end
+-- every animal eats one helping from the trough. Fed hens lay, fed goats have milk; hungry ones lose heart.
+function animals_night()
+  local eggs = 0
+  for _, o in ipairs(FORAGE) do if is_egg(o) then eggs = eggs + 1 end end
+  for i, a in ipairs(G.an) do
+    a.p = 0
+    if G.feed > 0 then
+      G.feed = G.feed - 1
+      if a.k == "g" then a.m = 1
+      elseif eggs < herd("h") * 2 then
+        local big = hash(G.day, i, 71) < a.love * 5
+        local x = PASTURE.x + hash(G.day, i, 73) % PASTURE.w
+        local y = PASTURE.y + hash(G.day, i, 79) % PASTURE.h
+        if not forage_at(1, x, y) then
+          FORAGE[#FORAGE + 1] = { a = 1, x = x, y = y, k = big and "bigegg" or "egg" }
+          eggs = eggs + 1
+        end
+      end
+    else
+      a.m = 0
+      a.love = math.max(0, a.love - 8)
+    end
+  end
+end
+function add_animal(k)
+  local n = herd(k) + 1
+  G.an[#G.an + 1] = { k = k, n = n, love = 10, p = 0, m = 0 }
+  place_animals()
+end
+-- where they stand is not saved: they wander the pasture
+function place_animals()
+  local old = ANIM or {}
+  ANIM = {}
+  for i, a in ipairs(G.an) do
+    ANIM[i] = old[i] or { x = (PASTURE.x + rnd(PASTURE.w) - 1) * C + 8, y = (PASTURE.y + rnd(PASTURE.h) - 1) * C + 12, tx = 0, ty = 0, wait = rnd(120), face = 1, step = 0 }
+  end
+end
+function update_animals()
+  for i, m in ipairs(ANIM) do
+    if m.wait > 0 then
+      m.wait = m.wait - 1
+      if m.wait == 0 then
+        m.tx = (PASTURE.x + rnd(PASTURE.w) - 1) * C + 8
+        m.ty = (PASTURE.y + rnd(PASTURE.h) - 1) * C + 12
+      end
+    else
+      local ex, ey = m.tx - m.x, m.ty - m.y
+      local d = math.sqrt(ex * ex + ey * ey)
+      if d < 1 then m.wait = 60 + rnd(240)
+      else
+        local sp = G.an[i].k == "h" and 0.5 or 0.35
+        m.x, m.y, m.step = m.x + ex / d * sp, m.y + ey / d * sp, m.step + 1
+        if math.abs(ex) > 1 then m.face = ex < 0 and -1 or 1 end
+      end
+    end
+  end
+end
+function animal_at(x, y)
+  local cx, cy, best, bd = x * C + 8, y * C + 10, nil, 15 * 15
+  for i, m in ipairs(ANIM) do
+    local d = (m.x - cx) ^ 2 + (m.y - 4 - cy) ^ 2
+    if d < bd then best, bd = i, d end
+  end
+  return best
+end
+function tend(i)
+  local a, m = G.an[i], ANIM[i]
+  m.wait = math.max(m.wait, 90)
+  if a.k == "g" and a.m == 1 then
+    if G.pail == 0 then say(animal_name(a) .. " has milk for you, but you need a pail. Marrow has one.") return end
+    local k = a.love >= 60 and "cream" or "milk"
+    if give(k, 1) then
+      a.m = 0
+      float("+1 " .. FOUND_BY[k].name)
+      sfx("G4", 4, 0.25, 8) sfx("C5", 4, 0.25, 12)
+      swing("pick")
+    end
+  elseif a.p == 0 then
+    a.p, a.love = 1, math.min(100, a.love + 6)
+    float(animal_name(a) .. " <3", 26)
+    sfx(a.k == "h" and "A5" or "D4", a.k == "h" and 1 or 2, 0.2, 6)
+    swing("pick")
+  else
+    say(animal_name(a) .. " is content. " .. hearts(a) .. " of 10 hearts.")
+  end
+end
+function hearts(a) return a.love // 10 end
+-- the trough takes the cheapest food in your bag
+function fill_trough()
+  local best, bv = nil, 1e9
+  for k, v in pairs(G.inv) do
+    local f = FOUND_BY[k]
+    local food = CROP_BY[k] or (f and not f.mat and k ~= "egg" and k ~= "bigegg" and k ~= "milk" and k ~= "cream")
+    if v > 0 and food and price(k) < bv then best, bv = k, price(k) end
+  end
+  if not best then say("The trough holds " .. G.feed .. " helpings. Crops and wild food from your bag go in here.") return end
+  if G.feed >= 30 then say("The trough is full.") return end
+  G.inv[best] = have(best) - 1
+  if G.inv[best] == 0 then G.inv[best] = nil end
+  G.feed = G.feed + (CROP_BY[best] and 2 or 1)
+  float("trough " .. G.feed, 17)
+  sfx("E4", 3, 0.2, 4)
+  swing("plant")
+end
+function update_build()
+  local Bd = BUILD[ui_kind]
+  if btnp("b") then ui = nil return end
+  if not btnp("a") then return end
+  local ok = G.coins >= Bd.coins
+  for k, n in pairs(Bd.need) do if have(k) < n then ok = false end end
+  if not ok then sfx("C3", 0, 0.2, 6) return end
+  G.coins = G.coins - Bd.coins
+  for k, n in pairs(Bd.need) do G.inv[k] = have(k) - n end
+  G[ui_kind] = 1
+  ui = nil
+  sfx("C5", 1, 0.3, 8) sfx("E5", 1, 0.3, 14) sfx("G5", 1, 0.3, 22)
+  say("The " .. Bd.name:lower() .. " stands! Marrow can bring you " .. (ui_kind == "coop" and "hens." or "goats and a pail."))
+  persist()
 end
 
 -- ---------------------------------------------------------------- start, save, load
@@ -245,7 +398,7 @@ function fresh()
   return { v = 1, coins = 0, day = 1, clk = 0, area = 1, px = 8 * C + 8, py = 4 * C + 14, sel = 1,
     seeds = { 4, 0, 0, 0, 0, 0, 0, 0, 0 }, inv = {}, bag = 1, hoe = 1, can = 1, water = 5, pick = 0, axe = 0,
     plots = { true, false, false }, mill = 0, millc = 0, rain = false, demand = 1, tins = "00",
-    sold = 0, picked = 0, grown = 0 }
+    sold = 0, picked = 0, grown = 0, coop = 0, shed = 0, pail = 0, feed = 0, an = {} }
 end
 
 function persist()
@@ -282,6 +435,8 @@ function load_farm()
   end
   G.area = clamp(G.area, 1, #AREAS)
   px, py = G.px, G.py
+  ANIM = nil
+  place_animals()
   -- while the Bit was off: the farm carries on, a few days at most
   report = nil
   if d and d.ts then
@@ -314,13 +469,14 @@ function _init()
       "B: water. Fill up at a pond. L / R: pick seeds. X: your bag. Y: look closer.",
       "Watered crops grow overnight. Sleep in the hut, sell at the crate, shop at the wagon.",
       "Bramble Woods lies west along the road. Bring what the mill needs to the ruin.",
+      "The pasture is south of the fields. Fill the trough from your bag, pet your animals every day.",
     },
     music = true,
     can_continue = function() return PLAYERS == 1 and saved() ~= nil end,
     new_game = function() save(nil); _init() end,
   }
   load_farm()
-  dx, dy, walk, act, act_kind, hold = 0, 1, 0, 0, "", 0
+  dx, dy, walk, act, act_kind, hold, ui_kind = 0, 1, 0, 0, "", 0, "coop"
   ui, ui_sel, ui_scroll, toast, toast_t, fade, fade_fn = report and "report" or nil, 1, 0, nil, 0, 0, nil
   floats, save_t, tune_i = {}, 0, 0
   if G.mill >= 3 then won_told = true else won_told = false end
@@ -419,6 +575,18 @@ function use_hands()
     return
   end
   local ch = tile(a, x, y)
+  if a == 1 then
+    local an = animal_at(x, y) or animal_at(fl(px / C), fl((py - 4) / C))
+    if an then tend(an) return end
+  end
+  if ch == "k" or ch == "g" then
+    local kind = ch == "k" and "coop" or "shed"
+    if G[kind] == 0 then ui, ui_kind = "build", kind
+    elseif kind == "coop" then say("The hen house. " .. herd("h") .. " of 4 hens live here.")
+    else say("The goat shed. " .. herd("g") .. " of 2 goats live here.") end
+    return
+  end
+  if ch == "r" then fill_trough() return end
   if ch == "h" then ui, ui_sel = "sleep", 1 return end
   if ch == "c" then sell_all() return end
   if ch == "W" or ch == "N" then ui, ui_sel, ui_scroll = "shop", 1, 0 return end
@@ -532,6 +700,10 @@ function look()
       say(c.name .. ": " .. left .. (left == 1 and " more day" or " more days") .. (f.wet and "." or ". It needs water."))
     end
   elseif f and G.plots[p] and f.k == 4 then say(f.wet and "Dug soil, watered." or "Dug soil. A plants a seed.")
+  elseif G.area == 1 and animal_at(x, y) then
+    local an = G.an[animal_at(x, y)]
+    say(animal_name(an) .. " the " .. (an.k == "h" and "hen" or "goat") .. ". " .. hearts(an) .. " of 10 hearts." .. (an.p == 0 and " Wants a pat." or ""))
+  elseif tile(G.area, x, y) == "r" then say("The trough holds " .. G.feed .. " helpings. Each animal eats one a night.")
   elseif forage_at(G.area, x, y) then say(FOUND_BY[forage_at(G.area, x, y).k].name .. ". A picks it up.")
   else say(AREAS[G.area].name .. ", " .. SEASON[season()]:lower() .. " " .. day_of() .. " of year " .. year() .. ".") end
 end
@@ -556,6 +728,9 @@ function shop_items()
   once("Pack", 600, "Carry 100 things.", G.bag == 2, function() G.bag = 3 end)
   once("Pickaxe", 150, "Breaks the stones on your land.", G.pick == 0, function() G.pick = 1 end)
   once("Axe", 150, "Splits the old stumps on your land.", G.axe == 0, function() G.axe = 1 end)
+  once("Hen", 120, "Lays an egg a day when fed. Pet her for bigger eggs.", G.coop == 1 and herd("h") < 4, function() add_animal("h") end)
+  once("Goat", 350, "Gives milk every day when fed. Loved goats give creamy milk.", G.shed == 1 and herd("g") < 2, function() add_animal("g") end)
+  once("Milk pail", 50, "You can't milk a goat into your hat.", G.shed == 1 and G.pail == 0, function() G.pail = 1 end)
   for p = 2, #PLOTS do
     once("Deed: " .. PLOTS[p].name, PLOTS[p].cost, PLOTS[p].w * PLOTS[p].h .. " cells of wild land to clear.",
       not G.plots[p] and G.plots[p - 1], function() G.plots[p] = true end)
@@ -661,6 +836,7 @@ function _update()
   end
   if ui == "shop" then update_shop() return end
   if ui == "mill" then update_mill() return end
+  if ui == "build" then update_build() return end
   if ui == "bag" then if btnp("b") or btnp("x") or btnp("a") then ui = nil end return end
   if ui == "report" then if btnp("a") or btnp("b") then ui = nil end return end
   if ui == "sleep" then
@@ -675,6 +851,7 @@ function _update()
     say("You fell asleep on your feet.")
     return
   end
+  if G.area == 1 then update_animals() end
   save_t = save_t + 1
   if save_t >= 1200 then save_t = 0; persist() end
 
@@ -817,6 +994,43 @@ function draw_mill(x, y, stage)     -- 48 x 48: a ruin, a frame, then sails, the
     sails(x + 24, y + 10, stage >= 3 and t() / 50 or 0.5, 22, true)
   end
 end
+function draw_coop(x, y, built)     -- 32 x 32
+  if not built then
+    rectfill(x + 3, y + 26, 26, 5, 7) line(x + 5, y + 26, x + 9, y + 12, 8) line(x + 24, y + 26, x + 22, y + 16, 8)
+    line(x + 9, y + 12, x + 18, y + 20, 7) rectfill(x + 12, y + 22, 9, 3, 9)
+    return
+  end
+  rectfill(x + 3, y + 14, 26, 16, 10) rect(x + 3, y + 14, 26, 16, 7)
+  for i = 0, 9 do line(x + 16 - i - 5, y + 4 + i, x + 16 + i + 4, y + 4 + i, i % 3 == 0 and 8 or 25) end
+  rectfill(x + 12, y + 21, 7, 9, 6) line(x + 10, y + 31, x + 20, y + 31, 8)
+  rectfill(x + 22, y + 18, 4, 4, 27)
+end
+function draw_shed(x, y, built)     -- 32 x 32
+  if not built then
+    rectfill(x + 2, y + 27, 28, 4, 28) rect(x + 2, y + 27, 28, 4, 30)
+    line(x + 4, y + 27, x + 4, y + 14, 8) line(x + 27, y + 27, x + 27, y + 20, 8)
+    return
+  end
+  rectfill(x + 2, y + 12, 28, 19, 8) rect(x + 2, y + 12, 28, 19, 6)
+  for i = 0, 5 do line(x + 1, y + 11 - i, x + 30, y + 7 - i, i % 2 == 0 and 30 or 28) end
+  rectfill(x + 10, y + 18, 12, 13, 6) rectfill(x + 10, y + 24, 12, 1, 9)
+  line(x + 10, y + 18, x + 21, y + 30, 9)
+end
+function draw_trough(x, y)
+  rectfill(x + 1, y + 7, 14, 6, 8) rect(x + 1, y + 7, 14, 6, 6)
+  rectfill(x + 2, y + 13, 2, 2, 6) rectfill(x + 12, y + 13, 2, 2, 6)
+  if G.feed > 0 then rectfill(x + 2, y + 8, clamp(G.feed, 2, 12), 2, 27) end
+end
+function draw_animal(i)
+  local a, m = G.an[i], ANIM[i]
+  local x, y = fl(m.x), fl(m.y)
+  local n = (a.k == "h" and 170 or 194) + ((m.wait == 0 and m.step % 16 < 8) and 2 or 0)
+  circfill(x, y - 1, a.k == "h" and 3 or 5, 15)
+  spr(n, x - 8, y - 15, 2, 2, m.face < 0)
+  if a.k == "g" and a.m == 1 and t() % 60 < 40 then circfill(x, y - 20, 3, 13) circ(x, y - 20, 3, 22) end
+  if a.p == 0 and G.clk > 0 and t() % 90 < 12 then pset(x + 5, y - 16, 26) pset(x + 6, y - 17, 26) pset(x + 7, y - 16, 26) pset(x + 6, y - 15, 26) end
+end
+
 function draw_mine(x, y)
   circfill(x + 8, y + 9, 8, 30) rectfill(x, y + 9, 16, 7, 30) circfill(x + 8, y + 10, 5, 1) rectfill(x + 3, y + 10, 10, 6, 1)
   line(x + 2, y + 8, x + 14, y + 12, 8) line(x + 2, y + 13, x + 14, y + 7, 9)
@@ -867,6 +1081,7 @@ function draw_world()
     for x = x0, x1 do
       local ch, n = tile(a, x, y), 32
       if ch == ":" or ch == "X" then n = 40
+      elseif ch == "p" then n = 72
       elseif ch == "~" then n = 42 + wf * 2
       elseif hash(x, y, a) < 140 then n = 34 end
       if a == 1 then
@@ -884,6 +1099,13 @@ function draw_world()
   for i, o in ipairs(FORAGE) do
     if o.a == a then rows[o.y] = rows[o.y] or {}; rows[o.y][#rows[o.y] + 1] = o end
   end
+  local arows = {}
+  if a == 1 then
+    for i, m in ipairs(ANIM) do
+      local r = fl((m.y - 1) / C)
+      arows[r] = arows[r] or {}; arows[r][#arows[r] + 1] = i
+    end
+  end
   local prow = fl((py - 1) / C)
   for y = y0, math.min(A.h - 1, y1 + 2) do
     for x = x0, x1 do
@@ -899,6 +1121,9 @@ function draw_world()
       elseif a == 1 then
         if ch == "h" and x == 7 and y == 3 then draw_hut(sx, sy - 32)
         elseif ch == "c" then draw_crate(sx, sy)
+        elseif ch == "k" and x == 19 and y == 23 then draw_coop(sx, sy - 16, G.coop == 1)
+        elseif ch == "g" and x == 22 and y == 23 then draw_shed(sx, sy - 16, G.shed == 1)
+        elseif ch == "r" then draw_trough(sx, sy)
         elseif ch == "W" and x == 17 and y == 4 then draw_wagon(sx, sy - 16)
         elseif ch == "m" and x == 25 and y == 3 then draw_mill(sx, sy - 32, G.mill)
         else
@@ -916,6 +1141,7 @@ function draw_world()
       end
     end
     if rows[y] then for _, o in ipairs(rows[y]) do spr(FOUND_BY[o.k].spr, o.x * C, o.y * C, 2, 2) end end
+    if arows[y] then for _, i in ipairs(arows[y]) do draw_animal(i) end end
     if y == prow then draw_farmer(fl(px), fl(py)) end
   end
   -- the cell your hands reach
@@ -1055,6 +1281,7 @@ function draw_bag()
   for i, c in ipairs(CROPS) do if have(c.key) > 0 then row(c.key, c.name, have(c.key)) end end
   for i, f in ipairs(FOUND) do if have(f.key) > 0 then row(f.key, f.name, have(f.key), f.mat and 11 or 13) end end
   if x == 28 and y == 74 then text("Nothing yet. Pick, pull and forage.", 28, 74, 28) end
+  if #G.an > 0 then text(herd("h") .. " hens, " .. herd("g") .. " goats. Trough: " .. G.feed, 28, 196, 17) end
   text("Mill: " .. (MILL[G.mill + 1] and MILL[G.mill + 1].name:lower() or "rebuilt") .. "   B: close", 28, 208, 11)
 end
 
@@ -1079,6 +1306,23 @@ function draw_mill_ui()
   if G.mill == 0 then text("Wood: stumps and sticks.", 40, 146, 28) text("Stone: stones and pebbles.", 40, 156, 28) end
 end
 
+function draw_build()
+  local Bd = BUILD[ui_kind]
+  panel(30, 50, 260, 140, "Mend the " .. Bd.name:lower())
+  for i, l in ipairs(wrap(Bd.about, 29)) do text(l, 40, 60 + i * 10, 12) end
+  local y, ok = 96, G.coins >= Bd.coins
+  text("Coins", 40, y, 12) text(math.min(G.coins, Bd.coins) .. "/" .. Bd.coins, 200, y, ok and 17 or 26)
+  for _, f in ipairs(FOUND) do
+    local n = Bd.need[f.key]
+    if n then
+      y = y + 14
+      text(f.name, 40, y, 12) text(math.min(have(f.key), n) .. "/" .. n, 200, y, have(f.key) >= n and 17 or 26)
+      if have(f.key) < n then ok = false end
+    end
+  end
+  text(ok and "A: build it!   B: back" or "B: back", 40, 172, 11)
+end
+
 function draw_report()
   panel(30, 50, 260, 140, "While you were away")
   local r = report
@@ -1098,6 +1342,7 @@ function _draw()
   if ui == "shop" then draw_shop()
   elseif ui == "bag" then draw_bag()
   elseif ui == "mill" then draw_mill_ui()
+  elseif ui == "build" then draw_build()
   elseif ui == "report" then draw_report()
   elseif ui == "sleep" then
     panel(60, 90, 200, 60, "The hut")
@@ -1198,6 +1443,30 @@ end
     138: ['................', '.....YYYYYY.....', '....YYYYYYYY....', '...OYYYYYYYYYOO.', '...1OrrrrrrOOO1.', '.....bsssssss...',
           '.....bssss1ss...', '.....bsssssss...', '......sssssm....', '.....wwUUUw.....', '....swUUUUw.....', '....sUUUUUU.....',
           '.....UUUUUU.....', '......UUUU......', '......nnnn......', '................'],
+    110: ['................', '................', '................', '................', '................', '.......bb.......',
+          '......bwwb......', '.....bwWwwb.....', '.....bwWwwb.....', '.....bwwwwb.....', '.....bwwwsb.....', '......bssb......',
+          '.......bb.......', '................', '................', '................'],   // egg
+    164: ['................', '................', '................', '......bbb.......', '.....bOOOb......', '....bOYOOOb.....',
+          '....bOYOOOb.....', '...bOOOOOOOb....', '...bOOOOOOOb....', '...bOOOOOOob....', '....bOOOOob.....', '.....boooob.....',
+          '......bbbb......', '................', '................', '................'],   // big egg
+    166: ['................', '................', '................', '......dddd......', '......dAAd......', '.....dAAAAd.....',
+          '....dWWWWWWd....', '....dWWWWWAd....', '....dWWWWWAd....', '....dWWWWWAd....', '....dWWWWWAd....', '....dWWWWAAd....',
+          '.....dddddd.....', '................', '................', '................'],   // goat milk
+    168: ['................', '................', '................', '......dddd......', '......dYYd......', '.....dAAAAd.....',
+          '....dwwwwwwd....', '....dwwwwwOd....', '....dwYwwwOd....', '....dwwwwwOd....', '....dwwwYwOd....', '....dwwwwOOd....',
+          '.....dddddd.....', '................', '................', '................'],   // creamy milk
+    170: ['................', '................', '................', '.......rr.......', '......rWWW......', '......WW1WO.....',
+          '......WWWW......', '..W..WWWWr......', '..WWWWWWWW......', '..WWWAWWWW......', '...WWWAAWW......', '....WWWWW.......',
+          '.....O..O.......', '.....O..O.......', '....OO.OO.......', '................'],   // hen
+    172: ['................', '................', '................', '.......rr.......', '......rWWW......', '......WW1WO.....',
+          '......WWWW......', '..W..WWWWr......', '..WWWWWWWW......', '..WWWAWWWW......', '...WWWAAWW......', '....WWWWW.......',
+          '.....O...O......', '....O....O......', '...OO...OO......', '................'],
+    194: ['................', '................', '...........d.d..', '..........dAAAd.', '..........A1AAA.', '.........AAAAAs.',
+          '..AAAAAAAAAAA...', '.AAWWWWWWAAA....', '.AWWWWWWWWAw....', '.AWWWWWWWWA.....', '.AAWWWWWWAA.....', '..AAAAAAAA......',
+          '..d.d...d.d.....', '..d.d...d.d.....', '..n.n...n.n.....', '................'],   // goat
+    196: ['................', '................', '...........d.d..', '..........dAAAd.', '..........A1AAA.', '.........AAAAAs.',
+          '..AAAAAAAAAAA...', '.AAWWWWWWAAA....', '.AWWWWWWWWAw....', '.AWWWWWWWWA.....', '.AAWWWWWWAA.....', '..AAAAAAAA......',
+          '..d..d..d..d....', '.d...d.d...d....', '.n...n.n...n....', '................'],
     140: ['................', '.....pppppp.....', '....pPPPPPPp....', '....pPppppPp....', '....psssssss....', '....ps1ss1ss....',
           '....pssssss.....', '.....ssmmss.....', '....RRRRRRRR....', '...sRRwRRwRRs...', '...sRRRRRRRRs...', '....RRRRRRRR....',
           '....RRRRRRRR....', '...RRRRRRRRRR...', '.....nn..nn.....', '................'],   // Marrow the trader
@@ -1222,6 +1491,7 @@ end
       put(42, x, y, ((x + y * 2) % 8 === 0 && r2 < 700) ? 23 : r < 100 ? 22 : 21);                 // water
       put(44, x, y, ((x + y * 2 + 4) % 8 === 0 && r2 < 700) ? 23 : r < 100 ? 22 : 21);
       put(46, x, y, ((x + (y >> 2)) % 4 === 0 && y % 4 !== 3) ? 17 : r < 250 ? 14 : 15);           // wild grass, not yours yet
+      put(72, x, y, r < 70 ? 18 : r < 420 ? 17 : 16);                    // pasture
       put(70, x, y, r < 30 ? 4 : r < 200 ? 16 : ((x ^ y) & 3) === 0 ? 14 : r < 600 ? 15 : 14);     // brambles
     }
     [[3, 4, 13], [4, 3, 27], [4, 5, 27], [5, 4, 27], [4, 4, 10], [11, 10, 13], [12, 9, 26], [12, 11, 26], [13, 10, 26], [12, 10, 27]]
