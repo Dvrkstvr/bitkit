@@ -1042,6 +1042,7 @@ end
   function loadCode(code, data, key, players, me) {
     putSave(key || null);
     RT._bkw_players(players || 1, me || 0);
+    BKNet.reset(RT, me ? null : key);      // network events (net_send) for games that don't run in lockstep
     const p = RT.stringToNewUTF8(code), d = RT.stringToNewUTF8(data || '');
     const rc = RT._bkw_load_ex(d, p);
     RT._free(p); RT._free(d);
@@ -1060,7 +1061,7 @@ end
     if (typeof startLevel === 'number' && !/GAME_BOOT/.test(extraLua || '')) extraLua = 'GAME_BOOT = 3\n' + (extraLua || '');
     syncLevel();
     if (BKTracks.beforeRun(cart)) atlasDirty = true;   // track carts: edge tiles come from the road segment tiles
-    if (linkWanted()) {        // other Bits are linked: they all play it too
+    if (linkWanted() && !isNetGame(getCode())) {        // other Bits are linked: they all play it too
       linkLaunch({ cart: decodeCart(serialize()), level: start, extra: extraLua, saveKey: cart.name || 'untitled',
         key: gameKey(bit.games.find(g => g.studio) || { studio: true }), studio: true });
       return;
@@ -1083,7 +1084,7 @@ end
   function stop(quiet) {
     if (link.s) { linkSend({ t: 'end', sid: link.s.sid }); link.s = null; link.running = false; linkUI(); linkHi(); }
     if (activeTab === 'map') setTimeout(drawMap, 0);
-    running = false; RT._bkw_stop();
+    running = false; RT._bkw_stop(); BKNet.stop();
     if (quiet !== true) log('■ stopped', 'sys');
   }
   onRuntimeError = msg => {
@@ -1131,7 +1132,9 @@ end
           RT.HEAPU8.set(input2.press, ptr.press2); RT._bkw_input(2, input2.mask, ptr.press2);
         }
         RT.HEAPU8.set(p1, ptr.press);
+        BKNet.before(RT);
         if (RT._bkw_frame(m1, ptr.press) !== 0) running = false;
+        BKNet.after(RT);
         takeSave();
         const tr = RT.HEAP32;
         if (playingEditor && tr[ptr.track + 2] && route.cur) route.cur.push(tr[ptr.track], tr[ptr.track + 1]);
@@ -1202,6 +1205,9 @@ end
     return [link.id].concat(others).slice(0, MAXP);
   }
   function linkWanted() { return !!link.ch && linkRoster().length > 1; }
+  // games that talk with net_send (Sweep Storm) aren't run in lockstep: every Bit runs its own copy and they
+  // meet in the game's own lobby (studio/net.js), which works for far more Bits than lockstep
+  function isNetGame(code) { return /\bnet_send\s*\(/.test(code || ''); }
   const linkSnapId = (np, id, slot) => `link${np}:${id}#${slot}`;
   // the runtime memory without its unused (zero) end, and back
   function heapCopy() {
@@ -1689,6 +1695,7 @@ end
     clearErrLine();
     RT.HEAPU8.set(snap.heap);
     saveKey = snap.meta.saveKey || null;
+    BKNet.reset(RT, saveKey);
     playingLevel = snap.meta.level | 0;
     gfxDirtyRT = false; mapDirtyRT = false;
     playingEditor = !!g.studio; playingLevels = c.levels;
@@ -1791,7 +1798,7 @@ end
       key.name = g.name;
       let c = null;
       try { c = g.studio ? cart : g.demo ? demoCart(g.demo) : decodeCart(g.data); } catch (e) { log(`Could not start ${g.name}: ${e.message}`, 'err'); return; }
-      if (linkWanted()) { linkFromHome(g, c, key, fresh); return; }   // other Bits are on their home screens: play it together
+      if (linkWanted() && !isNetGame(c.code)) { linkFromHome(g, c, key, fresh); return; }   // other Bits are on their home screens: play it together
       if (!fresh) {
         bit.busy = true;
         let snap = null;
@@ -2043,6 +2050,12 @@ end
       ['ents_players()', 'The player entities, player 1 first. PLAYER is player 1. Extra players start next to player 1 as copies of its entity; e.pnum is the player number.'],
       ['ents_player_pal(n, {from = to})', 'Recolour player n\'s sprite. Players 2-8 get their own leaf colours by default.'],
       ['Lockstep rules', 'Linked games run the same frames with the same buttons on every Bit, so the game must be deterministic: use rnd() and t(), not clock(), and avoid pairs() order in game logic. Enemies chase the nearest player; cutscenes listen to every player.']]],
+    ['Network events (10-20 Bits)', [
+      ['Why', 'Lockstep only works for a few Bits. Bigger games (Sweep Storm has up to 20) send small events instead, like "player 7 dug cell 40,12". Each Bit runs its own player and keeps the shared world up to date from what the others send. On PocketBit they go out as ESP-NOW broadcasts; in the studio every window running the same cart hears them.'],
+      ['net_send(v1, ..., v8)', 'Broadcast up to 8 whole numbers to every other Bit running this cart. Returns false after 16 events in one frame. Keep it to a few events a second per Bit.'],
+      ['net_recv()', 'The next event from another Bit as from, v1, v2, ... or nil when none is waiting. Read them in a loop every frame: while true do local from, a, b = net_recv() if not from then break end ... end'],
+      ['NET_ID', 'This Bit\'s network id (from its radio\'s address on PocketBit). 0 when there is no network, for example in a lockstep-linked game.'],
+      ['Rules of thumb', 'Events can arrive late, and Bits are not frame-synced, so every piece of state has one owner that sends it (your digger, your score). Things everyone can work out the same way, like a map from a shared seed, need only the seed. A good start: a lobby where Bits say hello, then one Bit sends the seed and who is playing.']]],
     ['Save data and clock', [
       ['save(t)', 'Keep a table (numbers, strings, booleans, nested tables; up to 4 KB) for the next time the cart runs. save(nil) deletes it. The studio keeps it per cart name in this browser; PocketBit keeps it in flash.'],
       ['saved()', 'The table from the last save(), or nil if there is none.'],

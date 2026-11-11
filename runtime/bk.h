@@ -18,6 +18,9 @@
 #define BK_FPS 60
 #define BK_SAVE_MAX 4096
 #define BK_MAX_PLAYERS 8      /* players in one game: linked Bits, or several on one screen */
+#define BK_NET_VALS 8         /* numbers in one network event */
+#define BK_NET_OUT 16         /* events a cart can send per frame */
+#define BK_NET_IN 64          /* events waiting to be read */
 
 /* Buttons. Bit index in the button mask and index for btn()/press(). */
 enum {
@@ -72,6 +75,16 @@ typedef struct {
 
   /* --- system requests to the host (launcher) --- */
   int32_t sys[2];                       /* command (0 none, 1 launch, 2 home, 3 edit, 4 load level map), argument; set this frame */
+
+  /* --- network events (net_send/net_recv): for big games (10-20 Bits) that don't run in lockstep.
+         Each slot is {from, count, v[BK_NET_VALS]}. The cart appends to out; the host sends them after the
+         frame (ESP-NOW broadcast on the device) and sets out_n = 0. The host fills in[] before a frame;
+         the cart reads them from in_r up to in_n. id is this Bit's network id (0 = no network). --- */
+  struct {
+    int32_t id, out_n, in_n, in_r;
+    int32_t out[BK_NET_OUT][BK_NET_VALS + 2];
+    int32_t in[BK_NET_IN][BK_NET_VALS + 2];
+  } net;
 
   /* --- save data: the cart writes it with save(), the host keeps it per cart (browser storage / flash) --- */
   struct { int32_t len; int32_t dirty; char data[BK_SAVE_MAX]; } save;   /* len -1 = nothing saved */

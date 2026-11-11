@@ -1,7 +1,7 @@
 // CI check for the game shell (runtime/bk_game.lua, GAME_RULES.md): every demo has a title screen and a goal,
 // the pause menu and settings work, settings and checkpoints survive a reload, and Continue picks up from them.
 const fs = require('fs'); global.window = {};
-for (const f of ['demo', 'harbour', 'tracks', 'kart', 'crossgate', 'entities', 'rules']) eval(fs.readFileSync(__dirname + '/../studio/' + f + '.js', 'utf8'));
+for (const f of ['demo', 'harbour', 'sweep', 'tracks', 'kart', 'crossgate', 'entities', 'rules']) eval(fs.readFileSync(__dirname + '/../studio/' + f + '.js', 'utf8'));
 let errors = [], logs = [];
 const fail = m => { console.error('FAIL', m); process.exitCode = 1; };
 const B = { left: 0, right: 1, up: 2, down: 3, a: 4, b: 5, x: 6, y: 7, l: 8, r: 9, start: 10, select: 11 };

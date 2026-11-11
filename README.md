@@ -67,7 +67,7 @@ The **AI** tab is a chat that can build your game with you: *"add coins the play
 
 1. Open **[dvrkstvr.github.io/bitkit](https://dvrkstvr.github.io/bitkit/)** in Chrome, Edge or Firefox.
 2. Plug in a controller and press any button on it.
-3. The studio starts on the Bit's home screen with every demo (Sprout Hop, Beacon Keeper, Kart Lab, Crossgate). Pick one with ← → and press A (Z on the keyboard). Hold Start+Select to come back.
+3. The studio starts on the Bit's home screen with every demo (Sprout Hop, Beacon Keeper, Sweep Storm, Kart Lab, Crossgate). Pick one with ← → and press A (Z on the keyboard). Hold Start+Select to come back.
 4. Press **Run** (or Ctrl+Enter) to play the cart that is open in the studio.
 5. Change something and press Run again.
 
@@ -127,6 +127,20 @@ An idle game for 1 to 4 players. Player 1 is the lighthouse in the middle of a s
 - With one player it uses `save()`, `saved()` and `clock()`, so the harbour keeps earning while the Bit is off.
 - **Goal:** guide 100 ships safely home (the harbour keeps going after that).
 
+### Sweep Storm
+
+<img src="docs/media/sweep-storm.png" width="480" alt="Sweep Storm: diggers racing across a minesweeper island">
+
+A minesweeper battle royale for up to 20 Bits, with bots filling the empty spots.
+
+- One big round island, made from a seed the Bits share, so every match is a new map. Everyone digs at the same time.
+- The shore is easy and worth 1 point a cell. The middle ring has more mines and is worth 2; the core is packed with mines and worth 4.
+- Power-ups hide under the cells and get stronger towards the middle: Shield and Scan on the shore, Heart and Sonar in the middle, Blast and Freeze (stuns every other digger) in the core.
+- Walk over dug ground with the D-pad, **A** digs, **B** flags, **X** uses your power-up and holding **Y** shows the whole island.
+- A mine costs one of your 3 hearts and stuns you. After 40 seconds a storm closes in from the shore and standing in it costs hearts too.
+- **Goal:** have the most points when the storm closes or the time runs out (the last digger standing gets a bonus).
+- **Play together:** open more studio windows, load Sweep Storm in each and pick New game. They find each other in the lobby and any of them can start. This uses network events (`net_send` / `net_recv`), not lockstep, so it scales to 20 PocketBits over ESP-NOW. Play alone and Continue takes you back to the match.
+
 ### Crossgate
 
 <img src="docs/media/crossgate.png" width="480" alt="Crossgate: two crossbow duelists on an old stone bridge">
@@ -182,7 +196,8 @@ A kart racer drawn SNES-style: the map becomes a floor seen in perspective, with
 | Stats & effects | `stat stat_set fx_apply fx_has fx_remove fx_clear` |
 | Sensors & events | `raycast circlecast on emit` |
 | Levels & cutscenes | `level LEVEL LEVELS cutscene cutscene_playing` |
-| Multiplayer | `btn(b, p) press(b, p) PLAYERS ME ents_players ents_player_pal` |
+| Multiplayer | `btn(b, p) press(b, p) PLAYERS ME ents_players ents_player_pal` (lockstep, 2-4 Bits) |
+| Network events | `net_send net_recv NET_ID` (big games, up to 20 Bits over ESP-NOW) |
 | Save data | `save saved clock` |
 | Misc | `t time rnd srand print` |
 
