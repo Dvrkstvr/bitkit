@@ -53,6 +53,7 @@ window.BKEntities = (function () {
     apply_touching: { g: 'Do', label: 'Apply effect to what it touches', p: [['effect', 'fx', '', ''], ['what', 'what', 'player', '']] },
     remove_effect: { g: 'Do', label: 'Remove effect', p: [['effect', 'fx', '', '']] },
     remove: { g: 'Do', label: 'Remove self' },
+    level: { g: 'Do', label: 'Go to level', p: [['n', 'num', 2, '']], help: 'Switches to another level (Map tab). The player keeps its HP.' },
   };
 
   function node(t, p, c) {
@@ -96,6 +97,7 @@ window.BKEntities = (function () {
         node('sequence', {}, [node('every', { frames: 120 }), node('spawn', { type: '', dx: -64, dy: -48 })]),
         node('sequence', {}, [node('count_up', { max: 300, key: 'grow', bar: true }), node('set', { key: 'state', value: 'grown' }), node('emit', { event: 'checkpoint' }), node('sound', { note: 'C6', wave: 4 })])])]),
       node('anim', { name: 'idle' })]),
+    'Exit (go to next level)': () => node('sequence', {}, [node('touching', { what: 'player' }), node('sound', { note: 'C6', wave: 4 }), node('level', { n: 2 })]),
     'Projectile (no behavior)': () => null,
   };
 
@@ -129,7 +131,8 @@ window.BKEntities = (function () {
     if (n.c) o.c = n.c.map(treeOut);
     return o;
   }
-  function toLua(data) {
+  // levels: optional [{name, w, h, placed}]; start: index (0-based) of the level to begin on
+  function toLua(data, levels, start) {
     if (!data || (!data.types.length && !(data.effects || []).length)) return '';
     const defs = data.types.map(t => {
       const anims = {};
@@ -145,9 +148,16 @@ window.BKEntities = (function () {
       every: +f.every || 0, tick: +f.tick || 0, tint: f.tint === '' || f.tint === undefined ? -1 : +f.tint, mods: (f.mods || []).filter(m => m.stat).map(m => ({ stat: m.stat, op: m.op, value: +m.value || 0 })) }) + ','));
     lines.push('})', 'ents_define({');
     defs.forEach(d => lines.push('  ' + luaVal(d) + ','));
-    lines.push('})', 'ents_place({');
-    data.placed.forEach(p => lines.push(`  {${luaStr(p.type)}, ${p.x | 0}, ${p.y | 0}},`));
-    lines.push('})');
+    const placedLua = list => list.map(p => `{${luaStr(p.type)}, ${p.x | 0}, ${p.y | 0}}`).join(', ');
+    if (levels && levels.length) {
+      lines.push('})', 'ents_levels({');
+      levels.forEach(L => lines.push(`  {name = ${luaStr(L.name)}, w = ${L.w | 0}, h = ${L.h | 0}, placed = {${placedLua(L.placed || [])}}},`));
+      lines.push(`}, ${((start | 0) + 1)})`);
+    } else {
+      lines.push('})', 'ents_place({');
+      data.placed.forEach(p => lines.push(`  {${luaStr(p.type)}, ${p.x | 0}, ${p.y | 0}},`));
+      lines.push('})');
+    }
     return lines.join('\n') + '\n';
   }
 
@@ -163,6 +173,10 @@ window.BKEntities = (function () {
     const sheet = $('entSheet'), sctx = sheet.getContext('2d');
 
     function cur() { return cart.entities.types[st.sel]; }
+    function placedCount(name) {
+      const lv = cart.levels && cart.levels.length ? cart.levels.map((L, i) => i === cart.level ? cart.entities.placed : L.placed) : [cart.entities.placed];
+      return lv.reduce((k, list) => k + list.filter(p => p.type === name).length, 0);
+    }
     const subBtns = [...document.querySelectorAll('#entForm .subtabs [data-sub]')];
     function showPage() {
       subBtns.forEach(b => b.classList.toggle('active', b.dataset.sub === st.page));
@@ -182,7 +196,7 @@ window.BKEntities = (function () {
       const th = thumb(t, f, 32);
       const sc = Math.min(c.width / th.width, c.height / th.height);
       x.drawImage(th, (c.width - th.width * sc) / 2, (c.height - th.height * sc) / 2, th.width * sc, th.height * sc);
-      const n = cart.entities.placed.filter(p => p.type === t.name).length;
+      const n = placedCount(t.name);
       $('entPlaced').textContent = n ? `${n} on the map` : 'not on the map yet';
       const k = t.tree ? countSteps(t.tree) : 0;
       $('entStepCount').textContent = k ? k : '';
@@ -216,7 +230,7 @@ window.BKEntities = (function () {
         const f = (t.anims.find(a => a.frames.length) || { frames: [0] }).frames[0];
         b.appendChild(thumb(t, f, 16));
         const s = document.createElement('span'); s.textContent = t.name; b.appendChild(s);
-        const n = cart.entities.placed.filter(p => p.type === t.name).length;
+        const n = placedCount(t.name);
         const c = document.createElement('span'); c.className = 'dim small'; c.textContent = n ? `${n} on map` : ''; b.appendChild(c);
         b.onclick = () => { st.sel = i; st.anim = 0; st.mode = 'ent'; render(); };
         listEl.appendChild(b);
@@ -257,10 +271,11 @@ window.BKEntities = (function () {
     };
     $('entDel').onclick = async () => {
       const t = cur(); if (!t) return;
-      const n = cart.entities.placed.filter(p => p.type === t.name).length;
+      const n = placedCount(t.name);
       if (!await ctx.ask(`Delete "${t.name}"?`, n ? `This also removes the ${n} placed on the map.` : 'It is not placed on the map.', 'Delete')) return;
       cart.entities.types.splice(st.sel, 1);
       cart.entities.placed = cart.entities.placed.filter(p => p.type !== t.name);
+      (cart.levels || []).forEach((L, i) => { L.placed = i === cart.level ? cart.entities.placed : L.placed.filter(p => p.type !== t.name); });
       st.sel = Math.max(0, st.sel - 1); changed(); render();
     };
 
@@ -289,6 +304,7 @@ window.BKEntities = (function () {
       if (n !== old && cart.entities.types.some(x => x.name === n)) { toast('That name is taken'); n = old; }
       t.name = n; e.target.value = n;
       cart.entities.placed.forEach(p => { if (p.type === old) p.type = n; });
+      (cart.levels || []).forEach(L => L.placed.forEach(p => { if (p.type === old) p.type = n; }));
       cart.entities.types.forEach(x => walk(x.tree, nd => { if (nd.p && nd.p.type === old) nd.p.type = n; if (nd.p && nd.p.what === old) nd.p.what = n; }));
       changed(); renderList(); renderTree();
     });

@@ -62,7 +62,7 @@ typedef struct {
   int32_t track[3];                     /* x, y, set this frame */
 
   /* --- system requests to the host (launcher) --- */
-  int32_t sys[2];                       /* command (0 none, 1 launch, 2 home), argument; set this frame */
+  int32_t sys[2];                       /* command (0 none, 1 launch, 2 home, 3 edit, 4 load level map), argument; set this frame */
 
   /* --- time / rng --- */
   uint32_t frame;

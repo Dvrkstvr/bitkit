@@ -70,6 +70,18 @@ end
     entities: { types: [], placed: [] }
   };
 
+  // levels: each has its own map and placed entities. cart.map / cart.entities.placed always point at the level being edited.
+  function bindLevel(i) {
+    const L = cart.levels[i];
+    cart.level = i; cart.map = L.map; cart.entities.placed = L.placed;
+  }
+  function syncLevel() { const L = cart.levels[cart.level]; L.map = cart.map; L.placed = cart.entities.placed; }
+  function normalizeLevels() {   // after cart.map / cart.entities were rebuilt (new cart, demo, file)
+    if (!cart.levels || !cart.levels.length) cart.levels = [{ name: 'Level 1', w: MAPW, h: MAPH, map: cart.map, placed: cart.entities.placed }];
+    bindLevel(0);
+  }
+  const levelsMeta = levels => levels.map(L => ({ name: L.name, w: L.w, h: L.h, placed: L.placed }));
+
   // byte RLE: [count, value] pairs (count 1..255) then base64
   function rle(bytes) {
     const out = [];
@@ -89,30 +101,42 @@ end
   function unb64(s) { const b = atob(s), u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; }
 
   function serialize() {
+    syncLevel();
+    const L0 = cart.levels[0];
+    const entities = Object.assign({}, cart.entities, { placed: L0.placed });
     return {
       format: 'bitkit-cart', version: 1, name: cart.name, code: getCode(),
       palette: b64(cart.palette), tiles: rle(cart.tiles), flags: rle(cart.flags),
-      map: rle(new Uint8Array(cart.map.buffer.slice(0))),
-      entities: cart.entities, entities_lua: BKEntities.toLua(cart.entities)
+      map: rle(new Uint8Array(L0.map.buffer.slice(0))),
+      levels: cart.levels.map(L => ({ name: L.name, w: L.w, h: L.h, map: rle(new Uint8Array(L.map.buffer.slice(0))), placed: L.placed })),
+      entities, entities_lua: BKEntities.toLua(entities, levelsMeta(cart.levels), 0)
     };
   }
   // decode a cart file object into a fresh cart (does not touch the editor)
   function decodeCart(o) {
     if (!o || (o.format !== 'bitkit-cart' && o.format !== 'miniboi-cart')) throw new Error('Not a ' + APP + ' cart file');
+    const entities = o.entities && o.entities.types ? o.entities : { types: [], placed: [] };
+    const unmap = str => new Uint16Array((str ? unrle(str, MAPW * MAPH * 2) : new Uint8Array(MAPW * MAPH * 2)).buffer);
+    const map = unmap(o.map);
+    const levels = Array.isArray(o.levels) && o.levels.length
+      ? o.levels.map((L, i) => ({ name: L.name || `Level ${i + 1}`, w: Math.max(1, Math.min(MAPW, L.w | 0 || MAPW)), h: Math.max(1, Math.min(MAPH, L.h | 0 || MAPH)),
+          map: unmap(L.map), placed: Array.isArray(L.placed) ? L.placed : [] }))
+      : [{ name: 'Level 1', w: MAPW, h: MAPH, map, placed: entities.placed || [] }];
+    entities.placed = levels[0].placed;
     return {
-      name: o.name || 'untitled', code: o.code || '',
+      name: o.name || 'untitled', code: o.code || '', levels,
       palette: o.palette ? unb64(o.palette).subarray(0, 768) : DEFAULT_PAL.slice(),
       tiles: o.tiles ? unrle(o.tiles, TILES * 64) : new Uint8Array(TILES * 64),
       flags: o.flags ? unrle(o.flags, TILES) : new Uint8Array(TILES),
-      entities: o.entities && o.entities.types ? o.entities : { types: [], placed: [] },
-      map: new Uint16Array((o.map ? unrle(o.map, MAPW * MAPH * 2) : new Uint8Array(MAPW * MAPH * 2)).buffer)
+      entities, map: levels[0].map
     };
   }
   function deserialize(o) {
     const c = decodeCart(o);
     cart.name = c.name; cart.code = c.code;
-    cart.palette.set(c.palette); cart.tiles.set(c.tiles); cart.flags.set(c.flags); cart.map.set(c.map);
-    cart.entities = c.entities;
+    cart.palette.set(c.palette); cart.tiles.set(c.tiles); cart.flags.set(c.flags);
+    cart.entities = c.entities; cart.levels = c.levels;
+    bindLevel(0);
   }
 
   let dirtySave = false;
@@ -175,7 +199,7 @@ end
     document.querySelectorAll('.tab').forEach(el => el.classList.toggle('active', el.id === 'tab-' + t));
     if (t === 'code' && cm) cm.refresh();
     if (t === 'sprites') drawSprites();
-    if (t === 'map') { refreshEntSelect(); drawMap(); }
+    if (t === 'map') { refreshLevels(); refreshEntSelect(); drawMap(); }
     if (t === 'entities') entEd.render();
     lsSet(LS.settings + '.tab', t);
   }
@@ -204,7 +228,8 @@ end
     const undo = [];
     return {
       push() { undo.push(get().slice()); if (undo.length > 60) undo.shift(); },
-      pop() { if (!undo.length) return toast('Nothing to undo'); set(undo.pop()); }
+      pop() { if (!undo.length) return toast('Nothing to undo'); set(undo.pop()); },
+      clear() { undo.length = 0; }
     };
   }
   const tileHist = makeHistory(() => cart.tiles, v => { cart.tiles.set(v); gfxChanged(); drawSprites(); });
@@ -406,6 +431,16 @@ end
       for (let j = 1; j < vh; j++) { mvCtx.moveTo(0, j * s + .5); mvCtx.lineTo(mv.width, j * s + .5); }
       mvCtx.stroke();
     }
+    // outside this level's size: shaded (the world ends there for entities and the camera)
+    const L = cart.levels[cart.level];
+    if (L && (L.w < MAPW || L.h < MAPH)) {
+      const ex = (L.w - mp.x) * s, ey = (L.h - mp.y) * s;
+      mvCtx.fillStyle = 'rgba(5,5,12,.6)';
+      if (ex < mv.width) mvCtx.fillRect(Math.max(0, ex), 0, mv.width, mv.height);
+      if (ey < mv.height) mvCtx.fillRect(0, Math.max(0, ey), Math.max(0, Math.min(ex, mv.width)), mv.height);
+      mvCtx.strokeStyle = 'rgba(138,211,90,.8)'; mvCtx.lineWidth = 2;
+      mvCtx.strokeRect(-mp.x * s, -mp.y * s, L.w * s, L.h * s); mvCtx.lineWidth = 1;
+    }
     // screen boundaries every 40x30 tiles, and the map edge
     mvCtx.setLineDash([6, 4]); mvCtx.strokeStyle = 'rgba(255,210,63,.5)'; mvCtx.beginPath();
     for (let i = 0; i <= vw; i++) if ((mp.x + i) % 40 === 0) { mvCtx.moveTo(i * s + .5, 0); mvCtx.lineTo(i * s + .5, mv.height); }
@@ -454,8 +489,9 @@ end
   }
   function drawRoute() {
     const z = mp.zoom, ox = mp.x * 8, oy = mp.y * 8;
-    route.runs.forEach((pts, ri) => {
-      const newest = ri === route.runs.length - 1;
+    const runs = route.runs.filter(r => (r.level || 0) === cart.level).slice(-3);
+    runs.forEach((pts, ri) => {
+      const newest = ri === runs.length - 1;
       const col = newest ? '255,210,63' : '110,195,240';
       const alpha = newest ? .9 : .35;
       mvCtx.lineWidth = newest ? 2 : 1.5;
@@ -558,6 +594,52 @@ end
   });
   document.querySelectorAll('.mtool').forEach(b => b.onclick = () => setMapTool(b.dataset.mtool));
   function setMapTool(t) { mp.tool = t; document.querySelectorAll('.mtool').forEach(b => b.classList.toggle('active', b.dataset.mtool === t)); }
+  // ---- levels
+  function refreshLevels() {
+    $('mapLevel').innerHTML = cart.levels.map((L, i) => `<option value="${i}"${i === cart.level ? ' selected' : ''}>${i + 1}. ${escapeHtml(L.name)}</option>`).join('');
+    $('mapPlayLevel').title = `Run the game starting on ${cart.levels[cart.level].name}`;
+  }
+  function switchLevel(i) {
+    syncLevel(); bindLevel(i); mapHist.clear();
+    mp.x = 0; mp.y = 0;
+    refreshLevels(); drawMap(); markDirty();
+  }
+  $('mapLevel').onchange = e => switchLevel(+e.target.value);
+  $('mapLevelAdd').onclick = () => {
+    syncLevel();
+    const cur = cart.levels[cart.level];
+    cart.levels.push({ name: `Level ${cart.levels.length + 1}`, w: cur.w, h: cur.h, map: new Uint16Array(MAPW * MAPH), placed: [] });
+    switchLevel(cart.levels.length - 1);
+    toast(`Added ${cart.levels[cart.level].name}`);
+  };
+  $('mapPlayLevel').onclick = () => run(cart.level);
+  $('mapLevelEdit').onclick = () => {
+    const L = cart.levels[cart.level], n = cart.levels.length;
+    modal(`Level ${cart.level + 1} settings`, `<div class="prop-grid">
+        <span>Name</span><span><input id="lvName" value="${escapeHtml(L.name)}" spellcheck="false"></span>
+        <span>Size</span><span><input id="lvW" type="number" min="1" max="${MAPW}" value="${L.w}"> × <input id="lvH" type="number" min="1" max="${MAPH}" value="${L.h}"> tiles <span class="hint">(${MAPW}×${MAPH} max, one screen is 40×30)</span></span>
+      </div>
+      <p class="hint">In code, <code>level(n)</code> switches levels and <code>LEVEL</code> is the current one. The <b>Go to level</b> behavior step (or the <b>Exit</b> preset) does it from an entity.</p>`, [
+      ...(n > 1 ? [['Delete level', async () => {
+        if (!await ask(`Delete "${L.name}"?`, 'Its map and the entities placed on it are removed.', 'Delete')) return;
+        cart.levels.splice(cart.level, 1); bindLevel(Math.min(cart.level, cart.levels.length - 1)); mapHist.clear();
+        refreshLevels(); drawMap(); markDirty();
+      }]] : []),
+      ...(cart.level > 0 ? [['Move up', () => { const i = cart.level; syncLevel(); [cart.levels[i - 1], cart.levels[i]] = [cart.levels[i], cart.levels[i - 1]]; bindLevel(i - 1); refreshLevels(); markDirty(); closeModal(); }]] : []),
+      ['Duplicate', () => {
+        syncLevel();
+        cart.levels.splice(cart.level + 1, 0, { name: L.name + ' copy', w: L.w, h: L.h, map: L.map.slice(), placed: L.placed.map(p => Object.assign({}, p)) });
+        closeModal(); switchLevel(cart.level + 1);
+      }],
+      ['Save', () => {
+        L.name = $('lvName').value.trim() || L.name;
+        L.w = Math.max(1, Math.min(MAPW, Math.round(+$('lvW').value) || L.w));
+        L.h = Math.max(1, Math.min(MAPH, Math.round(+$('lvH').value) || L.h));
+        refreshLevels(); drawMap(); markDirty(); closeModal();
+      }, 'primary'],
+      ['Cancel', closeModal]]);
+  };
+
   function refreshEntSelect() {
     const sel = $('mapEnt'), types = cart.entities.types;
     if (!types.some(t => t.name === mp.ent)) mp.ent = types.length ? types[0].name : '';
@@ -738,11 +820,12 @@ end
   let playingEditor = false;   // the runtime is playing the studio's cart (not the home screen or a Bit game)
   const overlay = $('gameOverlay');
 
-  function syncToRuntime(withMap) {
+  let playingLevels = null;   // levels of the cart being played, for level() map swaps
+  function syncToRuntime(withMap, levelIdx) {
     RT.HEAPU8.set(cart.palette, ptr.pal);
     RT.HEAPU8.set(cart.tiles, ptr.tiles);
     RT.HEAPU8.set(cart.flags, ptr.flags);
-    if (withMap) RT.HEAPU16.set(cart.map, ptr.map >> 1);
+    if (withMap) RT.HEAPU16.set(cart.levels[levelIdx || 0].map, ptr.map >> 1);
     gfxDirtyRT = false;
   }
   function loadCode(code, data) {
@@ -753,19 +836,24 @@ end
   }
   // player route: positions reported by ents_player()/track() in the last few runs
   const route = { runs: [], cur: null, show: true };
-  function run() {
-    route.cur = [];
+  function newRouteSegment(level) {
+    route.cur = []; route.cur.level = level;
     route.runs.push(route.cur);
-    if (route.runs.length > 3) route.runs.shift();
+    if (route.runs.length > 24) route.runs.shift();
+  }
+  function run(startLevel) {
+    const start = typeof startLevel === 'number' ? startLevel : 0;
+    syncLevel();
+    newRouteSegment(start);
     startAudio();
     overlay.classList.add('hidden');
     clearErrLine();
-    syncToRuntime(true);
+    syncToRuntime(true, start);
     mapDirtyRT = false;
-    log(`▶ running "${cart.name}"`, 'sys');
-    playingEditor = true;
+    log(`▶ running "${cart.name}"` + (start ? ` from ${cart.levels[start].name}` : ''), 'sys');
+    playingEditor = true; playingLevels = cart.levels;
     if (bit.on) bit.playing = 'studio';
-    running = loadCode(getCode(), BKEntities.toLua(cart.entities)) === 0;
+    running = loadCode(getCode(), BKEntities.toLua(cart.entities, levelsMeta(cart.levels), start)) === 0;
     acc = 0; last = performance.now();
     screen.focus();
   }
@@ -776,7 +864,7 @@ end
     overlay.classList.remove('hidden');
     showErrLine(msg);
   };
-  $('btnRun').onclick = run;
+  $('btnRun').onclick = () => run();
   $('btnStop').onclick = () => { stop(); if (bit.on) setBitPower(false); };
   screen.addEventListener('mousedown', () => screen.focus());
   $('btnFull').onclick = () => { const g = $('gameWrap'); (g.requestFullscreen || g.webkitRequestFullscreen).call(g); screen.focus(); };
@@ -831,20 +919,23 @@ end
     setCode(cart.code);
     atlasDirty = true; gfxDirtyRT = true;
     if (activeTab === 'sprites') drawSprites();
-    if (activeTab === 'map') { refreshEntSelect(); drawMap(); }
+    if (activeTab === 'map') { refreshLevels(); refreshEntSelect(); drawMap(); }
     if (activeTab === 'entities') entEd.render();
   }
   function loadDemo() {
     cart.name = BK_DEMO.name; cart.code = BK_DEMO.code; cart.palette.set(DEFAULT_PAL);
-    BK_DEMO.buildGfx(cart);
+    cart.levels = null; cart.map = new Uint16Array(MAPW * MAPH);
+    BK_DEMO.buildGfx(cart); normalizeLevels();
     applyCart(); saveLocal();
   }
   $('cartName').addEventListener('input', e => { cart.name = e.target.value || 'untitled'; markDirty(); });
   $('btnNew').onclick = async () => {
     if (!await ask('Start a new cart?', 'This replaces the current cart. Use Save / share first if you want to keep a copy.', 'Start new cart')) return;
     cart.name = 'my game'; cart.code = NEW_CODE; cart.palette.set(DEFAULT_PAL);
-    cart.tiles.fill(0); cart.flags.fill(0); cart.map.fill(0);
+    cart.tiles.fill(0); cart.flags.fill(0);
+    cart.levels = null; cart.map = new Uint16Array(MAPW * MAPH);
     cart.entities = { types: [], placed: [] };
+    normalizeLevels();
     setCartFile(null); applyCart(); saveLocal();
   };
   $('btnDemo').onclick = async () => {
@@ -952,14 +1043,19 @@ end
     startAudio();
     overlay.classList.add('hidden');
     RT.HEAPU8.set(c.palette, ptr.pal); RT.HEAPU8.set(c.tiles, ptr.tiles); RT.HEAPU8.set(c.flags, ptr.flags);
-    RT.HEAPU16.set(c.map, ptr.map >> 1);
-    gfxDirtyRT = true; playingEditor = false; bit.playing = label;
+    RT.HEAPU16.set(c.levels[0].map, ptr.map >> 1);
+    gfxDirtyRT = true; playingEditor = false; bit.playing = label; playingLevels = c.levels;
     log(`▶ Bit: playing "${c.name}"`, 'sys');
-    running = loadCode(c.code, BKEntities.toLua(c.entities)) === 0;
+    running = loadCode(c.code, BKEntities.toLua(c.entities, levelsMeta(c.levels), 0)) === 0;
     acc = 0; last = performance.now();
     screen.focus();
   }
   async function bitRequest(cmd, arg) {
+    if (cmd === 4) {   // level(n): load that level's map before the next frame
+      const L = playingLevels && playingLevels[arg - 1];
+      if (L) { RT.HEAPU16.set(L.map, ptr.map >> 1); if (playingEditor) newRouteSegment(arg - 1); }
+      return;
+    }
     if (cmd === 2) { if (bit.on) bootHome(); return; }
     const g = bit.games[arg - 1];
     if (!bit.on || bit.playing !== 'home' || !g) return;
@@ -1140,6 +1236,11 @@ end
       ['raycast(x,y,dx,dy,len,[what],[ignore])', 'Cast a line. Returns hit, hx, hy, thing. what: "wall", "player", "any", "enemy", "friend" or an entity name. Walls block it.'],
       ['circlecast(x,y,r,[what],[ignore])', 'List of things (entities or PLAYER) inside the circle.'],
       ['Teams and damage', 'Entities with touch damage hurt the other team when they first touch. The player is on the friend team, so enemy damage sends "player_hurt". Projectiles vanish after hitting.']]],
+    ['Levels', [
+      ['level(n)', 'Switch to level n (made on the Map tab) at the start of the next frame. Its map and entities load; the player keeps its HP and data. Returns false if there is no level n.'],
+      ['LEVEL / LEVELS', 'The current level number, and the list of levels: LEVELS[n].name, .w and .h (in tiles).'],
+      ['on("level", fn)', 'Called with (n, name) after a level loads. Use it to move the camera or reset a respawn point.'],
+      ['Go to level', 'Behavior step that calls level(n). The Exit preset uses it when the player touches the entity.']]],
     ['The Bit (emulated PocketBit)', [
       ['⏻ Bit button', 'Turns on the emulated PocketBit: a home screen with the studio cart and every game on its memory card. D-pad chooses, A plays, Y opens a game in the studio.'],
       ['Start + Select', 'Hold both in a game to go back to the home screen, like on the device.'],
@@ -1166,7 +1267,7 @@ end
   $('appName').textContent = APP;
   let restored = false;
   try { const s = lsGet(LS.cart); if (s) { deserialize(JSON.parse(s)); restored = true; } } catch (e) { log('Saved cart was unreadable, starting fresh', 'sys'); }
-  if (!restored) { cart.name = BK_DEMO.name; cart.code = BK_DEMO.code; BK_DEMO.buildGfx(cart); }
+  if (!restored) { cart.name = BK_DEMO.name; cart.code = BK_DEMO.code; BK_DEMO.buildGfx(cart); normalizeLevels(); }
   applyCart();
   log(`${APP} Studio ready. ${restored ? 'Restored your last cart.' : 'Loaded the demo cart.'} Press Run (Ctrl+Enter).`, 'sys');
   showTab(lsGet(LS.settings + '.tab') || 'code');

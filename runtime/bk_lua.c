@@ -237,6 +237,8 @@ static int l_track(lua_State *l) {
    home(): ask the host to go back to the home screen. The host acts after the frame. */
 static int l_launch(lua_State *l) { BK->sys[0] = lua_toboolean(l, 2) ? 3 : 1; BK->sys[1] = ci(l, 1); return 0; }
 static int l_home(lua_State *l) { (void)l; BK->sys[0] = 2; BK->sys[1] = 0; return 0; }
+/* _level_map(n): ask the host to copy level n's map into map memory before the next frame (used by level()). */
+static int l_level_map(lua_State *l) { BK->sys[0] = 4; BK->sys[1] = ci(l, 1); return 0; }
 
 /* ---- print -> console ---- */
 static int l_print(lua_State *l) {
@@ -262,7 +264,7 @@ static const luaL_Reg API[] = {
   {"btn", l_btn}, {"btnp", l_btnp}, {"btnr", l_btnr}, {"press", l_press},
   {"t", l_t}, {"time", l_time}, {"rnd", l_rnd}, {"srand", l_srand},
   {"sfx", l_sfx}, {"tone", l_tone}, {"stop", l_stop},
-  {"print", l_print}, {"track", l_track}, {"launch", l_launch}, {"home", l_home},
+  {"print", l_print}, {"track", l_track}, {"launch", l_launch}, {"home", l_home}, {"_level_map", l_level_map},
   {NULL, NULL}
 };
 

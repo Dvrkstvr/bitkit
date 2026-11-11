@@ -6,13 +6,22 @@
 -- Everything that moves is an entity (see the Entities tab), including you.
 -- Stay next to a sapling until it grows into a tree: that's your new checkpoint.
 -- Water drops heal you, mud and sticky seeds slow you down.
-
-MAP_W, MAP_H = 160, 30
+-- Reach the red flag to go to the next level (levels are made on the Map tab).
 
 function _init()
-  ENT_WORLD_W, ENT_WORLD_H = MAP_W * 8, MAP_H * 8
   score, total, defeated = 0, #ents_all("drop"), 0
-  spawn_x, spawn_y = 24, 160
+  spawn_x, spawn_y = PLAYER.x, PLAYER.y
+  banner, banner_t = LEVELS[LEVEL].name, 120
+
+  -- a new level loaded (an Exit flag uses the "Go to level" step)
+  on("level", function(n, name)
+    spawn_x, spawn_y = PLAYER.x, PLAYER.y
+    total = total + #ents_all("drop")
+    banner, banner_t = name, 120
+  end)
+  on("win", function()
+    if not won then won = true; sfx("C6", 4, 0.4, 30) end
+  end)
 
   -- events sent by entities (their behavior trees use "Send event")
   on("pickup", function() score = score + 1 end)
@@ -42,13 +51,18 @@ function _update()
 end
 
 function _draw()
-  cls(21)
+  local cave = LEVEL == 2
+  cls(cave and 31 or 21)
   local cx = ents_camera()       -- follow the player
   camera()
-  for i = 0, 6 do                -- parallax clouds
+  for i = 0, 6 do                -- parallax clouds (or glowing moss in the cave)
     local x = (i * 97 - cx // 3) % 400 - 40
     local y = 20 + (i * 37) % 60
-    circfill(x, y, 10, 23) circfill(x + 12, y + 2, 8, 23) circfill(x - 10, y + 3, 7, 23)
+    if cave then
+      circfill(x, y + 40, 2, 15) circfill(x + 30, y + 70, 1, 16)
+    else
+      circfill(x, y, 10, 23) circfill(x + 12, y + 2, 8, 23) circfill(x - 10, y + 3, 7, 23)
+    end
   end
   camera(cx, 0)
   map(cx // 8, 0, 41, 30, (cx // 8) * 8, 0)
@@ -68,8 +82,16 @@ function hud()
   if fx_has(PLAYER, "slow") then text("SLOW", 150, 2, 22) end
   text("L", 200, 2, 29) bar(210, 3, press("l"))
   text("R", 258, 2, 29) bar(268, 3, press("r"))
-  if score == total and total > 0 then
+  if won then
+    text("YOU MADE IT!", 112, 100, 27)
+    text(score .. "/" .. total .. " drops", 124, 114, 13)
+  elseif score == total and total > 0 then
     text("ALL DROPS! THE GARDEN BLOOMS", 48, 110, 27)
+  end
+  if banner_t > 0 then
+    banner_t = banner_t - 1
+    rectfill(0, 40, 320, 20, 1)
+    text(banner, 160 - #banner * 8, 42, 13, 2)
   end
 end
 
@@ -106,6 +128,8 @@ end
     22: ['........', '........', '........', '........', '........', '..NNNN..', '.NnNNnN.', 'NNNNNNNN'],
     23: ['........', '.rr.rr..', 'rwrrrrr.', 'rrrrrrr.', '.rrrrr..', '..rrr...', '...r....', '........'],
     24: ['........', '.SS.SS..', 'S..S..S.', 'S.....S.', '.S...S..', '..S.S...', '...S....', '........'],
+    30: ['.sRRRR..', '.sRrrrR.', '.sRrrRR.', '.sRRRR..', '.s......', '.s......', '.s......', '.s......'],
+    46: ['.s......', '.s......', '.s......', '.s......', '.s......', '.s......', 'SSS.....', 'sss.....'],
     21: ['........', '...s....', '..sSs...', '.sSSSs..', 'sSSSSSs.', 'SSSSSSSS', '........', '........'],
   };
 
@@ -240,6 +264,42 @@ end
     [36, 90, 118, 140].forEach(c => place('bee', c, 7));
     [58, 112].forEach(c => place('flower', c));
     place('guide', 73); place('button', 77); place('gate', 82, 0, 4);
+    place('exit', 156, 0, 2);
+
+    // the exit flag and the goal flag
+    const flag = { sh: 2, hp: 0, team: 'neutral', damage: 0, grav: false, collide: false, anims: [A('idle', [30])] };
+    cart.entities.types.push(
+      Object.assign({}, base, flag, { name: 'exit',
+        tree: N('sequence', {}, [N('touching', { what: 'player' }), N('sound', { note: 'C6', wave: 4 }), N('level', { n: 2 })]) }),
+      Object.assign({}, base, flag, { name: 'goal',
+        tree: N('selector', {}, [N('sequence', {}, [N('touching', { what: 'player' }), N('emit', { event: 'win' })]),
+          N('sequence', {}, [N('near', { dist: 48 }), N('say', { text: 'Almost there!' })])]) }));
+
+    // ---- level 2: a short mossy cave
+    const map2 = new Uint16Array(256 * 128), CW = 84;
+    const set2 = (x, y, t) => { if (x >= 0 && x < CW && y >= 0 && y < 30) map2[y * W + x] = t; };
+    const h2 = [];
+    for (let x = 0; x < CW; x++) {
+      const hh = x < 10 ? 24 : x < 30 ? 22 + ((x >> 2) % 2) : x < 50 ? 25 : x < 66 ? 21 + ((x >> 3) % 3) : 24;
+      const gap = (x >= 44 && x <= 46);
+      h2[x] = gap ? -1 : hh;
+      for (let y = 0; y < 3 + ((x * 7) % 3 === 0 ? 1 : 0); y++) set2(x, y, 18);      // brick ceiling
+      if (!gap) { set2(x, hh, 16); for (let y = hh + 1; y < 30; y++) set2(x, y, 17); if (x % 7 === 3) set2(x, hh - 1, 19); }
+    }
+    [[14, 18, 4], [36, 19, 5], [52, 20, 4], [60, 16, 3]].forEach(([x, y, len]) => { for (let i = 0; i < len; i++) set2(x + i, y, 18); });
+    const placed2 = [];
+    const place2 = (type, col, up, sh) => { const g = h2[col]; if (g === undefined || g < 0) return; placed2.push({ type, x: col * 8, y: (g - (sh || 1) - (up || 0)) * 8 }); };
+    place2('sprout', 3); place2('sage', 7);
+    [[15, 17], [37, 18], [38, 18], [53, 19], [61, 15], [45, 22]].forEach(([x, y]) => placed2.push({ type: 'drop', x: x * 8, y: y * 8 }));
+    [20, 33, 56, 70].forEach(c => place2('slug', c));
+    [28, 48, 64].forEach(c => place2('bee', c, 6));
+    place2('flower', 40); place2('mud', 26);
+    place2('sapling', 50, 0, 2);
+    place2('goal', 80, 0, 2);
+    cart.levels = [
+      { name: 'Sunny Meadow', w: MW, h: 30, map: cart.map, placed: cart.entities.placed },
+      { name: 'Mossy Cave', w: CW, h: 30, map: map2, placed: placed2 },
+    ];
   }
 
   window.BK_DEMO = { name: 'Sprout Hop', code, buildGfx };
