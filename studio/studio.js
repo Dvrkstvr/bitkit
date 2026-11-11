@@ -367,6 +367,7 @@ end
     if (t === 'track') trkEd.render();
     if (t === 'game') renderGameTab();
     if (t === 'hexbeat') hexEd.render();
+    if (t === 'mybit') myBit.render(); else myBit.stop();
     if (t === 'loops') loopEd.render();
     if (t !== 'hexbeat' && t !== 'loops') BKMusic.player.stop();
     lsSet(LS.settings + '.tab', t);
@@ -456,6 +457,8 @@ end
       modalEl.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => { closeModal(); cb(+b.dataset.pick); });
     } });
   const hexEd = BKHexbeat.init(musicCtx('hexbeat'));
+  const myBit = BKMyBit.init({ el: $('tab-mybit'), toast, escapeHtml, ask: (...a) => ask(...a), isActive: () => activeTab === 'mybit',
+    changed: () => { loadBitSettings(); if (bit.on && bit.playing === 'home') refreshHomeSoon(); } });
   const loopEd = BKLoopbox.init(musicCtx('loops'));
   BKMusic.player.setMuted(() => settings.muted);
   const csEd = BKCutscenes.init({
@@ -1571,7 +1574,7 @@ display()                                   -- off</pre><p class="dim">The Help 
     putSave(key || null);
     RT._bkw_players(players || 1, me || 0);
     BKNet.reset(RT, me ? null : key);      // network events (net_send) for games that don't run in lockstep
-    const p = RT.stringToNewUTF8(code), d = RT.stringToNewUTF8(data || '');
+    const p = RT.stringToNewUTF8(code), d = RT.stringToNewUTF8(namesLua() + (data || ''));
     const rc = RT._bkw_load_ex(d, p);
     RT._free(p); RT._free(d);
     return rc;
@@ -1633,14 +1636,30 @@ display()                                   -- off</pre><p class="dim">The Help 
   /* The Bit's own settings (the Settings app on the home screen, saved as "Bit settings"): a screen look over every
      game and app, its strength, the backlight and the volume. Only while the studio is a Bit (bit.on). The look is
      put in just for drawing the frame, so the game's own display() value stays as it was (and in a paused game). */
-  const bitSet = { look: 'game', strength: 10, bright: 10, volume: 10 };
+  /* The Settings app's USER page is the owner's profile: name, colour (a palette index) and the Bit's own name.
+     "theme" (THEME'S) as the look means the look of the Bit's theme (studio/themes.js). */
+  const bitSet = { look: 'theme', strength: 10, bright: 10, volume: 10, name: '', color: 27, bit: '' };
+  let bitTheme = BKThemes.current();
   function loadBitSettings() {
     try { const raw = localStorage.getItem('bitkit.save.Bit settings'); if (raw) Object.assign(bitSet, BKMusic.parseLua(raw)); } catch (e) { /* keep the last ones */ }
+    bitTheme = BKThemes.current();
     screen.style.filter = bit.on && bitSet.bright < 10 ? `brightness(${(0.35 + bitSet.bright * 0.065).toFixed(3)})` : '';
   }
   window.BKBitSettings = bitSet;
+  const myName = () => String(bitSet.name || '').replace(/[^\x20-\x7e]/g, '').slice(0, 10);
+  const myColor = () => Math.max(0, Math.min(255, bitSet.color | 0)) || 27;
+  // NAMES / NAME_COLORS for a game (player_name() in runtime/bk_entities.lua): linked, every seat's owner; alone, this Bit's
+  function namesLua() {
+    const st = link.s && link.s.start;
+    let names = st && Array.isArray(st.names) ? st.names.slice() : [myName()];
+    const cols = st && Array.isArray(st.ncols) ? st.ncols.slice() : [myColor()];
+    const seen = new Map();
+    names = names.map((n, i) => { n = String(n || ''); if (!n) return ''; const k = seen.get(n) || 0; seen.set(n, k + 1); return k ? (n.slice(0, 8) + ' ' + (i + 1)) : n; });
+    return `NAMES = ${BKThemes.toLua(names)}\nNAME_COLORS = ${BKThemes.toLua(cols.map(c => c | 0))}\n`;
+  }
   function blit() {
-    const look = bit.on && bitSet.look !== 'game' && RT._bkw_display ? (DISPLAY_LOOKS[bitSet.look] || DISPLAY_LOOKS.off) : null;
+    const lk = bitSet.look === 'theme' ? bitTheme.look : bitSet.look;
+    const look = bit.on && lk !== 'game' && RT._bkw_display ? (DISPLAY_LOOKS[lk] || DISPLAY_LOOKS.off) : null;
     let keep = null, base = 0;
     if (look) {
       base = RT._bkw_display() >> 2; keep = RT.HEAP32.slice(base, base + 10);
@@ -1682,7 +1701,7 @@ display()                                   -- off</pre><p class="dim">The Help 
         if (RT._bkw_frame(m1, ptr.press) !== 0) running = false;
         BKNet.after(RT);
         if (cap.rec && ++cap.n % 2 === 0) clipFrame();
-        if (takeSave() && saveKey === 'Bit settings') loadBitSettings();
+        if (takeSave() && (saveKey === 'Bit settings' || saveKey === BKThemes.SAVE_KEY)) { loadBitSettings(); if (window.BKMyBit) BKMyBit.outside(); }
         const tr = RT.HEAP32;
         if (playingEditor && tr[ptr.track + 2] && route.cur) route.cur.push(tr[ptr.track], tr[ptr.track + 1]);
         if (bit.playing === 'home' && tr[ptr.track + 2] && tr[ptr.track] < 0) {   // home screen: -1 = start game n over, -2 = n is selected
@@ -1789,9 +1808,9 @@ display()                                   -- off</pre><p class="dim">The Help 
     if (!c) { c = new BroadcastChannel('bitkit-link-' + id); link.out.set(id, c); }
     o.from = link.id; c.postMessage(o);
   }
-  function myState() { return link.s ? 'game' : bit.playing === 'home' ? 'home' : running ? 'game' : 'idle'; }
+  function myState() { return link.s ? 'game' : (bit.playing === 'home' || bit.playing === 'boot') ? 'home' : running ? 'game' : 'idle'; }
   function linkHi(to) {
-    const o = { t: 'hi', num: link.num, pick: picks[0], st: myState(), sid: link.s ? link.s.sid : null };
+    const o = { t: 'hi', num: link.num, pick: picks[0], st: myState(), sid: link.s ? link.s.sid : null, name: myName(), ncol: myColor() };
     if (to) linkSendTo(to, o); else linkSend(o);
   }
   function linkOpen() {
@@ -1843,12 +1862,13 @@ display()                                   -- off</pre><p class="dim">The Help 
       p = { num: m.num | 0, pick: null, st: 'idle', sid: null, seen: now };
       link.peers.set(m.from, p);
       linkHi(m.from);   // answer straight away, so both know each other
-      log(`🔗 Bit ${p.num} linked`, 'sys');
+      log(`🔗 Bit ${p.num}${m.name ? ' (' + m.name + ')' : ''} linked`, 'sys');
     }
     if (p) p.seen = now;
     if (m.t === 'hi') {
       const pickChanged = JSON.stringify(p.pick) !== JSON.stringify(m.pick || null), stChanged = p.st !== m.st || p.num !== (m.num | 0);
       p.num = m.num | 0; p.pick = m.pick || null; p.st = m.st; p.sid = m.sid || null;
+      p.name = typeof m.name === 'string' ? m.name.replace(/[^\x20-\x7e]/g, '').slice(0, 10) : ''; p.ncol = m.ncol | 0;
       if (p.isNew !== false) { p.isNew = false; peersChanged(); }
       else {
         if (pickChanged) { buildPickers(); if (chooser.open) chooserDraw(); }
@@ -1925,13 +1945,15 @@ display()                                   -- off</pre><p class="dim">The Help 
       const byNum = new Map(roster.map(id => [peerNum(id), id]));
       if (new Set(o.nums).size === np && o.nums.every(n => byNum.has(n)) && byNum.size === np) roster = o.nums.map(n => byNum.get(n));
     }
+    const who = id => id === link.id ? { name: myName(), ncol: myColor() } : (link.peers.get(id) || {});
     const st = { t: 'start', sid: Date.now().toString(36) + '-' + link.id, roster, nums: roster.map(peerNum), np, cart: o.cart,
+      names: roster.map(id => who(id).name || ''), ncols: roster.map(id => who(id).ncol || 27),
       level: o.level | 0, extra: o.extra || '', saveKey: o.saveKey || null, gameId: o.key.id, fp: o.key.fp, studio: !!o.studio, resume: o.resume || null };
     linkSend(st);
     linkEnter(st);
   }
   // the game shell's restart (retry, new game): the host starts the same game again for the same Bits
-  function linkRelaunch(extra) {
+  function linkRelaunch(extra) {   // (the names come with the roster again)
     const st = link.s.start;
     linkLaunch({ cart: st.cart, level: st.level, extra: extra + (st.extra || '').replace(/^GAME_BOOT = \d+\n/, ''), saveKey: st.saveKey,
       key: { id: st.gameId, fp: st.fp }, studio: st.studio });
@@ -2123,9 +2145,10 @@ display()                                   -- off</pre><p class="dim">The Help 
     $('linkBar').hidden = EMBED || (!IS_BIT2 && !outside && !msg);
     if (!msg) $('linkWait').hidden = true;
     $('linkBar').classList.toggle('ok', link.peers.size > 0);
-    const s = link.s, others = bitsSorted().filter(b => b[0] !== link.id).map(b => 'Bit ' + b[1]);
+    const nameOf = id => { const p = link.peers.get(id); return p && p.name ? ` (${p.name})` : ''; };
+    const s = link.s, others = bitsSorted().filter(b => b[0] !== link.id).map(b => 'Bit ' + b[1] + nameOf(b[0]));
     $('linkStatus').textContent = msg || (!link.ch ? 'This browser cannot link Bits'
-      : s ? `Bit ${link.num} · playing with ${s.nums.filter((n, i) => s.roster[i] !== link.id).map(n => 'Bit ' + n).join(', ')} · you are player ${s.slot}`
+      : s ? `Bit ${link.num} · playing with ${s.nums.map((n, i) => s.roster[i] === link.id ? null : 'Bit ' + n + nameOf(s.roster[i])).filter(Boolean).join(', ')} · you are player ${s.slot}`
       : others.length ? `Bit ${link.num} · linked with ${others.join(', ')}. A game started on one Bit starts on every Bit that is on its home screen.`
       : `Bit ${link.num} · no other Bits yet. Add a Bit to play together.`);
   }
@@ -2358,6 +2381,21 @@ display()                                   -- off</pre><p class="dim">The Help 
     BKSnap.put(bit.cur.id, bit.cur.fp, RT.HEAPU8.slice(), { saveKey, level: playingLevel });
   });
 
+  // switching the Bit on plays its theme's boot animation (studio/themes.js BOOT), which goes on to the home screen
+  function bootBit() {
+    if (bitTheme.boot === 'none' || link.s) { bootHome(); return; }
+    bit.cur = null; bit.hold = false;
+    startAudio();
+    overlay.classList.add('hidden');
+    RT.HEAPU8.set(DEFAULT_PAL, ptr.pal); RT.HEAPU8.fill(0, ptr.tiles, ptr.tiles + TILES * 64);
+    gfxDirtyRT = true; playingEditor = false; bit.playing = 'boot';
+    const me = { title: (bitTheme.boottext || String(bitSet.bit || '') || 'PocketBit').toUpperCase(),
+      sub: myName() ? `${myName()}'S BIT` : '' };
+    running = loadCode(BKThemes.LIB + BKThemes.BOOT, `BOOT = { theme = ${BKThemes.toLua(bitTheme)}, title = ${luaStr(me.title)}, sub = ${luaStr(me.sub)} }`) === 0;
+    if (!running) { bootHome(); return; }
+    acc = 0; last = performance.now();
+    screen.focus();
+  }
   async function bootHome() {
     bit.cur = null; bit.hold = false;
     loadBitSettings();
@@ -2382,13 +2420,15 @@ display()                                   -- off</pre><p class="dim">The Help 
       return `{name=${luaStr(g.name)}, file=${luaStr(g.file || '')}, studio=${g.studio ? 'true' : 'false'}, paused=${p}, ${has || g.app ? `icon=${slot}` : `color=${COLORS[i % COLORS.length]}`}${g.app ? `, app=true, sub=${luaStr(g.app.sub || '')}` : ''}}`;
     });
     if (bit.sel > bit.games.length) bit.sel = 1;
-    const data = `BIT = { games = {${rows.join(',')}}, sel = ${bit.sel}, studio = ${!IS_BIT2}, link = true, source = ${luaStr(BKStore.state === 'folder' ? BKStore.label() : '')} }`;
+    const me = { name: myName(), color: myColor(), bit: String(bitSet.bit || '').slice(0, 14) };
+    const data = `BIT = { games = {${rows.join(',')}}, sel = ${bit.sel}, studio = ${!IS_BIT2}, link = true, source = ${luaStr(BKStore.state === 'folder' ? BKStore.label() : '')},
+      theme = ${BKThemes.toLua(bitTheme)}, me = ${BKThemes.toLua(me)} }`;
     startAudio();
     overlay.classList.add('hidden');
     RT.HEAPU8.set(DEFAULT_PAL, ptr.pal); RT.HEAPU8.set(tiles, ptr.tiles);
     RT.HEAPU8.fill(0, ptr.flags, ptr.flags + TILES); RT.HEAPU16.fill(0, ptr.map >> 1, (ptr.map >> 1) + MAPW * MAPH);
     gfxDirtyRT = true; playingEditor = false; bit.playing = 'home';
-    running = loadCode(window.BK_HOME, data) === 0;
+    running = loadCode(BKThemes.LIB + window.BK_HOME, data) === 0;
     acc = 0; last = performance.now();
     screen.focus();
   }
@@ -2479,7 +2519,7 @@ display()                                   -- off</pre><p class="dim">The Help 
   function setBitPower(on) {
     bit.on = on;
     loadBitSettings();
-    if (on) { log('Bit on: home screen. Hold Start+Select in a game to pause it and come back; picking it again carries on.', 'sys'); bootHome(); }
+    if (on) { log('Bit on: home screen. Hold Start+Select in a game to pause it and come back; picking it again carries on.', 'sys'); bootBit(); }
     else { suspendGame(); stop(true); bit.playing = null; bit.cur = null; bootScreen(); }
   }
   async function saveToBit(confirmNew) {
@@ -2769,6 +2809,7 @@ display()                                   -- off</pre><p class="dim">The Help 
   // Undo / Redo act on whatever the open tab edits
   function undoHere(redo) {
     if (activeTab === 'code') { if (cm) (redo ? cm.redo() : cm.undo()); return; }
+    if (activeTab === 'mybit') return redo ? myBit.redo() : myBit.undo();
     if (activeTab === 'sprites') return redo ? tileHist.redo() : tileHist.pop();
     if (activeTab === 'map' && mp.layer === 'tiles') return redo ? mapHist.redo() : mapHist.pop();
     if (redo) docStep(hist.redo, hist.undo, 'redo'); else docStep(hist.undo, hist.redo, 'undo');
@@ -2900,6 +2941,8 @@ display()                                   -- off</pre><p class="dim">The Help 
       ['rect(x,y,w,h,c) / rectfill', 'Rectangle outline or filled.'],
       ['circ(x,y,r,c) / circfill', 'Circle outline or filled.'],
       ['text(s,x,y,[c],[scale])', 'Draw text with the 8x8 font. Returns the width in pixels.'],
+      ['font([style],[outline])', 'The letters for text() from now on: "classic", "bold", "slant" or "heavy" (slanted bold), and an outline colour (or none). font() goes back to classic.'],
+      ['sget(x,y) / sset(x,y,c)', 'Read or change one pixel of the sprite sheet (128 pixels wide, 256 tall), to paint a picture once and draw it with spr().'],
       ['spr(n,x,y,[w,h],[flipx],[flipy],[scale])', 'Draw sprite n. w,h are in tiles (2,2 draws a 16x16 sprite). Colour 0 is transparent.'],
       ['map([cx,cy,cw,ch,sx,sy])', 'Draw a cw x ch area of the map starting at tile cx,cy to screen sx,sy. Default draws one screen (40x30 tiles).'],
       ['mget(x,y) / mset(x,y,n)', 'Read or change a map tile (map is 256x128 tiles).'],
@@ -3009,6 +3052,8 @@ display()                                   -- off</pre><p class="dim">The Help 
       ['net_send(v1, ..., v8)', 'Broadcast up to 8 whole numbers to every other Bit running this cart. Returns false after 16 events in one frame. Keep it to a few events a second per Bit.'],
       ['net_recv()', 'The next event from another Bit as from, v1, v2, ... or nil when none is waiting. Read them in a loop every frame: while true do local from, a, b = net_recv() if not from then break end ... end'],
       ['NET_ID', 'This Bit\'s network id (from its radio\'s address on PocketBit). 0 when there is no network, for example in a lockstep-linked game.'],
+      ['net_name(id,[max])', 'The owner\'s name of the Bit with that NET_ID (Settings › USER on that Bit), or nil until it has been heard. Bits send their names now and then by themselves.'],
+      ['player_name(n,[max]) / player_color(n)', 'Player n\'s name and colour: the owner of the Bit in that seat (Settings › USER), or "P2" and so on when there is none. On one Bit, player 1 is its owner.'],
       ['Rules of thumb', 'Events can arrive late, and Bits are not frame-synced, so every piece of state has one owner that sends it (your digger, your score). Things everyone can work out the same way, like a map from a shared seed, need only the seed. A good start: a lobby where Bits say hello, then one Bit sends the seed and who is playing.']]],
     ['Save data and clock', [
       ['save(t)', 'Keep a table (numbers, strings, booleans, nested tables; up to 4 KB) for the next time the cart runs. save(nil) deletes it. The studio keeps it per cart name in this browser; PocketBit keeps it in flash.'],

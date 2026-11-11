@@ -183,6 +183,28 @@ static int l_text(lua_State *l) {
   return 1;
 }
 
+/* font() classic | font("bold") | font("slant", outline_colour) | font(n) */
+static int l_font(lua_State *l) {
+  static const char *N[] = { "classic", "bold", "slant", "heavy" };
+  int st = 0;
+  if (lua_type(l, 1) == LUA_TSTRING) {
+    const char *n = lua_tostring(l, 1); st = -1;
+    for (int i = 0; i < 4; i++) if (!strcmp(n, N[i])) st = i;
+    if (st < 0) return luaL_error(l, "font: no font called \"%s\" (try classic, bold, slant, heavy)", n);
+  } else st = opti(l, 1, 0);
+  bk_font(st, opti(l, 2, -1));
+  return 0;
+}
+
+/* sget(x, y) / sset(x, y, c): one pixel of the tile sheet (16 tiles = 128 pixels wide, 256 tall),
+   so a cart can paint a picture once and then draw it every frame with one spr() */
+static int sheet_at(int x, int y) {
+  if (x < 0 || x >= 128 || y < 0 || y >= (BK_TILES / 16) * 8) return -1;
+  return ((y >> 3) * 16 + (x >> 3)) * BK_TILE_BYTES + (y & 7) * 8 + (x & 7);
+}
+static int l_sget(lua_State *l) { int o = sheet_at(ci(l, 1), ci(l, 2)); lua_pushinteger(l, o < 0 ? 0 : BK->tiles[o]); return 1; }
+static int l_sset(lua_State *l) { int o = sheet_at(ci(l, 1), ci(l, 2)); if (o >= 0) BK->tiles[o] = (uint8_t)ci(l, 3); return 0; }
+
 static int l_spr(lua_State *l) {
   bk_spr(ci(l, 1), ci(l, 2), ci(l, 3), opti(l, 4, 1), opti(l, 5, 1),
          lua_toboolean(l, 6), lua_toboolean(l, 7), opti(l, 8, 1));
@@ -489,7 +511,7 @@ static int l_print(lua_State *l) {
 static const luaL_Reg API[] = {
   {"cls", l_cls}, {"pset", l_pset}, {"pget", l_pget}, {"line", l_line},
   {"rect", l_rect}, {"rectfill", l_rectfill}, {"shade", l_shade}, {"tint", l_tint}, {"fog", l_fog}, {"dither", l_dither}, {"remap", l_remap}, {"wave", l_wave}, {"ripple", l_ripple}, {"pixelate", l_pixelate}, {"glitch", l_glitch}, {"display", l_display}, {"sprfx", l_sprfx}, {"raster", l_raster}, {"circ", l_circ}, {"circfill", l_circfill},
-  {"text", l_text}, {"spr", l_spr}, {"map", l_map}, {"floor", l_floorplane}, {"floorh", l_floorh}, {"hset", l_hset}, {"hget", l_hget}, {"depth", l_depth}, {"project", l_project}, {"sspr", l_sspr}, {"mget", l_mget}, {"mset", l_mset},
+  {"text", l_text}, {"font", l_font}, {"sget", l_sget}, {"sset", l_sset}, {"spr", l_spr}, {"map", l_map}, {"floor", l_floorplane}, {"floorh", l_floorh}, {"hset", l_hset}, {"hget", l_hget}, {"depth", l_depth}, {"project", l_project}, {"sspr", l_sspr}, {"mget", l_mget}, {"mset", l_mset},
   {"fget", l_fget}, {"fset", l_fset}, {"camera", l_camera}, {"clip", l_clip},
   {"pal", l_pal}, {"palt", l_palt}, {"palette", l_palette},
   {"btn", l_btn}, {"btnp", l_btnp}, {"btnr", l_btnr}, {"press", l_press},
@@ -568,6 +590,7 @@ int bk_lua_load_ex(const char *data, const char *code) {
 
   bk_reset_draw_state();
   bk_display_reset();
+  bk_font(0, -1);
   sfx_clear(NULL);
   memset(BK->height, 0, sizeof(BK->height));
   BK->frame = 0;

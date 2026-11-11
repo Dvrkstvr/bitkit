@@ -1,7 +1,7 @@
 // CI check: the music player (runtime/bk_music.lua), the shared song format (studio/music.js), Loopbox's note
 // editing, and the Bit's music apps (studio/bitapps.js) played with buttons. Exits non-zero on any failure.
 const fs = require('fs'); global.window = {}; global.localStorage = { d: {}, getItem(k) { return this.d[k] ?? null; }, setItem(k, v) { this.d[k] = String(v); } };
-for (const f of ['music.js', 'loopbox.js', 'bitapps.js', 'entities.js', 'home.js']) eval(fs.readFileSync(__dirname + '/../studio/' + f, 'utf8'));
+for (const f of ['music.js', 'loopbox.js', 'bitapps.js', 'themes.js', 'entities.js', 'home.js']) eval(fs.readFileSync(__dirname + '/../studio/' + f, 'utf8'));
 const MU = window.BKMusic;
 let errors = [], logs = [];
 const fail = m => { console.error('FAIL', m); process.exitCode = 1; };
@@ -89,7 +89,7 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
   {
     errors = [];
     const home = 'BIT = { games = {{name="A", file="a.bitkit", studio=false, color=3}, {name="Hexbeat", file="", studio=false, color=8, app=true}, {name="Loopbox", file="", studio=false, color=9, app=true}}, sel = 1, studio = true, source = "" }';
-    M._bkw_load_ex(s(home), s(window.BK_HOME));
+    M._bkw_load_ex(s(home), s(window.BKThemes.LIB + window.BK_HOME));
     M._bkw_frame(0, 0); M._bkw_frame(1 << BTN.down, 0); M._bkw_frame(0, 0); M._bkw_frame(1 << BTN.right, 0); M._bkw_frame(0, 0);
     M._bkw_frame(1 << BTN.a, 0);
     if (M.HEAP32[sys] !== 1 || M.HEAP32[sys + 1] !== 3) fail(`apps shelf launched ${M.HEAP32[sys]},${M.HEAP32[sys + 1]} (expected 1,3)`);
@@ -107,7 +107,7 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
     else {
       const press = b => { M._bkw_frame(1 << BTN[b], 0); M._bkw_frame(0, 0); };
       M._bkw_frame(0, 0);
-      press('right'); press('right');                      // GAME'S OWN -> OFF -> CRT
+      press('right'); press('right'); press('right');      // THEME'S -> GAME'S OWN -> OFF -> CRT
       press('down'); press('left'); press('left');           // strength 8
       press('down'); press('down'); for (let i = 0; i < 12; i++) press('left');   // volume 0, and no lower
       for (let i = 0; i < 60; i++) M._bkw_frame(0, 0);
@@ -124,7 +124,7 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
   }
 
   // ------------------------------------------------ the music apps, played with buttons
-  for (const app of window.BK_APPS.filter(a => !a.settings)) {
+  for (const app of window.BK_APPS.filter(a => !a.settings && !a.theme)) {
     errors = []; logs = [];
     M.HEAP32[sv] = -1; M.HEAP32[sv + 1] = 0;
     if (M._bkw_load_ex(s(''), s(app.code)) !== 0) { fail(`${app.name} did not load: ${errors.join(' ')}`); continue; }

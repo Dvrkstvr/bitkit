@@ -354,6 +354,16 @@ void bk_circfill(int cx, int cy, int r, int c) {
   }
 }
 
+/* font(style, [outline]): 0 classic, 1 bold, 2 slant, 3 slant bold; outline colour drawn around each letter (-1 none).
+   Every style is made from the one 8x8 font, so the widths stay 8 pixels a letter (bold and slant spill a pixel right). */
+static int font_style = 0, font_outline = -1;
+void bk_font(int style, int outline) {
+  font_style = style < 0 || style > 3 ? 0 : style;
+  font_outline = outline < 0 || outline > 255 ? -1 : outline;
+}
+static void text_px(int x, int y, int c, int scale) {
+  if (scale == 1) px(x, y, c); else bk_rectfill(x, y, scale, scale, c);
+}
 int bk_text(const char *s, int x, int y, int c, int scale) {
   if (scale < 1) scale = 1;
   int x0 = x, maxw = 0;
@@ -362,12 +372,24 @@ int bk_text(const char *s, int x, int y, int c, int scale) {
     if (ch == '\n') { if (x - x0 > maxw) maxw = x - x0; x = x0; y += 8 * scale; continue; }
     if (ch > 127) ch = '?';
     const uint8_t *g = bk_font8x8[ch];
-    for (int j = 0; j < 8; j++)
-      for (int i = 0; i < 8; i++)
-        if (g[j] & (1 << i)) {
-          if (scale == 1) px(x + i, y + j, c);
-          else bk_rectfill(x + i * scale, y + j * scale, scale, scale, c);
-        }
+    uint16_t r[10] = {0};               /* rows -1..8, bit k = pixel k-1 (room for the outline and the spill) */
+    for (int j = 0; j < 8; j++) {
+      uint16_t v = (uint16_t)(g[j] << 1);
+      if (font_style & 2) v = (uint16_t)(v << ((7 - j) / 3));
+      if (font_style & 1) v |= (uint16_t)(v << 1);
+      r[j + 1] = v;
+    }
+    if (font_outline >= 0) {
+      for (int j = 0; j < 10; j++) {
+        uint16_t d = 0;
+        for (int k = j - 1; k <= j + 1; k++) if (k >= 0 && k < 10) d |= r[k] | (uint16_t)(r[k] << 1) | (uint16_t)(r[k] >> 1);
+        d &= (uint16_t)~r[j];
+        for (int i = 0; i < 12; i++) if (d & (1 << i)) text_px(x + (i - 1) * scale, y + (j - 1) * scale, font_outline, scale);
+      }
+    }
+    for (int j = 1; j < 9; j++)
+      for (int i = 1; i < 12; i++)
+        if (r[j] & (1 << i)) text_px(x + (i - 1) * scale, y + (j - 1) * scale, c, scale);
     x += 8 * scale;
   }
   if (x - x0 > maxw) maxw = x - x0;

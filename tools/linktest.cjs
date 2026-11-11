@@ -35,7 +35,8 @@ const ok = m => console.log('ok  ', m);
     pg.on('pageerror', e => errs.push(`Bit ${n}: ${e.message}`));
     pg.on('console', m => { if (m.type() === 'error') errs.push(`Bit ${n} console: ${m.text()}`); });
     await pg.goto(n === 1 ? url : `${url}?bit=${n}`);
-    await pg.waitForFunction(() => window.bkStudio && bkStudio.bit.playing === 'home');
+    // (after the boot animation; a Bit switched on while its linked Bits are in a game may go straight back into it)
+    await pg.waitForFunction(() => window.bkStudio && (bkStudio.bit.playing === 'home' || (bkStudio.link.s && bkStudio.link.s.ready)));
     pages[n] = pg;
     return pg;
   }

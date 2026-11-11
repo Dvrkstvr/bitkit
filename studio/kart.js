@@ -1247,7 +1247,7 @@ function start_race()
     local s = sels[p]
     local k = new_kart(s.body, s.eng, s.tyre, s.paint, false)
     k.human, k.pn, k.shake, k.pop_t = true, p, 0, 0
-    if NH > 1 then k.name = "P" .. p .. " " .. k.name end
+    if NH > 1 then k.name = player_name(p, 6) .. " " .. k.name end
     humans[p], used[s.paint] = k, true
   end
   player = humans[1]
@@ -1819,7 +1819,7 @@ function draw_hud_small()
     shadow_text("LAP " .. lap .. "/" .. LAPS, W - 52, 4, 13)
     shadow_text(tstr(player.done and player.time or race_t), W - 52, 13, 12)
   end
-  if NH > 1 and (ME or 0) == 0 then shadow_text("P" .. player.pn, W - 18, H - 12, 13) end
+  if NH > 1 and (ME or 0) == 0 then local nm = player_name(player.pn, 6) shadow_text(nm, W - 2 - #nm * 8, H - 12, 13) end
   rectfill(W // 2 - 11, 3, 22, 22, 1); rect(W // 2 - 11, 3, 22, 22, player.item and 13 or 30)
   if player.item then
     local icon = player.roll > 0 and ITEMS[(gt // 4) % #ITEMS + 1].icon or ITEMS[player.item].icon
@@ -2021,7 +2021,7 @@ function draw_garage_for(v)
   cls(1)
   for y = 0, 7 do rectfill(0, 150 + y * 12, 320, 1, 2) end
   text("KART LAB", 12, 10, 27, 2)
-  text(NH > 1 and ("P" .. v .. ": build your kart") or "build your kart", 12, 28, NH > 1 and ({27, 22, 17, 10, 8, 3, 15, 25})[v] or 29)
+  text(NH > 1 and (player_name(v, 8) .. ": build your kart") or "build your kart", 12, 28, NH > 1 and ({27, 22, 17, 10, 8, 3, 15, 25})[v] or 29)
   -- turntable
   local k = {body = sel.body, eng = sel.eng, tyre = sel.tyre, paint = sel.paint}
   ellipse(80, 150, 52, 31)

@@ -44,6 +44,8 @@ jobs:
         run: node tools/emutest.cjs
       - name: Emulators built natively, like the device firmware
         run: tools/emutest_native.sh
+      - name: Themes and player names
+        run: node tools/themetest.cjs
       - name: Photos and clips (capture module)
         run: node tools/capturetest.cjs
       - name: Share hub publisher

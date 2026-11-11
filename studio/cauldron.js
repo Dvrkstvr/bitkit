@@ -447,7 +447,7 @@ function draw_cook(p)
   if p.hold then draw_item(p.hold, x + p.fx * 7, y - 2 + p.fy * 5 - (p.fy == 0 and 3 or 0)) end
   if p.stir then text("~", x - 4, y - 22 + (gt // 5) % 2, 13) end
   if (ME or 0) == p.pl then text("v", x - 4, y - 24 + (gt // 12) % 2, 13)
-  elseif NP > 1 and state == "ready" then text("P" .. p.pl, x - 8, y - 22, PC[p.pl]) end
+  elseif NP > 1 and state == "ready" then local nm = player_name(p.pl, 6) text(nm, x - #nm * 4, y - 22, PC[p.pl]) end
 end
 
 function draw_card(c, x, w)
