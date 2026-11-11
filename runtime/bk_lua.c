@@ -105,6 +105,11 @@ static int l_clip(lua_State *l) {
 
 static int l_pal(lua_State *l) {
   if (lua_gettop(l) == 0) { for (int i = 0; i < 256; i++) BK->draw_pal[i] = (uint8_t)i; return 0; }
+  if (lua_gettop(l) == 1) { /* pal(c): draw every colour as c (flash / tint) */
+    uint8_t c = (uint8_t)ci(l, 1);
+    for (int i = 0; i < 256; i++) BK->draw_pal[i] = c;
+    return 0;
+  }
   BK->draw_pal[ci(l, 1) & 255] = (uint8_t)ci(l, 2);
   return 0;
 }

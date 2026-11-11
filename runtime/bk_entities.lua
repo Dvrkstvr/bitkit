@@ -5,6 +5,7 @@
 ENT_SOLID_FLAG = 0       -- map tiles with this sprite flag block entities
 ENT_GRAVITY = 0.25
 ENT_MAX_FALL = 4
+ENT_WORLD_W, ENT_WORLD_H = 256 * 8, 128 * 8   -- entities leaving this area are removed (the player dies)
 
 local DEFS, PLACED, LIST = {}, {}, {}
 local TX, TY = 0, 0
@@ -70,7 +71,112 @@ local function fire(e, ev, a, b)
 end
 
 -- the player is not an entity, but sensors and touches can see it
-PLAYER = {name = "player", is_player = true, team = "friend", alive = true, x = -999, y = -999, w = 8, h = 8}
+local DUMMY = {name = "player", is_player = true, dummy = true, team = "friend", alive = true, x = -999, y = -999, w = 8, h = 8, vy = 0}
+PLAYER = DUMMY
+-- ---------------------------------------------------------------- stats and effects
+local FX = {}
+function ents_effects(list)
+  FX = {}
+  for i = 1, #list do FX[list[i].name] = list[i] end
+end
+
+local function base_stat(e, name)
+  if e.base and e.base[name] ~= nil then return e.base[name] end
+  local d = e.def
+  if not d then return 0 end
+  if name == "hp" then return d.hp or 1 end
+  if name == "damage" then return d.damage or 0 end
+  if d.stats and d.stats[name] ~= nil then return d.stats[name] end
+  if name == "speed" or name == "jump" then return 1 end
+  return 0
+end
+
+-- stat(e, name): base value from the entity type, changed by active effects (+ first, then x)
+function stat(e, name)
+  local v, add, mul = base_stat(e, name), 0, 1
+  local l = e.fx
+  if l then
+    for i = 1, #l do
+      local m = l[i].def.mods
+      if m then
+        for k = 1, #m do
+          local q = m[k]
+          if q.stat == name then
+            if q.op == "mul" then mul = mul * q.value
+            elseif q.op == "set" then v = q.value
+            else add = add + q.value end
+          end
+        end
+      end
+    end
+  end
+  return (v + add) * mul
+end
+function stat_set(e, name, v) e.base = e.base or {}; e.base[name] = v end
+
+local function kill_by(e, src)
+  if not e.alive then return end
+  e.alive = false
+  fire(e, "death", src)
+  if not e.alive then emit("death", e) end
+end
+
+local function change_hp(e, n, src)
+  if not e.def then return end
+  if n >= 0 then e.hp = math.min(stat(e, "hp"), e.hp + n)
+  elseif not e.invincible then
+    e.hp = e.hp + n
+    if e.hp <= 0 then kill_by(e, src) end
+  end
+end
+
+-- fx_apply(e, name, [source]): start an effect made on the Entities tab
+function fx_apply(e, name, src)
+  local d = FX[name]
+  if not d or not e.fx or not e.alive then return false end
+  if (d.hp or 0) ~= 0 then change_hp(e, d.hp, src) end
+  if (d.dur or 0) <= 0 then return true end
+  for i = 1, #e.fx do
+    if e.fx[i].name == name then
+      if d.stack == "keep" then return true end
+      if d.stack ~= "stack" then e.fx[i].t = 0 return true end
+    end
+  end
+  e.fx[#e.fx + 1] = {name = name, def = d, t = 0}
+  fire(e, "effect", name, src)
+  return true
+end
+function fx_has(e, name)
+  for i = 1, #(e.fx or {}) do if e.fx[i].name == name then return true end end
+  return false
+end
+function fx_remove(e, name)
+  local l = e.fx or {}
+  for i = #l, 1, -1 do if l[i].name == name then table.remove(l, i) end end
+end
+function fx_clear(e) e.fx = {} end
+
+local function update_fx(e)
+  local l = e.fx
+  for i = #l, 1, -1 do
+    local f = l[i]
+    f.t = f.t + 1
+    local d = f.def
+    if (d.every or 0) > 0 and f.t % d.every == 0 and (d.tick or 0) ~= 0 then change_hp(e, d.tick) end
+    if f.t >= (d.dur or 0) then table.remove(l, i) end
+  end
+end
+
+local function tint_of(e)
+  local l = e.fx
+  if not l then return nil end
+  for i = #l, 1, -1 do
+    local c = l[i].def.tint
+    if c and c >= 0 then return c end
+  end
+  return nil
+end
+
 function ents_player(x, y, w, h)
   PLAYER.x, PLAYER.y, PLAYER.w, PLAYER.h = x, y, w or 8, h or 8
   TX, TY = x + PLAYER.w / 2, y + PLAYER.h / 2
@@ -99,7 +205,7 @@ function raycast(x, y, dx, dy, len, what, ignore)
       return false, px, py
     end
     if what ~= "wall" then
-      if PLAYER ~= ignore and matches(PLAYER, what) and inside(PLAYER, px, py) then return true, px, py, PLAYER end
+      if PLAYER.dummy and matches(PLAYER, what) and inside(PLAYER, px, py) then return true, px, py, PLAYER end
       for i = 1, #LIST do
         local o = LIST[i]
         if o.alive and o ~= ignore and matches(o, what) and inside(o, px, py) then return true, px, py, o end
@@ -120,7 +226,7 @@ function circlecast(x, y, r, what, ignore)
       if (cx - x) ^ 2 + (cy - y) ^ 2 <= r * r then out[#out + 1] = o end
     end
   end
-  test(PLAYER)
+  if PLAYER.dummy then test(PLAYER) end
   for i = 1, #LIST do test(LIST[i]) end
   return out
 end
@@ -129,13 +235,14 @@ end
 function ents_damage(e, n, src)
   if not e.alive or (e.inv or 0) > 0 or e.invincible then return false end
   e.hp = e.hp - (n or 1)
-  e.inv = 15
-  fire(e, "hurt", n, src)
-  if e.hp <= 0 then
-    e.alive = false
-    fire(e, "death", src)
-    emit("death", e)
+  e.inv = e.hurt_cd or 15
+  if e.def and e.def.player then
+    e.knock = 10
+    e.knockdir = src and (src.x + src.w / 2 < e.x + e.w / 2 and 1 or -1) or -e.dir
+    e.vy = -2.5
   end
+  fire(e, "hurt", n, src)
+  if e.hp <= 0 then kill_by(e, src) end
   return true
 end
 
@@ -146,7 +253,7 @@ local function contacts()
   for i = 1, #LIST do
     local a = LIST[i]
     if a.alive then
-      if overlap(a, PLAYER) then a.touch_now[#a.touch_now + 1] = PLAYER end
+      if PLAYER.dummy and overlap(a, PLAYER) then a.touch_now[#a.touch_now + 1] = PLAYER end
       for j = i + 1, #LIST do
         local b = LIST[j]
         if b.alive and overlap(a, b) then
@@ -165,10 +272,21 @@ local function contacts()
       e.touching[o] = true
       if not was[o] and e.alive then
         fire(e, "touch", o)
-        local dmg = e.dmg or 0
-        if dmg > 0 and o.team ~= e.team and not o.hidden and e.team ~= "neutral" then
-          if o.is_player then emit("player_hurt", dmg, e) else ents_damage(o, dmg, e) end
-          if e.proj then e.alive = false end
+        local foe = o.team ~= e.team and not o.hidden and e.team ~= "neutral" and o.team ~= "neutral"
+        if foe and e.def.stomp and o.is_player and not o.dummy and (o.vy_pre or 0) > 0 and o.y + o.h - e.y <= 6 then
+          -- landed on its head
+          ents_damage(e, 1, o)
+          o.vy = -3.5
+          o.mem.coyote = 0
+        elseif foe then
+          local hit = false
+          if e.def.touch_fx and e.def.touch_fx ~= "" and o.fx then hit = fx_apply(o, e.def.touch_fx, e) end
+          local dmg = stat(e, "damage")
+          if dmg > 0 then
+            if o.dummy then emit("player_hurt", dmg, e) else ents_damage(o, dmg, e) end
+            hit = true
+          end
+          if hit and e.proj then e.alive = false end
         end
       end
     end
@@ -232,12 +350,12 @@ N.hp_below = function(e, n, p) return e.hp < (p.hp or 2) and 1 or 0 end
 -- actions
 N.patrol = function(e, n, p)
   if wall_ahead(e) or (e.grav and e.ground and ledge_ahead(e)) then e.dir = -e.dir end
-  e.vx = e.dir * (p.speed or 0.5)
+  e.vx = e.dir * (p.speed or 0.5) * stat(e, "speed")
   return 1
 end
 N.chase = function(e, n, p)
   local d, dx, dy = dist(e)
-  local s = p.speed or 0.7
+  local s = (p.speed or 0.7) * stat(e, "speed")
   if math.abs(dx) > 1 then e.dir = sign(dx) end
   if e.grav then
     e.vx = math.abs(dx) > 1 and e.dir * s or 0
@@ -248,7 +366,7 @@ N.chase = function(e, n, p)
 end
 N.flee = function(e, n, p)
   local d, dx, dy = dist(e)
-  local s = p.speed or 0.7
+  local s = (p.speed or 0.7) * stat(e, "speed")
   e.dir = dx > 0 and -1 or 1
   if e.grav then e.vx = e.dir * s
   elseif d > 0 then e.vx, e.vy = -dx / d * s, -dy / d * s end
@@ -256,7 +374,7 @@ N.flee = function(e, n, p)
 end
 N.wander = function(e, n, p)
   if rnd(1000) <= (p.turn or 10) or wall_ahead(e) or (e.grav and e.ground and ledge_ahead(e)) then e.dir = -e.dir end
-  e.vx = e.dir * (p.speed or 0.4)
+  e.vx = e.dir * (p.speed or 0.4) * stat(e, "speed")
   return 1
 end
 N.hover = function(e, n, p)
@@ -335,6 +453,75 @@ N.set_tile = function(e, n, p)
   return 1
 end
 
+-- flow: run every child no matter what (good for the player: move AND shoot)
+N.all = function(e, n)
+  for i = 1, #n.c do tick(e, n.c[i]) end
+  return 1
+end
+-- input
+N.button = function(e, n, p)
+  local b = p.button or "a"
+  if p.mode == "held" then return btn(b) and 1 or 0 end
+  if p.mode == "released" then return btnr(b) and 1 or 0 end
+  return btnp(b) and 1 or 0
+end
+N.controls = function(e, n, p)
+  local m = e.mem
+  local sp = (p.speed or 1) * stat(e, "speed")
+  if p.run and p.run ~= "" and p.run ~= "none" then sp = sp * (1 + press(p.run) / 128) end
+  local dir = 0
+  if btn("left") then dir = -1 end
+  if btn("right") then dir = dir + 1 end
+  if dir ~= 0 then e.dir = dir end
+  e.vx = dir * sp
+  if e.grav then
+    m.coyote = e.ground and 6 or math.max(0, (m.coyote or 0) - 1)
+    m.jbuf = btnp("a") and 6 or math.max(0, (m.jbuf or 0) - 1)
+    if m.jbuf > 0 and m.coyote > 0 then
+      e.vy = -(p.jump or 4.2) * stat(e, "jump")
+      m.jbuf, m.coyote = 0, 0
+      e.ground = false
+      if p.sound and p.sound ~= "" then sfx(p.sound, 5, 0.5, 10, nil, 0, 600) end
+    end
+    if not btn("a") and e.vy < -1.5 then e.vy = -1.5 end
+  else
+    local dy = 0
+    if btn("up") then dy = -1 end
+    if btn("down") then dy = dy + 1 end
+    e.vy = dy * sp
+  end
+  return 1
+end
+-- counters and spawning
+-- count_up: adds 1 to a memory value each time it runs; succeeds once it reaches max (and keeps succeeding)
+N.count_up = function(e, n, p)
+  local k, mx = p.key or "count", math.max(1, p.max or 60)
+  local v = math.min(mx, (tonumber(e.data[k]) or 0) + 1)
+  e.data[k] = v
+  if p.bar then e.bar = v / mx end
+  return v >= mx and 1 or 0
+end
+N.spawn = function(e, n, p)
+  local b = ents_spawn(p.type or "", e.x + (p.dx or 0), e.y + (p.dy or 0))
+  if not b then return 0 end
+  b.team = b.def.team or e.team
+  return 1
+end
+
+-- stats and effects
+N.has_effect = function(e, n, p) return fx_has(e, p.effect or "") and 1 or 0 end
+N.count_below = function(e, n, p) return #ents_all(p.type) < (p.count or 3) and 1 or 0 end
+N.apply_effect = function(e, n, p) return fx_apply(e, p.effect or "") and 1 or 0 end
+N.remove_effect = function(e, n, p) fx_remove(e, p.effect or "") return 1 end
+N.apply_touching = function(e, n, p)
+  local l, hit = e.touch_now or {}, 0
+  for i = 1, #l do
+    local o = l[i]
+    if o ~= e and matches(o, p.what) and o.fx and fx_apply(o, p.effect or "", e) then hit = 1 end
+  end
+  return hit
+end
+
 -- ---------------------------------------------------------------- public api
 function ents_define(defs)
   DEFS = {}
@@ -353,6 +540,7 @@ end
 
 function ents_reset()
   LIST = {}
+  PLAYER = DUMMY
   for i = 1, #PLACED do
     local p = PLACED[i]
     ents_spawn(p[1], p[2], p[3])
@@ -369,8 +557,13 @@ function ents_spawn(name, x, y)
     dir = d.left and -1 or 1, hp = d.hp or 1, grav = d.grav ~= false, collide = d.collide ~= false,
     ground = false, alive = true, age = 0, phase = #LIST * 17, mem = {}, data = {},
     anim = "idle", anim_t = 0, team = d.team or "enemy", dmg = d.damage or 0, hidden = d.hidden, inv = 0,
-    invincible = (d.hp or 1) <= 0
+    invincible = (d.hp or 1) <= 0, base = {}, fx = {},
+    hurt_cd = d.hurt or (d.player and 60 or 15)
   }
+  if d.player then
+    e.is_player, e.team = true, "friend"
+    PLAYER = e
+  end
   e.x = x + e.ox
   e.y = y + e.oy
   LIST[#LIST + 1] = e
@@ -378,6 +571,19 @@ function ents_spawn(name, x, y)
 end
 
 function ents_target(x, y) TX, TY = x, y end
+function ents_get(name) return ents_all(name)[1] end
+
+-- ents_camera([world_w], [world_h]): centre the camera on the player, clamped to the world. Returns cx, cy.
+function ents_camera(ww, wh)
+  local p = PLAYER
+  ww, wh = ww or ENT_WORLD_W, wh or ENT_WORLD_H
+  local cx = math.floor(p.x + p.w / 2 - 160)
+  local cy = math.floor(p.y + p.h / 2 - 120)
+  cx = math.max(0, math.min(cx, ww - 320))
+  cy = math.max(0, math.min(cy, wh - 240))
+  camera(cx, cy)
+  return cx, cy
+end
 function ents_kill(e) e.alive = false end
 function ents_all(name)
   local out = {}
@@ -425,6 +631,10 @@ end
 
 function ents_update()
   HEARD, PENDING = PENDING, {}
+  if not PLAYER.dummy and PLAYER.alive then
+    TX, TY = PLAYER.x + PLAYER.w / 2, PLAYER.y + PLAYER.h / 2
+    track(TX, TY)
+  end
   for i = 1, #LIST do
     local e = LIST[i]
     if e.alive then
@@ -436,14 +646,19 @@ function ents_update()
         e.vx = 0
         if not e.grav then e.vy = 0 end
       end
-      if e.def.tree then tick(e, e.def.tree) end
+      update_fx(e)
+      if e.def.tree and e.alive then tick(e, e.def.tree) end
+      if (e.knock or 0) > 0 then e.vx = e.knockdir * 1.5; e.knock = e.knock - 1 end
+      e.vy_pre = e.vy
       if e.grav then
         if e.ground and e.vy > 0 then e.vy = 0 end
         e.vy = math.min(e.vy + ENT_GRAVITY, ENT_MAX_FALL)
       end
       move(e)
       if e.proj and (e.hitwall or e.age > 600) then e.alive = false end
-      if e.y > 128 * 8 + 64 or e.x < -64 or e.x > 256 * 8 + 64 then e.alive = false end
+      if e.y > ENT_WORLD_H + 16 or e.x < -64 or e.x > ENT_WORLD_W + 64 then
+        if e.is_player then kill_by(e) else e.alive = false end
+      end
       if e.say_t then
         e.say_t = e.say_t - 1
         if e.say_t <= 0 then e.say, e.say_t = nil, nil end
@@ -483,7 +698,18 @@ function ents_draw()
     if e.alive and not e.hidden and not (e.inv > 0 and e.inv % 4 < 2) then
       local flip = e.dir < 0
       if e.def.left then flip = not flip end
+      local tint = tint_of(e)
+      if tint and (e.age // 6) % 2 == 0 then pal(tint) end
       spr(ents_frame(e), math.floor(e.x - e.ox), math.floor(e.y - e.oy), e.def.sw or 1, e.def.sh or 1, flip)
+      if tint then pal() end
+    end
+  end
+  for i = 1, #LIST do
+    local e = LIST[i]
+    if e.alive and e.bar and e.bar < 1 then
+      local x, y = math.floor(e.x + e.w / 2 - 10), math.floor(e.y - e.oy) - 6
+      rectfill(x, y, 20, 4, 1)
+      rectfill(x + 1, y + 1, math.floor(18 * e.bar), 2, 17)
     end
   end
   for i = 1, #LIST do

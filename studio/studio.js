@@ -924,6 +924,14 @@ end
       ['ents_touch(x,y,w,h)', 'Entities overlapping a box.'],
       ['ents_kill(e) / ents_reset()', 'Remove one entity / respawn everything placed on the map.'],
       ['ents_damage(e,n,[src])', 'Take n hp. Entities blink and can\'t be hurt again for 15 frames. HP 0 in the editor means can\'t be hurt.']]],
+    ['Player, stats and effects', [
+      ['PLAYER', 'The entity marked "is the player" (or the box from ents_player). Its x, y, hp, vx, vy work like any entity.'],
+      ['ents_camera([w,h])', 'Point the camera at the player, kept inside the world. Returns cx, cy. Set ENT_WORLD_W / ENT_WORLD_H to your map size in pixels.'],
+      ['ents_get(name)', 'First living entity of a type.'],
+      ['stat(e, name)', 'Current value of a stat: hp (max), damage, speed, jump or your own, after effects.'],
+      ['stat_set(e, name, v)', 'Change the base value of a stat for one entity.'],
+      ['fx_apply(e, name) / fx_remove / fx_has / fx_clear(e)', 'Start, stop or check effects made on the Entities tab. Effects can change HP once, over time, change stats (times, plus, set) and flash a colour.'],
+      ['Player death', 'When the player\'s HP hits 0 (or it falls out of the world) "death" fires. Set e.alive = true in an ents_on(name, "death") handler to respawn instead.']]],
     ['Events', [
       ['on(name, fn)', 'Call fn whenever the event happens. Built-in: "player_hurt" (damage, source), "death" (entity).'],
       ['emit(name, ...)', 'Send an event. Behavior trees can react with the "Heard event" check, and send events with "Send event".'],

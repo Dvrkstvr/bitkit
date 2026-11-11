@@ -123,7 +123,9 @@
         <div class="ent-col ent-listcol">
           <div class="toolbar"><button id="entNew" class="primary">New</button><button id="entDup">Copy</button><button id="entDel">Delete</button></div>
           <div id="entList" class="ent-list"></div>
-          <p class="dim small">Place entities on the Map tab (switch the layer to Entities). In your code call <code>ents_update()</code> in <code>_update</code>, <code>ents_draw()</code> in <code>_draw</code>, and <code>ents_player(x, y, w, h)</code> so they know where the player is. See Help for events and sensors.</p>
+          <div class="toolbar fx-head"><b>Effects</b><span class="grow"></span><button id="fxNew" class="tiny">+ effect</button></div>
+          <div id="fxList" class="ent-list"></div>
+          <p class="dim small">Place entities on the Map tab (switch the layer to Entities). In your code call <code>ents_update()</code> in <code>_update</code> and <code>ents_draw()</code> in <code>_draw</code>. Tick <b>is the player</b> on your player entity, and use the <b>Player controls</b> step in its behavior. See Help for stats, effects, events and sensors.</p>
         </div>
         <div class="ent-col ent-main">
           <div id="entForm">
@@ -139,6 +141,15 @@
               <label class="chk"><input type="checkbox" id="entCollide"> stops at walls</label>
               <label class="chk"><input type="checkbox" id="entLeft"> sprite faces left</label>
               <label class="chk" title="Not drawn in the game. Good for triggers and sensors."><input type="checkbox" id="entHidden"> invisible</label>
+              <label class="chk" title="This is the player: other entities chase, sense and hurt it, and the camera can follow it"><input type="checkbox" id="entPlayer"> is the player</label>
+              <label class="chk" title="The player damages it by landing on its head"><input type="checkbox" id="entStomp"> stompable</label>
+              <label title="Effect given to the other team on touch">Touch effect <select id="entTouchFx"></select></label>
+              <label title="Frames it can't be hurt again after a hit">Hurt cooldown <input id="entHurt" type="number" min="0" max="600"></label>
+            </div>
+            <div class="ent-stats">
+              <span class="dim small" title="Use stat(e, &quot;name&quot;) in code. speed and jump scale movement; effects can change any stat.">Stats</span>
+              <span id="entStats"></span>
+              <button id="entStatAdd" class="tiny">+ stat</button>
             </div>
             <div class="ent-anim-wrap">
               <canvas id="entPreview" width="128" height="128" class="pix checker"></canvas>
@@ -152,6 +163,20 @@
               <div class="toolbar"><b>Behavior</b> <span class="dim small">runs top to bottom every frame</span><span class="grow"></span><select id="entPreset"></select></div>
               <div id="entTree" class="bt"></div>
             </div>
+          </div>
+          <div id="fxForm" hidden>
+            <div class="ent-props">
+              <label>Name <input id="fxName" spellcheck="false"></label>
+              <label title="0 = instant (only the HP change on apply)">Lasts <input id="fxDur" type="number" min="0" max="36000"> frames</label>
+              <label title="What happens when it is applied again while active">Again <select id="fxStack"><option value="refresh">restart timer</option><option value="stack">stack</option><option value="keep">ignore</option></select></label>
+              <label title="Instant HP change when applied (negative hurts)">HP on apply <input id="fxHp" type="number"></label>
+              <label title="HP change repeated while active (poison, regeneration)">Every <input id="fxEvery" type="number" min="0"> frames change HP by <input id="fxTick" type="number"></label>
+              <label title="Palette colour the entity flashes while affected (-1 = none)">Flash colour <input id="fxTint" type="number" min="-1" max="255"><span id="fxTintSw" class="swatch"></span></label>
+            </div>
+            <div class="dim small">Stat changes while active</div>
+            <div id="fxMods" class="fx-mods"></div>
+            <div class="toolbar"><button id="fxModAdd" class="tiny">+ stat change</button><span class="grow"></span><button id="fxDel" class="tiny">Delete effect</button></div>
+            <p class="dim small">Apply it with a behavior step (Apply effect…), the Touch effect property, or in code with <code>fx_apply(e, "name")</code>. Check it with <code>fx_has(e, "name")</code> and read stats with <code>stat(e, "speed")</code>.</p>
           </div>
         </div>
         <div class="ent-col">
