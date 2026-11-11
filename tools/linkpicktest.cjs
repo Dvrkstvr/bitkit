@@ -25,7 +25,7 @@ const { chromium } = require('playwright');
   const pk = await c.evaluate(() => bkStudio.picks[0]);
   if (pk.k !== 'pad' || pk.i !== 1) fail('Bit 2 pick ' + JSON.stringify(pk));
   await a.waitForTimeout(300);
-  if ((await a.evaluate(() => bkStudio.link.peerPick || {})).i !== 1) fail('Bit 1 did not hear the pick');
+  if ((await a.evaluate(() => { const p = [...bkStudio.link.peers.values()][0]; return (p && p.pick) || {}; })).i !== 1) fail('Bit 1 did not hear the pick');
   // Bit 1 on auto now uses only the Xbox pad
   // each window has its own fake pads: hold the DualSense's A in both
   for (const pg of [a, c]) await pg.evaluate(() => { __pads[1].buttons[0] = { pressed: true, value: 1 }; });

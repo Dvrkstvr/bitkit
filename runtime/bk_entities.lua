@@ -575,9 +575,10 @@ end
 
 -- ents_players(): the list of player entities, player 1 first
 function ents_players() return PL end
-PLAYER_COL = {17, 22, 26, 27}
+PLAYER_COL = {17, 22, 26, 27, 8, 3, 20, 12}
 -- ents_player_pal(n, {from = to, ...}): recolour player n's sprite so players can tell themselves apart
-PLAYER_PAL = { nil, {[16] = 22, [17] = 21, [15] = 21}, {[16] = 26, [17] = 25, [15] = 25}, {[16] = 27, [17] = 10, [15] = 10} }
+PLAYER_PAL = { nil, {[16] = 22, [17] = 21, [15] = 21}, {[16] = 26, [17] = 25, [15] = 25}, {[16] = 27, [17] = 10, [15] = 10},
+  {[16] = 8, [17] = 9, [15] = 9}, {[16] = 3, [17] = 4, [15] = 4}, {[16] = 20, [17] = 19, [15] = 19}, {[16] = 12, [17] = 11, [15] = 11} }
 function ents_player_pal(n, map) PLAYER_PAL[n] = map end
 
 function ents_spawn(name, x, y)

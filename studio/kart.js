@@ -865,7 +865,7 @@ function _init()
   if sel.track > #TRACKS then sel.track = 1 end
   -- everyone playing gets a kart in the same race (rivals fill the grid up to KARTS).
   -- Each player builds their own kart; only player 1 picks the track.
-  NH = math.max(1, math.min(PLAYERS or 1, 4))
+  NH = math.max(1, math.min(PLAYERS or 1, (ME or 0) > 0 and 8 or 4))   -- linked Bits: up to 8, one screen: up to 4 views
   sels, rows, ready, humans = {sel}, {1}, {}, {}
   for p = 2, NH do sels[p] = {track = 1, body = (p - 1) % #BODIES + 1, eng = 2, tyre = 1, paint = p}; rows[p] = 1 end
   row, mode, gt = 1, "garage", 0
@@ -1428,7 +1428,7 @@ function draw_garage_for(v)
   cls(1)
   for y = 0, 7 do rectfill(0, 150 + y * 12, 320, 1, 2) end
   text("KART LAB", 12, 10, 27, 2)
-  text(NH > 1 and ("P" .. v .. ": build your kart") or "build your kart", 12, 28, NH > 1 and ({27, 22, 17, 10})[v] or 29)
+  text(NH > 1 and ("P" .. v .. ": build your kart") or "build your kart", 12, 28, NH > 1 and ({27, 22, 17, 10, 8, 3, 15, 25})[v] or 29)
   -- turntable
   local k = {body = sel.body, eng = sel.eng, tyre = sel.tyre, paint = sel.paint}
   ellipse(80, 150, 52, 31)

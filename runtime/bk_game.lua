@@ -41,7 +41,7 @@ do
   GAME = { state = "off", won = false }
 
   local function linked() return (ME or 0) > 0 end
-  local function players() return math.max(1, math.min(PLAYERS or 1, 4)) end
+  local function players() return math.max(1, math.min(PLAYERS or 1, 8)) end
   local function any_btnp(b)
     for p = 1, players() do if btnp(b, p) then return true end end
     return false

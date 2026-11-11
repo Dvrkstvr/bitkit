@@ -277,6 +277,9 @@ button.danger:hover { border-color: var(--err); color: var(--err); }
 .link-bar { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); font-size: 12px; }
 .link-bar[hidden] { display: none; }
 .link-bar.ok #linkStatus { color: var(--accent); }
+/* "waiting for Bit 2" over the screen of a linked game that cannot go on */
+.link-wait { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); padding: 6px 12px; border-radius: 8px; background: rgba(8, 10, 20, .85); color: #ffe08a; font-size: 13px; z-index: 4; pointer-events: none; text-align: center; }
+.link-wait[hidden] { display: none; }
 /* a linked second Bit (opened with ?bit=2): just the screen */
 body.bit-only .right, body.bit-only .topbar .actions, body.bit-only .console-head, body.bit-only .console, body.bit-only #players, body.bit-only #btnBit, body.bit-only #linkOpen { display: none !important; }
 body.bit-only .layout { grid-template-columns: 1fr; }
