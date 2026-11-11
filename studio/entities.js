@@ -8,51 +8,51 @@ window.BKEntities = (function () {
     invert: { g: 'Flow', label: 'Not', kids: 'one', help: 'Flips the result of its child.' },
     all: { g: 'Flow', label: 'Do all', kids: 'many', help: 'Runs every child every frame, whatever they return. Use it to move AND shoot.' },
 
-    near: { g: 'Check', label: 'Player closer than', p: [['dist', 'num', 48, 'px']] },
-    far: { g: 'Check', label: 'Player farther than', p: [['dist', 'num', 96, 'px']] },
-    sees: { g: 'Check', label: 'Sees player ahead within', p: [['dist', 'num', 96, 'px']] },
-    player_above: { g: 'Check', label: 'Player is above, within', p: [['dist', 'num', 24, 'px sideways']] },
-    on_ground: { g: 'Check', label: 'On the ground' },
-    wall_ahead: { g: 'Check', label: 'Wall ahead' },
-    ledge_ahead: { g: 'Check', label: 'Ledge ahead' },
-    chance: { g: 'Check', label: 'Random chance', p: [['pct', 'num', 2, '% per frame']] },
-    every: { g: 'Check', label: 'Every', p: [['frames', 'num', 60, 'frames']] },
-    hp_below: { g: 'Check', label: 'HP below', p: [['hp', 'num', 2, '']] },
-    touching: { g: 'Sense', label: 'Touching', p: [['what', 'what', 'player', '']] },
-    ray: { g: 'Sense', label: 'Ray hits', p: [['what', 'what', 'player', ''], ['dir', 'dir', 'ahead', ''], ['len', 'num', 64, 'px']], help: 'Casts a line from the middle of the entity. Walls block it.' },
-    circle: { g: 'Sense', label: 'Circle contains', p: [['what', 'what', 'player', ''], ['radius', 'num', 24, 'px']] },
-    got_hurt: { g: 'Sense', label: 'Just got hurt' },
+    near: { g: 'Check', label: 'Player closer than', p: [['dist', 'num', 48, 'px']], help: 'Works while the player is closer than this.' },
+    far: { g: 'Check', label: 'Player farther than', p: [['dist', 'num', 96, 'px']], help: 'Works while the player is this far away or further.' },
+    sees: { g: 'Check', label: 'Sees player ahead within', p: [['dist', 'num', 96, 'px']], help: 'Works while the player is in front of it, at about the same height.' },
+    player_above: { g: 'Check', label: 'Player is above, within', p: [['dist', 'num', 24, 'px sideways']], help: 'Works while the player is higher up and nearly straight above.' },
+    on_ground: { g: 'Check', label: 'On the ground', help: 'Works while it stands on something solid.' },
+    wall_ahead: { g: 'Check', label: 'Wall ahead', help: 'Works when a solid tile is right in front of it.' },
+    ledge_ahead: { g: 'Check', label: 'Ledge ahead', help: 'Works when the ground ends right in front of it.' },
+    chance: { g: 'Check', label: 'Random chance', p: [['pct', 'num', 2, '% per frame']], help: 'Works now and then: a dice roll every frame.' },
+    every: { g: 'Check', label: 'Every', p: [['frames', 'num', 60, 'frames']], help: 'Works once every so many frames (60 frames are one second).' },
+    hp_below: { g: 'Check', label: 'HP below', p: [['hp', 'num', 2, '']], help: 'Works while it has fewer hit points than this.' },
+    touching: { g: 'Sense', label: 'Touching', p: [['what', 'what', 'player', '']], help: 'Works while it overlaps one of these.' },
+    ray: { g: 'Sense', label: 'Ray hits', p: [['what', 'what', 'player', ''], ['dir', 'dir', 'ahead', '', 'towards'], ['len', 'num', 64, 'px', 'length']], help: 'Casts a line from the middle of the entity. Walls block it.' },
+    circle: { g: 'Sense', label: 'Circle contains', p: [['what', 'what', 'player', ''], ['radius', 'num', 24, 'px', 'radius']], help: 'Works while one of these is inside a circle around it.' },
+    got_hurt: { g: 'Sense', label: 'Just got hurt', help: 'Works for a moment right after it took damage.' },
     heard: { g: 'Sense', label: 'Heard event', p: [['event', 'text', 'open_door', '']], help: 'True on the frame after any entity or your code calls emit("name").' },
-    button: { g: 'Check', label: 'Button', p: [['button', 'btn', 'b', ''], ['mode', 'mode', 'pressed', '']] },
-    has_effect: { g: 'Check', label: 'Has effect', p: [['effect', 'fx', '', '']] },
-    count_below: { g: 'Check', label: 'Fewer than', p: [['count', 'num', 3, ''], ['type', 'ent', '', 'alive']] },
-    count_up: { g: 'Check', label: 'Count up to', p: [['max', 'num', 300, 'frames'], ['key', 'text', 'grow', 'memory'], ['bar', 'bool', true, 'show bar']], help: 'Adds 1 each frame it runs. Succeeds once the count is reached, and stays done.' },
-    is: { g: 'Check', label: 'Memory is', p: [['key', 'text', 'state', ''], ['value', 'text', 'angry', '']] },
+    button: { g: 'Check', label: 'Button', p: [['button', 'btn', 'b', ''], ['mode', 'mode', 'pressed', '', 'when']], help: 'Works when the player presses, holds or lets go of a button.' },
+    has_effect: { g: 'Check', label: 'Has effect', p: [['effect', 'fx', '', '']], help: 'Works while this effect (Effects, at the top of the tab) is on it.' },
+    count_below: { g: 'Check', label: 'Fewer than', p: [['count', 'num', 3, ''], ['type', 'ent', '', 'alive']], help: 'Works while fewer than this many of an entity are alive.' },
+    count_up: { g: 'Check', label: 'Count up to', p: [['max', 'num', 300, 'frames'], ['key', 'text', 'grow', '', 'remember as'], ['bar', 'bool', true, 'show bar']], help: 'Adds 1 each frame it runs. Succeeds once the count is reached, and stays done.' },
+    is: { g: 'Check', label: 'Memory is', p: [['key', 'text', 'state', ''], ['value', 'text', 'angry', '', '=']], help: 'Works when a value it remembered (with Remember) matches.' },
 
-    controls: { g: 'Do', label: 'Player controls', p: [['speed', 'num', 1, 'px/frame'], ['jump', 'num', 4.2, 'jump'], ['run', 'run', 'r', 'analog run'], ['sound', 'text', 'C5', 'jump sound']], help: 'D-pad moves, A jumps (with gravity) or up/down moves (without gravity).' },
-    patrol: { g: 'Do', label: 'Patrol (turn at walls and ledges)', p: [['speed', 'num', 0.5, 'px/frame']] },
-    wander: { g: 'Do', label: 'Wander', p: [['speed', 'num', 0.4, 'px/frame'], ['turn', 'num', 10, 'turn chance ‰']] },
-    chase: { g: 'Do', label: 'Chase player', p: [['speed', 'num', 0.7, 'px/frame']] },
-    flee: { g: 'Do', label: 'Run from player', p: [['speed', 'num', 0.7, 'px/frame']] },
-    hover: { g: 'Do', label: 'Bob up and down', p: [['height', 'num', 8, 'px'], ['speed', 'num', 0.06, '']] },
-    jump: { g: 'Do', label: 'Jump', p: [['power', 'num', 3.5, '']] },
-    stop: { g: 'Do', label: 'Stand still' },
-    turn: { g: 'Do', label: 'Turn around' },
-    face_player: { g: 'Do', label: 'Face the player' },
-    wait: { g: 'Do', label: 'Wait', p: [['frames', 'num', 30, 'frames']] },
-    anim: { g: 'Do', label: 'Play animation', p: [['name', 'anim', 'idle', '']] },
-    say: { g: 'Do', label: 'Say', p: [['text', 'text', 'Hello!', '']] },
-    sound: { g: 'Do', label: 'Play sound', p: [['note', 'text', 'C5', ''], ['wave', 'num', 0, 'wave 0-5']] },
-    shoot: { g: 'Do', label: 'Shoot', p: [['type', 'ent', '', ''], ['speed', 'num', 1.5, 'px/frame'], ['aim', 'bool', false, 'aim at player']] },
-    set: { g: 'Do', label: 'Remember', p: [['key', 'text', 'state', ''], ['value', 'text', 'angry', '']] },
+    controls: { g: 'Do', label: 'Player controls', p: [['speed', 'num', 1, 'px/frame', 'speed'], ['jump', 'num', 4.2, '', 'jump power'], ['run', 'run', 'r', '', 'run button'], ['sound', 'text', 'C5', '', 'jump sound']], help: 'D-pad moves, A jumps (with gravity) or up/down moves (without gravity).' },
+    patrol: { g: 'Do', label: 'Patrol (turn at walls and ledges)', p: [['speed', 'num', 0.5, 'px/frame', 'speed']], help: 'Walks ahead and turns around at walls and ledges.' },
+    wander: { g: 'Do', label: 'Wander', p: [['speed', 'num', 0.4, 'px/frame', 'speed'], ['turn', 'num', 10, 'in 1000', 'turn chance']], help: 'Walks ahead and turns around now and then.' },
+    chase: { g: 'Do', label: 'Chase player', p: [['speed', 'num', 0.7, 'px/frame', 'speed']], help: 'Moves towards the player.' },
+    flee: { g: 'Do', label: 'Run from player', p: [['speed', 'num', 0.7, 'px/frame', 'speed']], help: 'Moves away from the player.' },
+    hover: { g: 'Do', label: 'Bob up and down', p: [['height', 'num', 8, 'px', 'height'], ['speed', 'num', 0.06, '', 'speed']], help: 'Floats gently up and down (for entities without gravity).' },
+    jump: { g: 'Do', label: 'Jump', p: [['power', 'num', 3.5, '', 'power']], help: 'Jumps, if it stands on the ground.' },
+    stop: { g: 'Do', label: 'Stand still', help: 'Stops moving.' },
+    turn: { g: 'Do', label: 'Turn around', help: 'Faces the other way.' },
+    face_player: { g: 'Do', label: 'Face the player', help: 'Turns to look at the player.' },
+    wait: { g: 'Do', label: 'Wait', p: [['frames', 'num', 30, 'frames']], help: 'Pauses the steps below it for this long.' },
+    anim: { g: 'Do', label: 'Play animation', p: [['name', 'anim', 'idle', '']], help: 'Shows one of its animations (Animations, above).' },
+    say: { g: 'Do', label: 'Say', p: [['text', 'text', 'Hello!', '']], help: 'Shows a speech bubble while this step runs.' },
+    sound: { g: 'Do', label: 'Play sound', p: [['note', 'text', 'C5', '', 'note'], ['wave', 'num', 0, '0 to 5', 'wave']], help: 'Plays a note, like C5 or A3.' },
+    shoot: { g: 'Do', label: 'Shoot', p: [['type', 'ent', '', '', 'what'], ['speed', 'num', 1.5, 'px/frame', 'speed'], ['aim', 'bool', false, 'aim at player']], help: 'Fires another entity ahead of it, like a pebble or a seed.' },
+    set: { g: 'Do', label: 'Remember', p: [['key', 'text', 'state', ''], ['value', 'text', 'angry', '', '=']], help: 'Stores a value under a name. Check it later with Memory is.' },
     emit: { g: 'Do', label: 'Send event', p: [['event', 'text', 'open_door', '']], help: 'Your code can listen with on("name", function(e) ... end).' },
-    damage_touching: { g: 'Do', label: 'Damage what it touches', p: [['what', 'what', 'enemy', ''], ['amount', 'num', 1, 'hp']] },
-    set_tile: { g: 'Do', label: 'Change map tile', p: [['dx', 'num', 0, 'tiles right'], ['dy', 'num', 1, 'tiles down'], ['tile', 'num', 0, 'tile']] },
-    spawn: { g: 'Do', label: 'Spawn', p: [['type', 'ent', '', ''], ['dx', 'num', 0, 'px right'], ['dy', 'num', -16, 'px down']] },
-    apply_effect: { g: 'Do', label: 'Apply effect to self', p: [['effect', 'fx', '', '']] },
-    apply_touching: { g: 'Do', label: 'Apply effect to what it touches', p: [['effect', 'fx', '', ''], ['what', 'what', 'player', '']] },
-    remove_effect: { g: 'Do', label: 'Remove effect', p: [['effect', 'fx', '', '']] },
-    remove: { g: 'Do', label: 'Remove self' },
+    damage_touching: { g: 'Do', label: 'Damage what it touches', p: [['what', 'what', 'enemy', ''], ['amount', 'num', 1, 'hp', 'damage']], help: 'Hurts everything of this kind that it overlaps.' },
+    set_tile: { g: 'Do', label: 'Change map tile', p: [['dx', 'num', 0, 'tiles', 'right'], ['dy', 'num', 1, 'tiles', 'down'], ['tile', 'num', 0, '', 'to tile']], help: 'Swaps a tile of the map near it, for doors and switches.' },
+    spawn: { g: 'Do', label: 'Spawn', p: [['type', 'ent', '', ''], ['dx', 'num', 0, 'px', 'right'], ['dy', 'num', -16, 'px', 'down']], help: 'Creates another entity next to it.' },
+    apply_effect: { g: 'Do', label: 'Apply effect to self', p: [['effect', 'fx', '', '']], help: 'Puts an effect on itself.' },
+    apply_touching: { g: 'Do', label: 'Apply effect to what it touches', p: [['effect', 'fx', '', ''], ['what', 'what', 'player', '', 'to']], help: 'Puts an effect on what it overlaps, like heal or slow.' },
+    remove_effect: { g: 'Do', label: 'Remove effect', p: [['effect', 'fx', '', '']], help: 'Takes an effect off itself.' },
+    remove: { g: 'Do', label: 'Remove self', help: 'Disappears for good (a pickup that was collected).' },
     level: { g: 'Do', label: 'Go to level', p: [['n', 'num', 2, '']], help: 'Switches to another level (Map tab). The player keeps its HP.' },
     cutscene: { g: 'Do', label: 'Play cutscene', p: [['name', 'scene', '', ''], ['once', 'bool', true, 'only once']], help: 'Plays a cutscene from the Cutscenes tab. Behaviors pause until it ends.' },
   };
@@ -506,7 +506,7 @@ window.BKEntities = (function () {
       Object.entries(NODES).forEach(([k, v]) => { (groups[v.g] = groups[v.g] || []).push(`<option value="${k}"${k === sel ? ' selected' : ''}>${escapeHtml(v.label)}</option>`); });
       return Object.entries(groups).map(([g, o]) => `<optgroup label="${g}">${o.join('')}</optgroup>`).join('');
     }
-    function paramInput(n, [key, kind, def, unit], t) {
+    function paramInput(n, [key, kind, def, unit, label], t) {
       const v = n.p[key] ?? def;
       let html;
       if (kind === 'num') html = `<input type="number" step="any" data-k="${key}" value="${v}">`;
@@ -521,7 +521,8 @@ window.BKEntities = (function () {
       else if (kind === 'scene') html = `<select data-k="${key}"><option value="">(pick)</option>${(cart.entities.cutscenes || []).map(x => `<option${x.name === v ? ' selected' : ''}>${escapeHtml(x.name)}</option>`).join('')}</select>`;
       else if (kind === 'ent') html = `<select data-k="${key}"><option value="">(pick)</option>${cart.entities.types.map(x => `<option${x.name === v ? ' selected' : ''}>${escapeHtml(x.name)}</option>`).join('')}</select>`;
       else html = `<input type="text" data-k="${key}" value="${escapeHtml(String(v))}">`;
-      return `<label class="np">${html}${unit ? `<span class="dim small">${escapeHtml(unit)}</span>` : ''}</label>`;
+      // what the field is comes first, its unit after: speed [1] px/frame
+      return `<label class="np">${label ? `<span class="np-l">${escapeHtml(label)}</span>` : ''}${html}${unit ? `<span class="dim small">${escapeHtml(unit)}</span>` : ''}</label>`;
     }
     function nodeEl(n, parent, idx, t) {
       const meta = NODES[n.t] || { g: 'Do', label: n.t };
@@ -531,7 +532,7 @@ window.BKEntities = (function () {
       head.className = 'bt-head';
       head.innerHTML = `<span class="bt-tag">${{ Flow: '◆', Check: '?', Sense: '◎', Do: '▶' }[meta.g]}</span>
         <span class="bt-params"><select class="bt-type" title="${escapeHtml(meta.help || '')}">${typeOptions(n.t)}</select>
-        ${(meta.p || []).map(pp => paramInput(n, pp, t)).join('')}</span>
+        ${(meta.p || []).map(pp => paramInput(n, pp, t)).join('')}${meta.help ? `<span class="bt-help">${escapeHtml(meta.help)}</span>` : ''}</span>
         <span class="bt-ctl">${meta.kids ? '<button class="tiny bt-add" title="Add a step inside">+ step</button>' : ''}${parent ? '<button class="tiny bt-after" title="Add a step below this one">+ below</button><button class="tiny bt-up" title="Move up">↑</button><button class="tiny bt-down" title="Move down">↓</button><button class="tiny bt-del" title="Delete step">✕</button>' : ''}</span>`;
       el.appendChild(head);
       head.querySelector('.bt-type').onchange = e => {

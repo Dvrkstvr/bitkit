@@ -248,7 +248,7 @@ end
     document.querySelectorAll('.tab').forEach(el => el.classList.toggle('active', el.id === 'tab-' + t));
     if (t === 'code' && cm) cm.refresh();
     if (t === 'sprites') drawSprites();
-    if (t === 'map') { refreshLevels(); refreshEntSelect(); drawMap(); }
+    if (t === 'map') { refreshLevels(); refreshEntSelect(); fitMap(); drawMap(); }
     if (t === 'entities') entEd.render();
     if (t === 'cutscenes') csEd.render();
     if (t === 'track') trkEd.render();
@@ -339,7 +339,7 @@ end
     placeOnMap: name => {
       showTab('map');
       mp.layer = 'ents'; $('mapLayer').value = 'ents'; $('mapEnt').hidden = false;
-      mp.ent = name; refreshEntSelect(); drawMap();
+      mp.ent = name; refreshEntSelect(); setMapTool(mp.tool); drawMap();
     }
   });
 
@@ -354,32 +354,66 @@ end
   const flagsEl = $('sprFlags');
   const DEFAULT_FLAG_NAMES = ['solid', '', '', '', '', '', '', ''];
   const flagNames = () => cart.entities.flagNames || DEFAULT_FLAG_NAMES;
-  for (let b = 0; b < 8; b++) {
-    const l = document.createElement('label');
-    l.innerHTML = `<input type="checkbox" data-bit="${b}"><input class="flag-name" data-name="${b}" placeholder="${b}" spellcheck="false" maxlength="12">`;
-    flagsEl.appendChild(l);
+  // Shown as chips: click one to switch it on or off for this tile. Only named behaviours show, "+ add behaviour" names the next free one.
+  let flagEdit = -1;                // the behaviour being named or renamed
+  function nameFlag(b, raw) {
+    const names = flagNames().slice();
+    let n = raw.trim().toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
+    if (/^\d/.test(n)) n = '_' + n;
+    if (n && names.some((x, i) => x === n && i !== b)) { toast('That name is taken'); n = names[b] || ''; }
+    if (n === (names[b] || '')) return;
+    names[b] = n; cart.entities.flagNames = names; markDirty();
   }
-  flagsEl.addEventListener('change', e => {
-    if (e.target.dataset.name !== undefined) {         // renamed a behaviour
-      const names = flagNames().slice(), b = +e.target.dataset.name;
-      let n = e.target.value.trim().toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
-      if (/^\d/.test(n)) n = '_' + n;
-      if (n && names.some((x, i) => x === n && i !== b)) { toast('That name is taken'); n = names[b]; }
-      names[b] = n; cart.entities.flagNames = names; e.target.value = n;
-      showFlags(); markDirty();
-      return;
-    }
-    const b = +e.target.dataset.bit;
-    if (e.target.checked) cart.flags[spr.tile] |= 1 << b; else cart.flags[spr.tile] &= ~(1 << b);
-    gfxDirtyRT = true; markDirty();
+  flagsEl.addEventListener('click', e => {
+    const t = e.target.closest('button');
+    if (!t) return;
+    if (t.dataset.bit !== undefined) {
+      cart.flags[spr.tile] ^= 1 << +t.dataset.bit;
+      gfxDirtyRT = true; markDirty();
+    } else if (t.dataset.ren !== undefined) flagEdit = +t.dataset.ren;
+    else if (t.id === 'flagAdd') flagEdit = flagNames().findIndex((n, i) => !n && !flagUsed(i));
+    showFlags();
   });
+  const flagUsed = b => cart.flags.some(f => (f >> b) & 1);
   function showFlags() {
-    const names = flagNames();
-    flagsEl.querySelectorAll('input[data-bit]').forEach(i => {
-      const b = +i.dataset.bit; i.checked = (cart.flags[spr.tile] >> b) & 1;
-      i.parentElement.title = names[b] ? `Behaviour "${names[b]}" (flag ${b}). In code: fget(tile, "${names[b]}")` : `Flag ${b}: give it a name to use it as a behaviour. In code: fget(tile, ${b})`;
-    });
-    flagsEl.querySelectorAll('input[data-name]').forEach(i => { if (document.activeElement !== i) i.value = names[+i.dataset.name] || ''; });
+    const names = flagNames(), f = cart.flags[spr.tile];
+    let html = '';
+    for (let b = 0; b < 8; b++) {
+      const on = (f >> b) & 1;
+      if (b === flagEdit) { html += `<input class="flag-name" data-name="${b}" value="${escapeHtml(names[b] || '')}" placeholder="name, e.g. ice" spellcheck="false" maxlength="12">`; continue; }
+      if (!names[b] && !flagUsed(b)) continue;           // a free slot
+      const label = names[b] || `flag ${b}`;
+      html += `<span class="chip${on ? ' on' : ''}"><button data-bit="${b}" title="${names[b] ? `Tiles with "${names[b]}" switched on. In code: fget(tile, &quot;${names[b]}&quot;)` : `Flag ${b} has no name yet. In code: fget(tile, ${b})`}${b === 0 ? '. Entities stand on solid tiles.' : ''}">${on ? '✓' : '○'} ${escapeHtml(label)}</button>` +
+        `<button class="chip-ren" data-ren="${b}" title="Rename (empty the name to remove it)">✎</button></span>`;
+    }
+    if (flagEdit < 0 && names.some((n, i) => !n && !flagUsed(i))) html += '<button id="flagAdd" class="chip-add" title="Name a new behaviour, like ice, ladder or water. Your code asks fget(tile, &quot;name&quot;).">+ add behaviour</button>';
+    flagsEl.innerHTML = html;
+    const inp = flagsEl.querySelector('.flag-name');
+    if (inp) {
+      const b = flagEdit;
+      const done = keep => { if (flagEdit !== b) return; flagEdit = -1; if (keep) nameFlag(b, inp.value); showFlags(); };
+      inp.onkeydown = e => { e.stopPropagation(); if (e.key === 'Enter') done(true); else if (e.key === 'Escape') done(false); };
+      inp.onblur = () => done(true);
+      inp.focus(); inp.select();
+    }
+  }
+  // which entity draws itself with a tile (from the animations on the Entities tab)
+  function tileUsers() {
+    const m = {};
+    (cart.entities.types || []).forEach(t => (t.anims || []).forEach(a => (a.frames || []).forEach(fr => {
+      for (let y = 0; y < (t.sh || 1); y++) for (let x = 0; x < (t.sw || 1); x++) {
+        const n = (fr | 0) + y * 16 + x;
+        (m[n] = m[n] || new Set()).add(t.name);
+      }
+    })));
+    return m;
+  }
+  const SHEET_T = 24;               // pixels per tile on the sheet
+  function sheetRows() {            // rows that have something drawn, and two spare ones
+    if (spr.all) return 32;
+    let last = 0;
+    for (let n = TILES - 1; n > 0; n--) { let any = false; for (let i = n * 64; i < n * 64 + 64; i++) if (cart.tiles[i]) { any = true; break; } if (any) { last = n >> 4; break; } }
+    return Math.min(32, Math.max(last + 3, (spr.tile >> 4) + spr.size + 1, 6));
   }
 
   function tilePix(px, py) { // pixel inside current selection -> index in tiles[]
@@ -410,19 +444,27 @@ end
       sprCtx.stroke();
     }
     // sheet
+    const T = SHEET_T, rows = sheetRows();
+    if (sheet.height !== rows * T || sheet.width !== 16 * T) { sheet.width = 16 * T; sheet.height = rows * T; }
     sheetCtx.imageSmoothingEnabled = false;
-    sheetCtx.fillStyle = '#000'; sheetCtx.fillRect(0, 0, 256, 512);
-    sheetCtx.drawImage(atlas, 0, 0, 256, 512);
+    sheetCtx.fillStyle = '#000'; sheetCtx.fillRect(0, 0, 16 * T, rows * T);
+    sheetCtx.drawImage(atlas, 0, 0, 128, rows * 8, 0, 0, 16 * T, rows * T);
     sheetCtx.strokeStyle = 'rgba(255,255,255,.06)';
     sheetCtx.beginPath();
-    for (let i = 1; i < 16; i++) { sheetCtx.moveTo(i * 16 + .5, 0); sheetCtx.lineTo(i * 16 + .5, 512); }
-    for (let i = 1; i < 32; i++) { sheetCtx.moveTo(0, i * 16 + .5); sheetCtx.lineTo(256, i * 16 + .5); }
+    for (let i = 1; i < 16; i++) { sheetCtx.moveTo(i * T + .5, 0); sheetCtx.lineTo(i * T + .5, rows * T); }
+    for (let i = 1; i < rows; i++) { sheetCtx.moveTo(0, i * T + .5); sheetCtx.lineTo(16 * T, i * T + .5); }
     sheetCtx.stroke();
     sheetCtx.strokeStyle = '#ffd23f'; sheetCtx.lineWidth = 2;
-    sheetCtx.strokeRect((spr.tile % 16) * 16 + 1, (spr.tile >> 4) * 16 + 1, spr.size * 16 - 2, spr.size * 16 - 2);
+    sheetCtx.strokeRect((spr.tile % 16) * T + 1, (spr.tile >> 4) * T + 1, spr.size * T - 2, spr.size * T - 2);
     sheetCtx.lineWidth = 1;
+    $('sheetInfo').textContent = rows < 32 ? `Sprite sheet: the first ${rows * 16} of 512 tiles` : 'Sprite sheet: all 512 tiles, 16 per row';
+    $('sheetAll').textContent = spr.all ? 'show less' : 'show all';
     // info
+    const users = new Set();
+    const um = tileUsers();
+    for (let y = 0; y < spr.size; y++) for (let x = 0; x < spr.size; x++) (um[spr.tile + y * 16 + x] || []).forEach(n => users.add(n));
     $('sprInfo').textContent = `Tile ${spr.tile}`;
+    $('sprUsed').textContent = users.size ? `used by ${[...users].join(', ')}` : '';
     $('sprHint').textContent = spr.size === 1 ? `spr(${spr.tile}, x, y)` : `spr(${spr.tile}, x, y, ${spr.size}, ${spr.size})`;
     if (BKTracks.uses(cart) && spr.tile >= BKTracks.TILE.EDGE && spr.tile <= BKTracks.TILE.EDGE_END)
       $('sprHint').textContent = 'road edge: built from the road look on the Track tab';
@@ -463,11 +505,20 @@ end
 
   sheet.addEventListener('mousedown', e => {
     const r = sheet.getBoundingClientRect();
-    let tx = Math.floor((e.clientX - r.left) / r.width * 16), ty = Math.floor((e.clientY - r.top) / r.height * 32);
+    let tx = Math.floor((e.clientX - r.left) / r.width * 16), ty = Math.floor((e.clientY - r.top) / r.height * (sheet.height / SHEET_T));
     tx = Math.min(tx, 16 - spr.size); ty = Math.min(ty, 32 - spr.size);
     spr.tile = ty * 16 + tx;
     drawSprites();
   });
+  sheet.addEventListener('mousemove', e => {       // hovering says which tile it is and who uses it
+    const r = sheet.getBoundingClientRect();
+    const n = Math.floor((e.clientY - r.top) / r.height * (sheet.height / SHEET_T)) * 16 + Math.floor((e.clientX - r.left) / r.width * 16);
+    if (n === sheet._hover) return;
+    sheet._hover = n;
+    const u = tileUsers()[n];
+    sheet.title = `Tile ${n}` + (u ? ` · used by ${[...u].join(', ')}` : '');
+  });
+  $('sheetAll').onclick = () => { spr.all = !spr.all; drawSprites(); };
   $('sprSize').addEventListener('change', e => {
     spr.size = +e.target.value;
     if (!selValid(spr.tile, spr.size)) spr.tile = Math.min(spr.tile % 16, 16 - spr.size) + Math.min(spr.tile >> 4, 32 - spr.size) * 16;
@@ -654,8 +705,22 @@ LEVEL = tune("Rivals", "Normal", {"Easy", "Normal", "Hard"})   -- a list</pre>
   /* ------------------------------------------------------------ map editor */
   const mv = $('mapView'), mvCtx = mv.getContext('2d');
   const mapSheet = $('mapSheet'), msCtx = mapSheet.getContext('2d');
-  const mp = { x: 0, y: 0, zoom: 2, tile: 1, tool: 'paint', grid: true, hover: null, layer: 'tiles', ent: '' };
+  const mp = { x: 0, y: 0, zoom: 2, tile: 1, tool: 'paint', grid: true, hover: null, layer: 'tiles', ent: '', rect: null, space: false, autoz: true };
   let mapPainting = false, mapPanning = null;
+  // the map fills the room the tab has: the canvas is as big as its box
+  const mvBox = mv.parentNode;
+  function fitMap() {
+    const w = Math.max(160, mvBox.clientWidth | 0), h = Math.max(120, mvBox.clientHeight | 0);
+    if (!mvBox.clientHeight) return;                 // the tab is not showing
+    if (mp.autoz) {                                  // a level just opened: zoom so its height fits
+      const L = cart.levels[cart.level];
+      mp.autoz = false; mp.zoom = Math.max(2, Math.min(4, Math.floor(h / ((L ? L.h : 30) * 8))));
+    } else if (mv.width === w && mv.height === h) return;
+    mv.width = w; mv.height = h;
+    if (activeTab === 'map') panMap(0, 0);
+  }
+  if (window.ResizeObserver) new ResizeObserver(fitMap).observe(mvBox);
+  const MAP_HINT = { paint: 'Paint: drag to draw with the picked tile.', erase: 'Eraser: drag to clear tiles.', rect: 'Box: drag a rectangle and let go to fill it.', fill: 'Fill: click an area to flood it (only what you see).', pick: 'Pick: click a tile on the map to draw with it.' };
 
   function mapViewTiles() { return [Math.ceil(mv.width / (8 * mp.zoom)), Math.ceil(mv.height / (8 * mp.zoom))]; }
   function drawMap() {
@@ -717,19 +782,39 @@ LEVEL = tune("Rivals", "Normal", {"Easy", "Normal", "Hard"})   -- a list</pre>
       $('mapPos').textContent = `x ${hx * 8}, y ${hy * 8} px  (tile ${hx}, ${hy})`;
     } else if (mp.hover) {
       const [hx, hy] = mp.hover;
-      mvCtx.globalAlpha = .6;
-      mvCtx.drawImage(atlas, (mp.tile % 16) * 8, (mp.tile >> 4) * 8, 8, 8, (hx - mp.x) * s, (hy - mp.y) * s, s, s);
-      mvCtx.globalAlpha = 1;
-      mvCtx.strokeStyle = '#fff'; mvCtx.strokeRect((hx - mp.x) * s + .5, (hy - mp.y) * s + .5, s - 1, s - 1);
-      $('mapPos').textContent = `x ${hx}, y ${hy}  tile ${cart.map[hy * MAPW + hx]}  (view ${mp.x},${mp.y})`;
-    } else $('mapPos').textContent = `view ${mp.x},${mp.y}`;
+      if (mp.rect) {                 // the box being dragged
+        const [x0, y0, x1, y1] = rectOf(mp.rect, mp.hover);
+        mvCtx.fillStyle = mp.rect.erase ? 'rgba(255,107,94,.25)' : 'rgba(138,211,90,.25)';
+        mvCtx.fillRect((x0 - mp.x) * s, (y0 - mp.y) * s, (x1 - x0 + 1) * s, (y1 - y0 + 1) * s);
+        mvCtx.strokeStyle = '#fff'; mvCtx.strokeRect((x0 - mp.x) * s + .5, (y0 - mp.y) * s + .5, (x1 - x0 + 1) * s - 1, (y1 - y0 + 1) * s - 1);
+        $('mapPos').textContent = `${x1 - x0 + 1} × ${y1 - y0 + 1} tiles`;
+      } else {
+        if (mp.tool !== 'erase' && mp.tool !== 'pick') {
+          mvCtx.globalAlpha = .6;
+          mvCtx.drawImage(atlas, (mp.tile % 16) * 8, (mp.tile >> 4) * 8, 8, 8, (hx - mp.x) * s, (hy - mp.y) * s, s, s);
+          mvCtx.globalAlpha = 1;
+        }
+        mvCtx.strokeStyle = mp.tool === 'erase' ? '#ff6b5e' : '#fff'; mvCtx.strokeRect((hx - mp.x) * s + .5, (hy - mp.y) * s + .5, s - 1, s - 1);
+        const hit = entAt(hx * 8 + 4, hy * 8 + 4);
+        $('mapPos').textContent = `x ${hx}, y ${hy}  tile ${cart.map[hy * MAPW + hx]}` + (hit >= 0 ? `  ·  ${cart.entities.placed[hit].type}` : '');
+        if (hit >= 0) {              // say who stands here
+          const pl = cart.entities.placed[hit], lx = (pl.x - mp.x * 8) * pz, ly = (pl.y - mp.y * 8) * pz;
+          mvCtx.font = '11px system-ui'; const w = mvCtx.measureText(pl.type).width + 8;
+          mvCtx.fillStyle = 'rgba(10,10,18,.85)'; mvCtx.fillRect(lx, ly - 16, w, 14);
+          mvCtx.fillStyle = '#fff'; mvCtx.fillText(pl.type, lx + 4, ly - 5);
+        }
+      }
+    } else $('mapPos').textContent = '';
     // picker
+    const prow = Math.max(sheetRows(), (mp.tile >> 4) + 2);      // the rows in use, like on the Sprites tab
+    if (mapSheet.height !== prow * 16) mapSheet.height = prow * 16;
     msCtx.imageSmoothingEnabled = false;
-    msCtx.fillStyle = '#000'; msCtx.fillRect(0, 0, 256, 512);
-    msCtx.drawImage(atlas, 0, 0, 256, 512);
+    msCtx.fillStyle = '#000'; msCtx.fillRect(0, 0, 256, prow * 16);
+    msCtx.drawImage(atlas, 0, 0, 128, prow * 8, 0, 0, 256, prow * 16);
     msCtx.strokeStyle = '#ffd23f'; msCtx.lineWidth = 2;
     msCtx.strokeRect((mp.tile % 16) * 16 + 1, (mp.tile >> 4) * 16 + 1, 14, 14); msCtx.lineWidth = 1;
     $('mapTileInfo').textContent = mp.tile + (mp.tile === 0 ? ' (empty)' : '');
+    $('mapZoom').value = mp.zoom;
   }
   function drawRoute() {
     const z = mp.zoom, ox = mp.x * 8, oy = mp.y * 8;
@@ -753,6 +838,7 @@ LEVEL = tune("Rivals", "Normal", {"Easy", "Normal", "Hard"})   -- a list</pre>
     });
     mvCtx.lineWidth = 1;
   }
+  const rectOf = (a, b) => [Math.min(a.x, b[0]), Math.min(a.y, b[1]), Math.max(a.x, b[0]), Math.max(a.y, b[1])];
   function mapPos(e) {
     const r = mv.getBoundingClientRect(), s = 8 * mp.zoom;
     const x = Math.floor((e.clientX - r.left) / r.width * mv.width / s) + mp.x;
@@ -783,8 +869,10 @@ LEVEL = tune("Rivals", "Normal", {"Easy", "Normal", "Hard"})   -- a list</pre>
       markDirty(); drawMap();
       return;
     }
-    if (mp.tool === 'pick' || e.altKey) { mp.tile = cart.map[y * MAPW + x]; drawMap(); return; }
-    const t = (e.buttons & 2 || e.button === 2) ? 0 : mp.tile;
+    if (mp.tool === 'pick' || e.altKey) { mp.tile = cart.map[y * MAPW + x]; if (first && mp.tool === 'pick') setMapTool('paint'); drawMap(); return; }
+    const erase = e.buttons & 2 || e.button === 2 || mp.tool === 'erase';
+    const t = erase ? 0 : mp.tile;
+    if (mp.tool === 'rect') { if (first) mp.rect = { x, y, erase: !!(e.buttons & 2 || e.button === 2) }; drawMap(); return; }
     if (first) mapHist.push();
     if (mp.tool === 'fill') {
       if (!first) return;
@@ -803,9 +891,21 @@ LEVEL = tune("Rivals", "Normal", {"Easy", "Normal", "Hard"})   -- a list</pre>
     mapDirtyRT = true; markDirty(); drawMap();
   }
   mv.addEventListener('contextmenu', e => e.preventDefault());
+  window.addEventListener('mouseup', () => {          // letting go fills the dragged box
+    mapPainting = false;
+    if (!mp.rect) return;
+    const r = mp.rect; mp.rect = null;
+    if (mp.hover) {
+      const [x0, y0, x1, y1] = rectOf(r, mp.hover);
+      mapHist.push();
+      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) cart.map[y * MAPW + x] = r.erase ? 0 : mp.tile;
+      mapDirtyRT = true; markDirty();
+    }
+    drawMap();
+  });
   mv.addEventListener('mousedown', e => {
     mv.focus();
-    if (e.button === 1) { mapPanning = { x: e.clientX, y: e.clientY, mx: mp.x, my: mp.y }; e.preventDefault(); return; }
+    if (e.button === 1 || (e.button === 0 && mp.space)) { mapPanning = { x: e.clientX, y: e.clientY, mx: mp.x, my: mp.y }; e.preventDefault(); return; }
     mapPainting = true; mapApply(e, true);
   });
   mv.addEventListener('mousemove', e => {
@@ -817,27 +917,47 @@ LEVEL = tune("Rivals", "Normal", {"Easy", "Normal", "Hard"})   -- a list</pre>
     mp.hover = mapPos(e);
     if (mapPainting && e.buttons) mapApply(e, false); else drawMap();
   });
-  mv.addEventListener('mouseleave', () => { mp.hover = null; drawMap(); });
-  mv.addEventListener('wheel', e => { e.preventDefault(); panMap(Math.sign(e.shiftKey ? e.deltaY : e.deltaX) * 2, e.shiftKey ? 0 : Math.sign(e.deltaY) * 2); }, { passive: false });
+  mv.addEventListener('mouseleave', () => { if (mp.rect) return; mp.hover = null; drawMap(); });
+  // the wheel zooms in and out around the pointer (Shift or a sideways swipe pans)
+  let wheelAcc = 0;
+  mv.addEventListener('wheel', e => {
+    e.preventDefault();
+    if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return panMap(Math.sign(e.shiftKey ? e.deltaY : e.deltaX) * 2, 0);
+    wheelAcc += e.deltaMode ? e.deltaY * 40 : e.deltaY;
+    if (Math.abs(wheelAcc) < 40) return;
+    const z = Math.max(1, Math.min(4, mp.zoom + (wheelAcc < 0 ? 1 : -1)));
+    wheelAcc = 0;
+    if (z === mp.zoom) return;
+    const r = mv.getBoundingClientRect(), cx = (e.clientX - r.left) / 8, cy = (e.clientY - r.top) / 8;
+    const tx = mp.x + cx / mp.zoom, ty = mp.y + cy / mp.zoom;      // the tile under the pointer stays there
+    mp.zoom = z; mp.x = Math.round(tx - cx / z); mp.y = Math.round(ty - cy / z);
+    panMap(0, 0);
+  }, { passive: false });
   function panMap(dx, dy) {
-    const [vw, vh] = mapViewTiles();
+    const vw = Math.floor(mv.width / (8 * mp.zoom)), vh = Math.floor(mv.height / (8 * mp.zoom));
     mp.x = Math.max(0, Math.min(MAPW - vw, mp.x + dx));
     mp.y = Math.max(0, Math.min(MAPH - vh, mp.y + dy));
     drawMap();
   }
+  mv.addEventListener('keyup', e => { if (e.key === ' ') { mp.space = false; mv.style.cursor = ''; } });
+  mv.addEventListener('blur', () => { mp.space = false; mv.style.cursor = ''; });
   mv.addEventListener('keydown', e => {
     const k = e.key.toLowerCase(), st = e.shiftKey ? 10 : 2;
+    if (e.key === ' ') { mp.space = true; mv.style.cursor = 'grab'; e.preventDefault(); return; }
     const d = { arrowleft: [-st, 0], a: [-st, 0], arrowright: [st, 0], d: [st, 0], arrowup: [0, -st], w: [0, -st], arrowdown: [0, st], s: [0, st] }[k];
     if (d && !e.ctrlKey && !e.metaKey) { panMap(d[0], d[1]); e.preventDefault(); }
   });
   mapSheet.addEventListener('mousedown', e => {
     const r = mapSheet.getBoundingClientRect();
-    mp.tile = Math.floor((e.clientY - r.top) / r.height * 32) * 16 + Math.floor((e.clientX - r.left) / r.width * 16);
-    if (mp.tool === 'pick') setMapTool('paint');
+    mp.tile = Math.floor((e.clientY - r.top) / r.height * (mapSheet.height / 16)) * 16 + Math.floor((e.clientX - r.left) / r.width * 16);
+    if (mp.tool === 'pick' || mp.tool === 'erase') setMapTool('paint');
     drawMap();
   });
   document.querySelectorAll('.mtool').forEach(b => b.onclick = () => setMapTool(b.dataset.mtool));
-  function setMapTool(t) { mp.tool = t; document.querySelectorAll('.mtool').forEach(b => b.classList.toggle('active', b.dataset.mtool === t)); }
+  function setMapTool(t) {
+    mp.tool = t; document.querySelectorAll('.mtool').forEach(b => b.classList.toggle('active', b.dataset.mtool === t));
+    $('mapHint').textContent = mp.layer === 'ents' ? 'Click to place the picked entity, right click removes one.' : MAP_HINT[t];
+  }
   // ---- levels
   function refreshLevels() {
     $('mapLevel').innerHTML = cart.levels.map((L, i) => `<option value="${i}"${i === cart.level ? ' selected' : ''}>${i + 1}. ${escapeHtml(L.name)}</option>`).join('');
@@ -845,7 +965,7 @@ LEVEL = tune("Rivals", "Normal", {"Easy", "Normal", "Hard"})   -- a list</pre>
   }
   function switchLevel(i) {
     syncLevel(); bindLevel(i); mapHist.clear();
-    mp.x = 0; mp.y = 0;
+    mp.x = 0; mp.y = 0; mp.autoz = true; fitMap();
     refreshLevels(); drawMap(); markDirty();
   }
   $('mapLevel').onchange = e => switchLevel(+e.target.value);
@@ -893,7 +1013,7 @@ LEVEL = tune("Rivals", "Normal", {"Easy", "Normal", "Hard"})   -- a list</pre>
   $('mapLayer').onchange = e => {
     mp.layer = e.target.value;
     $('mapEnt').hidden = mp.layer !== 'ents';
-    refreshEntSelect(); drawMap();
+    refreshEntSelect(); setMapTool(mp.tool); drawMap();
   };
   $('mapEnt').onchange = e => { mp.ent = e.target.value; };
   $('mapZoom').onchange = e => { mp.zoom = +e.target.value; panMap(0, 0); };
@@ -917,7 +1037,7 @@ LEVEL = tune("Rivals", "Normal", {"Easy", "Normal", "Hard"})   -- a list</pre>
       return;
     }
     if (activeTab === 'sprites') { const t = { p: 'pen', f: 'fill', i: 'pick' }[e.key.toLowerCase()]; if (t) setTool(t); }
-    if (activeTab === 'map' && e.target !== mv) { const t = { p: 'paint', f: 'fill', i: 'pick' }[e.key.toLowerCase()]; if (t) setMapTool(t); }
+    if (activeTab === 'map') { const t = { p: 'paint', f: 'fill', i: 'pick', e: 'erase', r: 'rect', b: 'rect' }[e.key.toLowerCase()]; if (t && !e.ctrlKey && !e.metaKey) setMapTool(t); }
   });
 
   /* ------------------------------------------------------------ input */
@@ -1763,7 +1883,8 @@ LEVEL = tune("Rivals", "Normal", {"Easy", "Normal", "Hard"})   -- a list</pre>
     setChanged(ch);            // putting the code in the editor is not a change to the game
     atlasDirty = true; gfxDirtyRT = true;
     if (activeTab === 'sprites') drawSprites();
-    if (activeTab === 'map') { refreshLevels(); refreshEntSelect(); drawMap(); }
+    mp.x = 0; mp.y = 0; mp.autoz = true;
+    if (activeTab === 'map') { refreshLevels(); refreshEntSelect(); fitMap(); drawMap(); }
     if (activeTab === 'entities') entEd.render();
     if (activeTab === 'cutscenes') csEd.render();
     if (activeTab === 'track') trkEd.render();
@@ -2345,6 +2466,10 @@ LEVEL = tune("Rivals", "Normal", {"Easy", "Normal", "Hard"})   -- a list</pre>
     if (activeTab === 'map' && mp.layer === 'tiles') return redo ? mapHist.redo() : mapHist.pop();
     if (redo) docStep(hist.redo, hist.undo, 'redo'); else docStep(hist.undo, hist.redo, 'undo');
   }
+  // behaviour steps explain themselves, unless that is switched off
+  $('entExplain').checked = lsGet('bitkit.explain') !== '0';
+  document.body.classList.toggle('bt-no-help', !$('entExplain').checked);
+  $('entExplain').onchange = e => { lsSet('bitkit.explain', e.target.checked ? '1' : '0'); document.body.classList.toggle('bt-no-help', !e.target.checked); };
   $('undoBtn').onclick = () => undoHere(false);
   $('redoBtn').onclick = () => undoHere(true);
 

@@ -125,8 +125,8 @@
             <button id="sprCopy">Copy</button><button id="sprPaste">Paste</button><button id="sprClear">Clear</button>
             <button id="sprUndo" title="Ctrl+Z">Undo</button>
           </div>
-          <div class="info"><b id="sprInfo">Tile 0</b> <code id="sprHint"></code></div>
-          <div class="flags"><span class="dim" title="Tick what this tile does. Name a behaviour and your code can ask fget(tile, &quot;name&quot;).">Behaviours</span> <span id="sprFlags"></span></div>
+          <div class="info"><b id="sprInfo">Tile 0</b> <span id="sprUsed" class="spr-used"></span> <code id="sprHint"></code></div>
+          <div class="flags"><span class="dim" title="What this tile does in the game. Switch a behaviour on and your code can ask fget(tile, &quot;name&quot;).">This tile is</span> <span id="sprFlags"></span></div>
           <div class="pal-head">
             <span class="dim">Colour</span> <span id="colInfo"></span>
             <input type="color" id="colEdit" title="Change this palette colour">
@@ -136,8 +136,8 @@
           <p class="dim small">Left click paints, right click erases (colour 0 is transparent). Alt+click picks a colour.</p>
         </div>
         <div class="spr-right">
-          <div class="dim small">Sprite sheet: 512 tiles, 16 per row</div>
-          <div class="sheet-scroll"><canvas id="sheet" width="256" height="512" class="pix"></canvas></div>
+          <div class="dim small sheet-head"><span id="sheetInfo">Sprite sheet</span> <button id="sheetAll" class="tiny" title="Show every row of the sheet, or only the rows in use">show all</button></div>
+          <div class="sheet-scroll"><canvas id="sheet" width="384" height="768" class="pix"></canvas></div>
         </div>
       </div>
     </div>
@@ -152,11 +152,13 @@
         <select id="mapLayer" title="What to edit"><option value="tiles">Tiles</option><option value="ents">Entities</option></select>
         <select id="mapEnt" hidden title="Entity to place"></select>
         <button data-mtool="paint" class="mtool active" title="Paint (P)">Paint</button>
+        <button data-mtool="erase" class="mtool" title="Eraser (E, or right click with any tool)">Eraser</button>
+        <button data-mtool="rect" class="mtool" title="Box (R): drag a rectangle and let go to fill it">Box</button>
         <button data-mtool="fill" class="mtool" title="Fill (F)">Fill</button>
         <button data-mtool="pick" class="mtool" title="Pick tile (I, or Alt+click)">Pick</button>
         <span class="sep"></span>
         <label class="dim">Zoom</label>
-        <select id="mapZoom"><option value="2">2x</option><option value="1">1x</option></select>
+        <select id="mapZoom" title="Or scroll on the map"><option value="1">1x</option><option value="2">2x</option><option value="3">3x</option><option value="4">4x</option></select>
         <label class="chk"><input type="checkbox" id="mapGrid" checked> grid</label>
         <label class="chk" title="Path the player took in the last runs (newest in yellow, older in blue). Dots are a quarter second apart."><input type="checkbox" id="mapRoute" checked> player route</label>
         <button id="mapRouteClear" class="tiny" title="Forget recorded routes">clear route</button>
@@ -167,8 +169,8 @@
       </div>
       <div class="map-layout">
         <div class="map-view-wrap">
-          <canvas id="mapView" width="640" height="480" class="pix" tabindex="0"></canvas>
-          <div class="dim small">Left click paints, right click erases, Alt+click picks. Pan with WASD/arrow keys or middle-drag. Dashed lines show 40x30-tile screens.</div>
+          <div class="map-box"><canvas id="mapView" width="640" height="480" class="pix" tabindex="0"></canvas></div>
+          <div class="dim small"><b id="mapHint">Paint: drag to draw with the picked tile.</b> Right click erases. Scroll to zoom. Move around with WASD or the arrow keys, or drag with Space held. Dashed lines are screens (40×30 tiles).</div>
         </div>
         <div class="map-picker">
           <div class="dim small">Tile: <b id="mapTileInfo">1</b></div>
@@ -191,29 +193,31 @@
           <button id="trkDel" class="tiny danger" title="Delete this track and its level">delete</button>
           <button id="trkPlay" class="tiny" title="Run the game and race this track straight away">▶ race it</button>
           <span class="sep"></span>
-          <button data-ttool="move" class="ttool active" title="Drag points and items. Double-click the road to add a point. Drag empty space to pan.">Move</button>
-          <button data-ttool="point" class="ttool" title="Click to add a point to the nearest stretch of road">+ Point</button>
-          <button data-ttool="erase" class="ttool" title="Click a point or item to delete it (right click does this with any tool)">Erase</button>
-          <span class="sep"></span>
-          <button data-ttool="boost" class="ttool" title="Place a boost pad on the road">Boost pad</button>
-          <button data-ttool="crate" class="ttool" title="Place a row of 3 item crates">Crates</button>
-          <button data-ttool="hill" class="ttool" title="A big smooth hill">Hill</button>
-          <button data-ttool="bump" class="ttool" title="A sharp bump: fast karts jump off it">Bump</button>
-          <button data-ttool="dip" class="ttool" title="A hollow">Dip</button>
-          <button data-ttool="ramp" class="ttool" title="A ramp on the road: karts fly off its lip">Ramp</button>
-          <span class="sep"></span>
-          <button data-ttool="raise" class="ttool" title="Paint the ground higher">Raise</button>
-          <button data-ttool="lower" class="ttool" title="Paint the ground lower">Lower</button>
-          <button data-ttool="flat" class="ttool" title="Level the ground to the height where you start the stroke">Flatten</button>
-          <button data-ttool="smooth" class="ttool" title="Smooth out bumps">Smooth</button>
+          <span class="tgroup"><span class="tg-l">Road</span>
+            <button data-ttool="move" class="ttool active" title="Drag points and items. Double-click the road to add a point. Drag empty space to pan.">Move</button>
+            <button data-ttool="point" class="ttool" title="Click to add a point to the nearest stretch of road.">+ Point</button>
+            <button data-ttool="erase" class="ttool" title="Click a point or item to delete it (right click does this with any tool).">Erase</button></span>
+          <span class="tgroup"><span class="tg-l">Items</span>
+            <button data-ttool="boost" class="ttool" title="Click the road to place a boost pad.">Boost pad</button>
+            <button data-ttool="crate" class="ttool" title="Click the road to place a row of 3 item crates.">Crates</button>
+            <button data-ttool="ramp" class="ttool" title="Click the road to place a ramp: karts fly off its lip.">Ramp</button></span>
+          <span class="tgroup"><span class="tg-l">Terrain</span>
+            <button data-ttool="hill" class="ttool" title="Click to place a big smooth hill.">Hill</button>
+            <button data-ttool="bump" class="ttool" title="Click to place a sharp bump: fast karts jump off it.">Bump</button>
+            <button data-ttool="dip" class="ttool" title="Click to place a hollow.">Dip</button>
+            <span class="sep"></span>
+            <button data-ttool="raise" class="ttool" title="Drag to paint the ground higher.">Raise</button>
+            <button data-ttool="lower" class="ttool" title="Drag to paint the ground lower.">Lower</button>
+            <button data-ttool="flat" class="ttool" title="Drag to level the ground to the height where you start the stroke.">Flatten</button>
+            <button data-ttool="smooth" class="ttool" title="Drag to smooth out bumps.">Smooth</button></span>
           <span class="grow"></span>
           <span id="trkPos" class="dim small"></span>
         </div>
         <div class="trk-layout">
           <div class="trk-view-wrap">
             <canvas id="trkView" width="800" height="400" tabindex="0"></canvas>
-            <div class="dim small"><span id="trkLen"></span>. The red point (S) is the start line and the arrows show which way the race goes.
-              Drag points to shape the road, double-click the road to add one, right click deletes. Scroll to zoom, drag empty space (or Shift+drag) to pan.
+            <div class="dim small"><b id="trkHint"></b> <span id="trkLen"></span>. The red point (S) is the start line and the arrows show which way the race goes.
+              Right click deletes. Scroll to zoom, drag empty space (or Shift+drag) to pan.
               <button id="trkFit" class="tiny">fit</button></div>
           </div>
           <div class="trk-side">
@@ -370,7 +374,7 @@
 
             <div class="subpage" data-page="behavior" hidden>
               <div id="entTreeBox" class="ent-tree-box">
-                <div class="toolbar"><span class="hint">Runs top to bottom every frame. <b>◆</b> groups, <b>?</b> checks, <b>◎</b> senses, <b>▶</b> does.</span><span class="grow"></span><select id="entPreset"></select></div>
+                <div class="toolbar"><span class="hint">Runs top to bottom every frame. <b>◆</b> groups, <b>?</b> checks, <b>◎</b> senses, <b>▶</b> does.</span><span class="grow"></span><label class="chk small" title="Show a line under every step that says what it does"><input type="checkbox" id="entExplain" checked> explain steps</label><select id="entPreset"></select></div>
                 <div id="entTree" class="bt"></div>
               </div>
             </div>

@@ -522,6 +522,7 @@ window.BKTracks = (function () {
     // -- side panel
     function updateSel() {
       const box = $('trkSel'), t = tk();
+      if (t && st.sel && (st.sel.pt !== undefined ? !t.pts[st.sel.pt] : !(t.items || [])[st.sel.item])) st.sel = null;   // gone after an undo
       if (!t || !st.sel) { box.innerHTML = '<span class="dim">Click a point or item to select it.</span>'; return; }
       if (st.sel.pt !== undefined) {
         const i = st.sel.pt;
@@ -613,6 +614,8 @@ window.BKTracks = (function () {
       document.querySelectorAll('#tab-track .ttool').forEach(b => b.classList.toggle('active', b.dataset.ttool === t));
       view.style.cursor = t === 'move' ? 'default' : HTOOLS[t] ? 'none' : 'crosshair';
       $('trkBrushBox').hidden = !HTOOLS[t];
+      const tb = document.querySelector(`#tab-track .ttool[data-ttool="${t}"]`);       // say what the picked tool does
+      if (tb && $('trkHint')) $('trkHint').textContent = `${tb.textContent}: ${tb.title}`;
       if (ctx.isActive()) draw();
     }
     document.querySelectorAll('#tab-track .ttool').forEach(b => b.onclick = () => setTool(b.dataset.ttool));
