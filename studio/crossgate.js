@@ -10,9 +10,9 @@
 -- One player fights the Rook (CPU). Linked Bits run in lockstep: game logic only uses
 -- rnd() and the frame count, never clock(), and drawing never calls rnd().
 
-GROUND, GRAV, JUMP = 200, 0.25, -4.3
-SPEED, CROUCH_SPEED = 1.7, 0.9
-BOLT_V, BOLT_G, RELOAD = 6, 0.03, 36   -- bolt speed, how fast bolts drop, frames to crank the next bolt
+GROUND, GRAV, JUMP = 200, tune("Gravity", 0.25, 0.1, 0.5, 0.01), -tune("Jump power", 4.3, 2, 7, 0.1)   -- tune(): sliders on the Game tab
+SPEED, CROUCH_SPEED = tune("Run speed", 1.7, 0.8, 3, 0.1), 0.9
+BOLT_V, BOLT_G, RELOAD = tune("Bolt speed", 6, 3, 10, 0.5), 0.03, tune("Reload time (frames)", 36, 10, 90)   -- bolt speed, how fast bolts drop, frames to crank the next bolt
 STANCE_H = { 17, 17, 7 }          -- crossbow height above the feet: stance 2 standing, 3 crouched
 BODY_H = { 24, 24, 14 }
 SIDE = { "WREN", "ROOK" }

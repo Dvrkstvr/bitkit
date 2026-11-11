@@ -71,14 +71,14 @@
 -- sprites placed with project() and drawn at any size with sspr().
 
 TAU = math.pi * 2
-LAPS = 3
+LAPS = tune("Laps", 3, 1, 9)             -- tune(): a slider on the Game tab
 ROADW, KERBW = 44, 7          -- half width of the road, kerb width (pixels)
 
 -- camera (2.5D): height above the ground, horizon row, zoom, distance behind the kart
-CAM_H, HORIZON, FOCAL, CAM_D = 22, 84, 170, 40
+CAM_H, HORIZON, FOCAL, CAM_D = tune("Camera height", 22, 12, 40), 84, 170, tune("Camera distance", 40, 20, 80)
 SPR_K = 0.6        -- sprite pixels per world pixel
 STEP = 1           -- floor column step: 2 is chunkier but faster (handy on the device)
-KARTS = 8          -- karts in a race: the players, then rivals fill the grid (2 to 8)
+KARTS = tune("Karts in a race", 8, 2, 8)   -- karts in a race: the players, then rivals fill the grid (2 to 8)
 
 -- steering stages: {how hard, frames held before this stage starts}
 STEER = {{0.35, 0}, {0.7, 10}, {1.0, 26}}

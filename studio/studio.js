@@ -18,15 +18,30 @@
 
   /* ------------------------------------------------------------ console */
   const consoleEl = $('console');
+  // the console is folded away until it is needed: its head shows the last line, and an error opens it
+  let consoleErrs = 0, onErrorClick = () => {};
   function log(msg, cls) {
     const line = document.createElement('div');
     if (cls) line.className = cls;
     line.textContent = msg;
+    if (cls === 'err' && /cart:\d+:/.test(msg)) { line.classList.add('jump'); line.title = 'Click to go to this line in the code'; line.onclick = () => onErrorClick(msg); }
     consoleEl.appendChild(line);
     while (consoleEl.childNodes.length > 500) consoleEl.removeChild(consoleEl.firstChild);
     consoleEl.scrollTop = consoleEl.scrollHeight;
+    $('consoleLast').textContent = msg.split('\n')[0];
+    $('consoleLast').classList.toggle('err', cls === 'err');
+    if (cls === 'err') { consoleErrs++; showConsole(true); }
+    $('consoleBadge').hidden = !consoleErrs; $('consoleBadge').textContent = consoleErrs;
   }
-  $('btnClear').onclick = () => { consoleEl.textContent = ''; };
+  function showConsole(open) {
+    document.body.classList.toggle('console-open', open);
+    $('consoleArrow').textContent = open ? '▾' : '▸';
+    lsSet('bitkit.console', open ? '1' : '0');
+    if (open) consoleEl.scrollTop = consoleEl.scrollHeight;
+  }
+  $('consoleHead').onclick = e => { if (e.target.id !== 'btnClear') showConsole(!document.body.classList.contains('console-open')); };
+  $('btnClear').onclick = () => { consoleEl.textContent = ''; consoleErrs = 0; $('consoleBadge').hidden = true; $('consoleLast').textContent = ''; };
+  showConsole(lsGet('bitkit.console') === '1');
 
   /* ------------------------------------------------------------ runtime */
   let onRuntimeError = () => {};
@@ -45,7 +60,7 @@
   const NEW_CODE = `-- my game
 -- _init runs once, _update and _draw run 60 times a second.
 -- game{} adds the title screen, the pause menu (Start) and the settings every BitKit game has.
--- See the Rules button and the Help tab.
+-- See the Checklist button and the Help tab.
 
 function _init()
   game{
@@ -55,16 +70,17 @@ function _init()
     continue = function(cp) score = cp.score end,   -- Continue on the title screen
   }
   x, y, score = 152, 112, 0
+  SPEED = tune("Speed", 2, 1, 6)       -- a slider on the Game tab
   new_star()
 end
 
 function new_star() sx, sy = rnd(16, 296), rnd(32, 216) end
 
 function _update()
-  if btn("left") then x = x - 2 end
-  if btn("right") then x = x + 2 end
-  if btn("up") then y = y - 2 end
-  if btn("down") then y = y + 2 end
+  if btn("left") then x = x - SPEED end
+  if btn("right") then x = x + SPEED end
+  if btn("up") then y = y - SPEED end
+  if btn("down") then y = y + SPEED end
   if btnp("a") then sfx("C5") end
   if math.abs(x + 8 - sx) < 12 and math.abs(y + 8 - sy) < 12 then
     score = score + 1
@@ -161,15 +177,21 @@ end
     bindLevel(Math.max(0, Math.min(level | 0, c.levels.length - 1)));
   }
 
-  let dirtySave = false;
-  function markDirty() { dirtySave = true; }
-  setInterval(() => { if (dirtySave && !/[?&]bit=\d/.test(location.search)) { saveLocal(); dirtySave = false; } }, 2000);
-  function saveLocal() { lsSet(LS.cart, JSON.stringify(serialize())); }
+  // Every change is saved in this browser a moment later. cartChanged says the game in the editor differs from
+  // where it came from (a built-in game, a file on the Bit): that is what gets kept when you switch games.
+  let dirtySave = false, cartChanged = lsGet(LS.cart + '.changed') === '1', onDirty = () => {};
+  function markDirty() { dirtySave = true; if (!cartChanged) setChanged(true); onDirty(); }
+  function setChanged(v) { cartChanged = v; lsSet(LS.cart + '.changed', v ? '1' : '0'); }
+  setInterval(() => { if (dirtySave && !/[?&]bit=\d/.test(location.search)) { saveLocal(); dirtySave = false; refreshTabs(); } }, 2000);
+  function saveLocal() {
+    lsSet(LS.cart, JSON.stringify(serialize()));
+    const el = $('saveState'); el.textContent = '✓ saved'; el.classList.add('show'); clearTimeout(saveLocal.t); saveLocal.t = setTimeout(() => el.classList.remove('show'), 1500);
+  }
 
   /* ------------------------------------------------------------ code editor */
   const API_NAMES = ['cls', 'pset', 'pget', 'line', 'rect', 'rectfill', 'circ', 'circfill', 'text', 'spr', 'map', 'mget', 'mset',
     'fget', 'fset', 'camera', 'clip', 'pal', 'palt', 'palette', 'btn', 'btnp', 'btnr', 'press', 't', 'time', 'rnd', 'srand',
-    'sfx', 'tone', 'stop', 'print', '_init', '_update', '_draw', 'cutscene', 'cutscene_playing'];
+    'sfx', 'tone', 'stop', 'print', '_init', '_update', '_draw', 'cutscene', 'cutscene_playing', 'tune', 'game', 'checkpoint', 'game_win', 'save', 'saved'];
   let cm = null, ta = null, errLine = null;
   if (window.CodeMirror) {
     // highlight the engine API on top of the lua mode
@@ -188,12 +210,84 @@ end
       value: cart.code, mode: 'bklua', lineNumbers: true, indentUnit: 2, tabSize: 2,
       matchBrackets: true, lineWrapping: false,
       extraKeys: {
-        'Ctrl-Enter': () => run(), 'Cmd-Enter': () => run(),
+        'Ctrl-Enter': () => (mode === 'play' ? playStart(true) : run()), 'Cmd-Enter': () => (mode === 'play' ? playStart(true) : run()),
         'Ctrl-/': 'toggleComment', 'Cmd-/': 'toggleComment',
         Tab: c => c.somethingSelected() ? c.indentSelection('add') : c.replaceSelection('  ', 'end')
       }
     });
     cm.on('change', () => { markDirty(); clearErrLine(); });
+    // ---- autocomplete (the API from the Help tab, Lua keywords, words already in the code) and a line of help
+    const KEYWORDS = ['and', 'break', 'do', 'else', 'elseif', 'end', 'false', 'for', 'function', 'if', 'in', 'local', 'nil', 'not', 'or', 'repeat', 'return', 'then', 'true', 'until', 'while',
+      'math.floor', 'math.abs', 'math.min', 'math.max', 'math.sin', 'math.cos', 'math.sqrt', 'math.pi', 'ipairs', 'pairs', 'tostring', 'tonumber', 'type', 'table.insert', 'table.remove', 'string.format'];
+    let apiDocs = null;
+    const docs = () => {
+      if (apiDocs) return apiDocs;
+      apiDocs = {};
+      HELP.forEach(([, rows]) => rows.forEach(([sig, desc]) => {
+        let args = '';
+        sig.split(' / ').forEach((part, pi) => {
+          const m = /^([A-Za-z_][\w.]*)\s*([({].*)?$/.exec(part.trim());
+          if (!m) return;
+          if (!m[2] && !(pi > 0 && args) && !/^[A-Z][A-Z_.a-z]*$/.test(m[1])) return;     // a heading like "Why", not a name
+          if (!m[2] && pi === 0 && !/^[A-Z_]+(\.\w+)?$/.test(m[1])) return;
+          if (m[2] && pi === 0) args = m[2];
+          if (!apiDocs[m[1]]) apiDocs[m[1]] = { sig: m[1] + (m[2] || (pi > 0 ? args : '')), desc };
+        });
+      }));
+      return apiDocs;
+    };
+    const docBar = $('codeDoc'), DOC_TIP = 'Ctrl+Space completes a word · Ctrl+F finds · Ctrl+/ comments a line · click an error in the console to jump to it';
+    const showDoc = name => {
+      const d = name && docs()[name];
+      docBar.innerHTML = d ? `<code>${escapeHtml(d.sig)}</code> ${escapeHtml(d.desc)}` : `<span class="dim">${DOC_TIP}</span>`;
+      docBar.title = d ? d.desc : '';
+    };
+    const luaHint = c => {
+      const cur = c.getCursor(), line = c.getLine(cur.line), tok = c.getTokenAt(cur);
+      if (tok.type === 'comment' || tok.type === 'string') return null;
+      let st = cur.ch; while (st > 0 && /\w/.test(line[st - 1])) st--;
+      const word = line.slice(st, cur.ch), lw = word.toLowerCase(), member = st > 0 && /[.:]/.test(line[st - 1]);
+      if (!word) return null;
+      const list = [], seen = new Set([word]);
+      const render = (el, self, it) => { el.innerHTML = `<span class="h-name">${escapeHtml(it.text)}</span>${it.sig ? `<span class="h-sig">${escapeHtml(it.sig.slice(it.text.length))}</span>` : ''}`; };
+      if (!member) Object.keys(docs()).sort().forEach(n => { if (n.toLowerCase().startsWith(lw) && !seen.has(n)) { seen.add(n); list.push({ text: n, sig: docs()[n].sig, render }); } });
+      const extra = [];
+      (member ? [] : KEYWORDS).concat(c.getValue().match(/[A-Za-z_]\w{2,}/g) || []).forEach(n => { if (n.toLowerCase().startsWith(lw) && !seen.has(n)) { seen.add(n); extra.push({ text: n, render }); } });
+      list.push(...extra.slice(0, 14));
+      if (!list.length) return null;
+      const res = { list, from: CodeMirror.Pos(cur.line, st), to: cur };
+      CodeMirror.on(res, 'select', it => showDoc(it.text));
+      CodeMirror.on(res, 'close', () => codeDocHere());
+      return res;
+    };
+    const codeDocHere = () => {      // the function the cursor is on, or the call it is inside
+      const cur = cm.getCursor(), line = cm.getLine(cur.line);
+      let a = cur.ch, b = cur.ch;
+      while (a > 0 && /[\w.]/.test(line[a - 1])) a--;
+      while (b < line.length && /[\w.]/.test(line[b])) b++;
+      if (docs()[line.slice(a, b)]) return showDoc(line.slice(a, b));
+      for (let i = cur.ch - 1, depth = 0; i >= 0; i--) {
+        if (line[i] === ')' || line[i] === '}') depth++;
+        else if (line[i] === '(' || line[i] === '{') {
+          if (depth) { depth--; continue; }
+          let e = i; while (e > 0 && line[e - 1] === ' ') e--;
+          let st = e; while (st > 0 && /[\w.]/.test(line[st - 1])) st--;
+          if (docs()[line.slice(st, e)]) return showDoc(line.slice(st, e));
+        }
+      }
+      showDoc(null);
+    };
+    if (CodeMirror.showHint) {
+      cm.addKeyMap({ 'Ctrl-Space': c => c.showHint({ hint: luaHint, completeSingle: false }) });
+      cm.on('inputRead', (c, ch) => {
+        if (c.state.completionActive || !ch.text || ch.text.length !== 1 || !/^\w$/.test(ch.text[0])) return;
+        const cur = c.getCursor(), line = c.getLine(cur.line);
+        let st = cur.ch; while (st > 0 && /\w/.test(line[st - 1])) st--;
+        if (cur.ch - st >= 2 && /[A-Za-z_]/.test(line[st])) c.showHint({ hint: luaHint, completeSingle: false });
+      });
+    }
+    cm.on('cursorActivity', () => { if (!cm.state.completionActive) codeDocHere(); });
+    setTimeout(() => showDoc(null), 0);
   } else {
     ta = document.createElement('textarea');
     ta.spellcheck = false; ta.value = cart.code;
@@ -203,31 +297,61 @@ end
   function getCode() { return cm ? cm.getValue() : ta.value; }
   function setCode(s, keepUndo) { if (cm) { if (cm.getValue() === s) return; cm.setValue(s); if (!keepUndo) cm.clearHistory(); } else ta.value = s; }
   function clearErrLine() { if (cm && errLine !== null) { cm.removeLineClass(errLine, 'background', 'cm-error-line'); errLine = null; } }
-  function showErrLine(msg) {
+  function showErrLine(msg, go) {
     const m = /cart:(\d+):/.exec(msg);
     if (!m || !cm) return;
     clearErrLine();
-    errLine = parseInt(m[1], 10) - 1;
+    errLine = Math.min(parseInt(m[1], 10) - 1, cm.lineCount() - 1);
     cm.addLineClass(errLine, 'background', 'cm-error-line');
     cm.scrollIntoView({ line: errLine, ch: 0 }, 80);
+    if (go) { cm.setCursor({ line: errLine, ch: 0 }); cm.focus(); }
   }
+  // click an error (in the console or on the screen) to go to its line
+  onErrorClick = msg => { if (mode !== 'edit') setMode('edit'); showTab('code'); showErrLine(msg, true); };
 
   /* ------------------------------------------------------------ tabs */
   let activeTab = 'code';
-  document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
+  const tabBtns = [...document.querySelectorAll('.tabs button[data-tab]')];
+  tabBtns.forEach(b => b.onclick = () => showTab(b.dataset.tab));
   function showTab(t) {
+    if (!document.getElementById('tab-' + t)) t = 'code';
     activeTab = t;
-    document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
+    tabBtns.forEach(b => b.classList.toggle('active', b.dataset.tab === t));
     document.querySelectorAll('.tab').forEach(el => el.classList.toggle('active', el.id === 'tab-' + t));
     if (t === 'code' && cm) cm.refresh();
     if (t === 'sprites') drawSprites();
-    if (t === 'map') { refreshLevels(); refreshEntSelect(); drawMap(); }
+    if (t === 'map') { refreshLevels(); refreshEntSelect(); fitMap(); drawMap(); }
     if (t === 'entities') entEd.render();
     if (t === 'cutscenes') csEd.render();
     if (t === 'track') trkEd.render();
+    if (t === 'game') renderGameTab();
     lsSet(LS.settings + '.tab', t);
-    if (typeof trkEd !== 'undefined') showTrackTab();
+    if (typeof trkEd !== 'undefined') refreshTabs();
   }
+  // The tabs fit the game: an editor the game does not use (Kart Lab has no entities, Sweep Storm no painted map)
+  // waits under "More" until it is opened or the game starts using it.
+  const TAB_WHY = { map: 'This game has no painted map', track: 'This game has no race tracks', entities: 'This game has no entities', cutscenes: 'This game has no cutscenes' };
+  function tabUsed(t) {
+    if (!TAB_WHY[t]) return true;
+    const tracks = BKTracks.uses(cart), ents = cart.entities, small = getCode().length < 5000;
+    if (t === 'track') return tracks;
+    if (t === 'map') return !tracks && (small || cart.levels.some(L => L.placed.length || L.map.some(v => v)));
+    // (an entity that is never placed or spawned is only there as the game's icon)
+    if (t === 'entities') return (!tracks && small) || ((ents.types.length > 0 || (ents.effects || []).length > 0) &&
+      (/\bents_(update|spawn)\s*\(/.test(getCode()) || cart.levels.some(L => L.placed.length)));
+    return (ents.cutscenes || []).length > 0;
+  }
+  function refreshTabs() {
+    const hidden = [];
+    tabBtns.forEach(b => { const off = !tabUsed(b.dataset.tab) && activeTab !== b.dataset.tab; b.hidden = off; if (off) hidden.push(b); });
+    $('tabMore').hidden = !hidden.length;
+    $('tabMoreMenu').innerHTML = '<div class="menu-head">Not used by this game yet</div>' +
+      hidden.map(b => `<button data-more="${b.dataset.tab}">${escapeHtml(b.textContent)} <span class="dim small">${TAB_WHY[b.dataset.tab]}</span></button>`).join('');
+    $('tabMoreMenu').querySelectorAll('[data-more]').forEach(b => b.onclick = () => { $('tabMoreMenu').hidden = true; showTab(b.dataset.more); });
+    if (!hidden.length) $('tabMoreMenu').hidden = true;
+  }
+  $('tabMore').onclick = e => { e.stopPropagation(); $('tabMoreMenu').hidden = !$('tabMoreMenu').hidden; };
+  window.addEventListener('click', () => { $('tabMoreMenu').hidden = true; });
 
   /* ------------------------------------------------------------ tile atlas (for editors) */
   const atlas = document.createElement('canvas'); atlas.width = 128; atlas.height = 256;
@@ -250,11 +374,12 @@ end
 
   /* ------------------------------------------------------------ undo */
   function makeHistory(get, set) {
-    const undo = [];
+    const undo = [], redo = [];
     return {
-      push() { undo.push(get().slice()); if (undo.length > 60) undo.shift(); },
-      pop() { if (!undo.length) return toast('Nothing to undo'); set(undo.pop()); },
-      clear() { undo.length = 0; }
+      push() { undo.push(get().slice()); if (undo.length > 60) undo.shift(); redo.length = 0; },
+      pop() { if (!undo.length) return toast('Nothing to undo'); redo.push(get().slice()); set(undo.pop()); },
+      redo() { if (!redo.length) return toast('Nothing to redo'); undo.push(get().slice()); set(redo.pop()); },
+      clear() { undo.length = 0; redo.length = 0; }
     };
   }
   const tileHist = makeHistory(() => cart.tiles, v => { cart.tiles.set(v); gfxChanged(); drawSprites(); });
@@ -275,11 +400,9 @@ end
   const trkEd = BKTracks.init({
     cart, $, toast, escapeHtml, ask: (...a) => ask(...a), isActive: () => activeTab === 'track',
     changed: markDirty, gfxChanged: () => gfxChanged(), mapChanged: () => { mapDirtyRT = true; markDirty(); },
-    syncLevel: () => syncLevel(), bindLevel: i => bindLevel(i), levelsChanged: () => { refreshLevels(); showTrackTab(); },
+    syncLevel: () => syncLevel(), bindLevel: i => bindLevel(i), levelsChanged: () => { refreshLevels(); refreshTabs(); },
     run: (lvl, extra) => run(lvl, extra)
   });
-  // the Track tab shows up for carts with race tracks (or while it is open)
-  function showTrackTab() { $('tabTrackBtn').hidden = !BKTracks.uses(cart) && activeTab !== 'track'; }
   const csEd = BKCutscenes.init({
     cart, $, toast, escapeHtml, changed: markDirty, ask: (...a) => ask(...a),
     levels: () => cart.levels,
@@ -288,7 +411,7 @@ end
     placeOnMap: name => {
       showTab('map');
       mp.layer = 'ents'; $('mapLayer').value = 'ents'; $('mapEnt').hidden = false;
-      mp.ent = name; refreshEntSelect(); drawMap();
+      mp.ent = name; refreshEntSelect(); setMapTool(mp.tool); drawMap();
     }
   });
 
@@ -303,32 +426,66 @@ end
   const flagsEl = $('sprFlags');
   const DEFAULT_FLAG_NAMES = ['solid', '', '', '', '', '', '', ''];
   const flagNames = () => cart.entities.flagNames || DEFAULT_FLAG_NAMES;
-  for (let b = 0; b < 8; b++) {
-    const l = document.createElement('label');
-    l.innerHTML = `<input type="checkbox" data-bit="${b}"><input class="flag-name" data-name="${b}" placeholder="${b}" spellcheck="false" maxlength="12">`;
-    flagsEl.appendChild(l);
+  // Shown as chips: click one to switch it on or off for this tile. Only named behaviours show, "+ add behaviour" names the next free one.
+  let flagEdit = -1;                // the behaviour being named or renamed
+  function nameFlag(b, raw) {
+    const names = flagNames().slice();
+    let n = raw.trim().toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
+    if (/^\d/.test(n)) n = '_' + n;
+    if (n && names.some((x, i) => x === n && i !== b)) { toast('That name is taken'); n = names[b] || ''; }
+    if (n === (names[b] || '')) return;
+    names[b] = n; cart.entities.flagNames = names; markDirty();
   }
-  flagsEl.addEventListener('change', e => {
-    if (e.target.dataset.name !== undefined) {         // renamed a behaviour
-      const names = flagNames().slice(), b = +e.target.dataset.name;
-      let n = e.target.value.trim().toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
-      if (/^\d/.test(n)) n = '_' + n;
-      if (n && names.some((x, i) => x === n && i !== b)) { toast('That name is taken'); n = names[b]; }
-      names[b] = n; cart.entities.flagNames = names; e.target.value = n;
-      showFlags(); markDirty();
-      return;
-    }
-    const b = +e.target.dataset.bit;
-    if (e.target.checked) cart.flags[spr.tile] |= 1 << b; else cart.flags[spr.tile] &= ~(1 << b);
-    gfxDirtyRT = true; markDirty();
+  flagsEl.addEventListener('click', e => {
+    const t = e.target.closest('button');
+    if (!t) return;
+    if (t.dataset.bit !== undefined) {
+      cart.flags[spr.tile] ^= 1 << +t.dataset.bit;
+      gfxDirtyRT = true; markDirty();
+    } else if (t.dataset.ren !== undefined) flagEdit = +t.dataset.ren;
+    else if (t.id === 'flagAdd') flagEdit = flagNames().findIndex((n, i) => !n && !flagUsed(i));
+    showFlags();
   });
+  const flagUsed = b => cart.flags.some(f => (f >> b) & 1);
   function showFlags() {
-    const names = flagNames();
-    flagsEl.querySelectorAll('input[data-bit]').forEach(i => {
-      const b = +i.dataset.bit; i.checked = (cart.flags[spr.tile] >> b) & 1;
-      i.parentElement.title = names[b] ? `Behaviour "${names[b]}" (flag ${b}). In code: fget(tile, "${names[b]}")` : `Flag ${b}: give it a name to use it as a behaviour. In code: fget(tile, ${b})`;
-    });
-    flagsEl.querySelectorAll('input[data-name]').forEach(i => { if (document.activeElement !== i) i.value = names[+i.dataset.name] || ''; });
+    const names = flagNames(), f = cart.flags[spr.tile];
+    let html = '';
+    for (let b = 0; b < 8; b++) {
+      const on = (f >> b) & 1;
+      if (b === flagEdit) { html += `<input class="flag-name" data-name="${b}" value="${escapeHtml(names[b] || '')}" placeholder="name, e.g. ice" spellcheck="false" maxlength="12">`; continue; }
+      if (!names[b] && !flagUsed(b)) continue;           // a free slot
+      const label = names[b] || `flag ${b}`;
+      html += `<span class="chip${on ? ' on' : ''}"><button data-bit="${b}" title="${names[b] ? `Tiles with "${names[b]}" switched on. In code: fget(tile, &quot;${names[b]}&quot;)` : `Flag ${b} has no name yet. In code: fget(tile, ${b})`}${b === 0 ? '. Entities stand on solid tiles.' : ''}">${on ? '✓' : '○'} ${escapeHtml(label)}</button>` +
+        `<button class="chip-ren" data-ren="${b}" title="Rename (empty the name to remove it)">✎</button></span>`;
+    }
+    if (flagEdit < 0 && names.some((n, i) => !n && !flagUsed(i))) html += '<button id="flagAdd" class="chip-add" title="Name a new behaviour, like ice, ladder or water. Your code asks fget(tile, &quot;name&quot;).">+ add behaviour</button>';
+    flagsEl.innerHTML = html;
+    const inp = flagsEl.querySelector('.flag-name');
+    if (inp) {
+      const b = flagEdit;
+      const done = keep => { if (flagEdit !== b) return; flagEdit = -1; if (keep) nameFlag(b, inp.value); showFlags(); };
+      inp.onkeydown = e => { e.stopPropagation(); if (e.key === 'Enter') done(true); else if (e.key === 'Escape') done(false); };
+      inp.onblur = () => done(true);
+      inp.focus(); inp.select();
+    }
+  }
+  // which entity draws itself with a tile (from the animations on the Entities tab)
+  function tileUsers() {
+    const m = {};
+    (cart.entities.types || []).forEach(t => (t.anims || []).forEach(a => (a.frames || []).forEach(fr => {
+      for (let y = 0; y < (t.sh || 1); y++) for (let x = 0; x < (t.sw || 1); x++) {
+        const n = (fr | 0) + y * 16 + x;
+        (m[n] = m[n] || new Set()).add(t.name);
+      }
+    })));
+    return m;
+  }
+  const SHEET_T = 24;               // pixels per tile on the sheet
+  function sheetRows() {            // rows that have something drawn, and two spare ones
+    if (spr.all) return 32;
+    let last = 0;
+    for (let n = TILES - 1; n > 0; n--) { let any = false; for (let i = n * 64; i < n * 64 + 64; i++) if (cart.tiles[i]) { any = true; break; } if (any) { last = n >> 4; break; } }
+    return Math.min(32, Math.max(last + 3, (spr.tile >> 4) + spr.size + 1, 6));
   }
 
   function tilePix(px, py) { // pixel inside current selection -> index in tiles[]
@@ -359,19 +516,27 @@ end
       sprCtx.stroke();
     }
     // sheet
+    const T = SHEET_T, rows = sheetRows();
+    if (sheet.height !== rows * T || sheet.width !== 16 * T) { sheet.width = 16 * T; sheet.height = rows * T; }
     sheetCtx.imageSmoothingEnabled = false;
-    sheetCtx.fillStyle = '#000'; sheetCtx.fillRect(0, 0, 256, 512);
-    sheetCtx.drawImage(atlas, 0, 0, 256, 512);
+    sheetCtx.fillStyle = '#000'; sheetCtx.fillRect(0, 0, 16 * T, rows * T);
+    sheetCtx.drawImage(atlas, 0, 0, 128, rows * 8, 0, 0, 16 * T, rows * T);
     sheetCtx.strokeStyle = 'rgba(255,255,255,.06)';
     sheetCtx.beginPath();
-    for (let i = 1; i < 16; i++) { sheetCtx.moveTo(i * 16 + .5, 0); sheetCtx.lineTo(i * 16 + .5, 512); }
-    for (let i = 1; i < 32; i++) { sheetCtx.moveTo(0, i * 16 + .5); sheetCtx.lineTo(256, i * 16 + .5); }
+    for (let i = 1; i < 16; i++) { sheetCtx.moveTo(i * T + .5, 0); sheetCtx.lineTo(i * T + .5, rows * T); }
+    for (let i = 1; i < rows; i++) { sheetCtx.moveTo(0, i * T + .5); sheetCtx.lineTo(16 * T, i * T + .5); }
     sheetCtx.stroke();
     sheetCtx.strokeStyle = '#ffd23f'; sheetCtx.lineWidth = 2;
-    sheetCtx.strokeRect((spr.tile % 16) * 16 + 1, (spr.tile >> 4) * 16 + 1, spr.size * 16 - 2, spr.size * 16 - 2);
+    sheetCtx.strokeRect((spr.tile % 16) * T + 1, (spr.tile >> 4) * T + 1, spr.size * T - 2, spr.size * T - 2);
     sheetCtx.lineWidth = 1;
+    $('sheetInfo').textContent = rows < 32 ? `Sprite sheet: the first ${rows * 16} of 512 tiles` : 'Sprite sheet: all 512 tiles, 16 per row';
+    $('sheetAll').textContent = spr.all ? 'show less' : 'show all';
     // info
+    const users = new Set();
+    const um = tileUsers();
+    for (let y = 0; y < spr.size; y++) for (let x = 0; x < spr.size; x++) (um[spr.tile + y * 16 + x] || []).forEach(n => users.add(n));
     $('sprInfo').textContent = `Tile ${spr.tile}`;
+    $('sprUsed').textContent = users.size ? `used by ${[...users].join(', ')}` : '';
     $('sprHint').textContent = spr.size === 1 ? `spr(${spr.tile}, x, y)` : `spr(${spr.tile}, x, y, ${spr.size}, ${spr.size})`;
     if (BKTracks.uses(cart) && spr.tile >= BKTracks.TILE.EDGE && spr.tile <= BKTracks.TILE.EDGE_END)
       $('sprHint').textContent = 'road edge: built from the road look on the Track tab';
@@ -412,11 +577,20 @@ end
 
   sheet.addEventListener('mousedown', e => {
     const r = sheet.getBoundingClientRect();
-    let tx = Math.floor((e.clientX - r.left) / r.width * 16), ty = Math.floor((e.clientY - r.top) / r.height * 32);
+    let tx = Math.floor((e.clientX - r.left) / r.width * 16), ty = Math.floor((e.clientY - r.top) / r.height * (sheet.height / SHEET_T));
     tx = Math.min(tx, 16 - spr.size); ty = Math.min(ty, 32 - spr.size);
     spr.tile = ty * 16 + tx;
     drawSprites();
   });
+  sheet.addEventListener('mousemove', e => {       // hovering says which tile it is and who uses it
+    const r = sheet.getBoundingClientRect();
+    const n = Math.floor((e.clientY - r.top) / r.height * (sheet.height / SHEET_T)) * 16 + Math.floor((e.clientX - r.left) / r.width * 16);
+    if (n === sheet._hover) return;
+    sheet._hover = n;
+    const u = tileUsers()[n];
+    sheet.title = `Tile ${n}` + (u ? ` · used by ${[...u].join(', ')}` : '');
+  });
+  $('sheetAll').onclick = () => { spr.all = !spr.all; drawSprites(); };
   $('sprSize').addEventListener('change', e => {
     spr.size = +e.target.value;
     if (!selValid(spr.tile, spr.size)) spr.tile = Math.min(spr.tile % 16, 16 - spr.size) + Math.min(spr.tile >> 4, 32 - spr.size) * 16;
@@ -473,12 +647,153 @@ end
     putPixels(b, n);
   };
   $('sprUndo').onclick = () => tileHist.pop();
+  /* ------------------------------------------------------------ Game tab: the numbers a game lets you play with */
+  // every tune("Name", default, ...) in the code becomes a control: a slider, a switch or a list
+  function parseTunes(code) {
+    const out = [], seen = {};
+    const re = /\btune\s*\(/g;
+    let m;
+    while ((m = re.exec(code))) {
+      const ls = code.lastIndexOf('\n', m.index) + 1;
+      if (code.slice(ls, m.index).includes('--')) continue;            // in a comment
+      const args = []; let cur = '', depth = 0, q = null, i = re.lastIndex, ok = false;
+      for (; i < code.length && i < re.lastIndex + 400; i++) {
+        const ch = code[i];
+        if (q) { cur += ch; if (ch === '\\') cur += code[++i] || ''; else if (ch === q) q = null; continue; }
+        if (ch === '"' || ch === "'") { q = ch; cur += ch; continue; }
+        if (ch === '{' || ch === '(') depth++;
+        if (ch === '}' || ch === ')') { if (!depth) { ok = true; break; } depth--; }
+        if (ch === ',' && !depth) { args.push(cur.trim()); cur = ''; continue; }
+        cur += ch;
+      }
+      if (!ok) continue;
+      args.push(cur.trim());
+      const str = a => { const k = /^(["'])(.*)\1$/s.exec(a || ''); return k ? k[2].replace(/\\(.)/g, '$1') : null; };
+      const name = str(args[0]);
+      if (!name || seen[name] || args.length < 2) continue;
+      const d = args[1], o = { name };
+      if (d === 'true' || d === 'false') { o.kind = 'bool'; o.def = d === 'true'; }
+      else if (str(d) !== null) {
+        o.kind = 'list'; o.def = str(d);
+        o.options = (/^\{(.*)\}$/s.exec(args[2] || '') || ['', ''])[1].split(',').map(x => str(x.trim())).filter(x => x !== null);
+        if (!o.options.includes(o.def)) o.options.unshift(o.def);
+      } else if (d !== '' && isFinite(+d)) {
+        const num = (a, f) => (a !== undefined && a !== '' && isFinite(+a) ? +a : f);
+        o.kind = 'num'; o.def = +d;
+        o.min = num(args[2], Math.min(0, o.def * 2)); o.max = num(args[3], Math.max(o.def * 2, o.min + 10));
+        if (o.max <= o.min) o.max = o.min + 1;
+        const whole = [o.def, o.min, o.max].every(Number.isInteger) && !/\./.test(d);
+        o.step = num(args[4], 0) > 0 ? +args[4] : (whole ? 1 : (o.max - o.min) > 20 ? 0.5 : (o.max - o.min) > 4 ? 0.1 : 0.01);
+      } else continue;
+      seen[name] = 1; out.push(o);
+    }
+    return out;
+  }
+  const fmtNum = v => String(Math.round(v * 1000) / 1000);
+  let tuneTimer = 0;
+  function tuneChanged() {            // a value moved: save it, and play the test game again with it
+    markDirty();
+    clearTimeout(tuneTimer);
+    tuneTimer = setTimeout(() => { if (running && playingEditor && mode === 'edit') run(playingLevel || 0); }, 350);
+  }
+  function renderGameTab() {
+    const body = $('gameBody');
+    if (!body) return;
+    const ents = cart.entities, tunes = parseTunes(getCode()), vals = ents.tune || {};
+    const cur = t => (vals[t.name] !== undefined && typeof vals[t.name] === typeof t.def ? vals[t.name] : t.def);
+    const row = (label, ctl, changed, attr) => `<div class="tune-row${changed ? ' changed' : ''}"><label>${escapeHtml(label)}</label>${ctl}` +
+      `<button class="tiny tune-reset" ${attr} title="Back to the game's own value"${changed ? '' : ' disabled'}>↺</button></div>`;
+    const rows = tunes.map((t, i) => {
+      const v = cur(t), ch = v !== t.def;
+      if (t.kind === 'bool') return row(t.name, `<span class="tune-ctl"><label class="switch"><input type="checkbox" data-tune="${i}"${v ? ' checked' : ''}><span>${v ? 'On' : 'Off'}</span></label></span>`, ch, `data-treset="${i}"`);
+      if (t.kind === 'list') return row(t.name, `<span class="tune-ctl"><select data-tune="${i}">${t.options.map(o => `<option${o === v ? ' selected' : ''}>${escapeHtml(o)}</option>`).join('')}</select></span>`, ch, `data-treset="${i}"`);
+      return row(t.name, `<span class="tune-ctl"><input type="range" data-tune="${i}" min="${t.min}" max="${t.max}" step="${t.step}" value="${v}"><input type="number" data-tune="${i}" min="${t.min}" max="${t.max}" step="${t.step}" value="${fmtNum(v)}"></span>`, ch, `data-treset="${i}"`);
+    });
+    // games made with the Entities tab: the player's hearts and stats are sliders too
+    const players = (ents.types || []).map((t, ti) => ({ t, ti })).filter(x => x.t.player);
+    const prow = players.map(({ t, ti }) => {
+      const stat = (label, key, v, min, max, step) => `<div class="tune-row"><label>${escapeHtml(label)}</label><span class="tune-ctl">` +
+        `<input type="range" data-pl="${ti}" data-key="${key}" min="${min}" max="${max}" step="${step}" value="${v}"><input type="number" data-pl="${ti}" data-key="${key}" min="${min}" max="${max}" step="${step}" value="${fmtNum(v)}"></span><span class="tune-pad"></span></div>`;
+      return `<h4>Player: ${escapeHtml(t.name)}</h4>` + stat('Hearts', 'hp', t.hp | 0, 1, 10, 1) +
+        (t.stats || []).filter(q => q.name).map((q, qi) => stat(q.name[0].toUpperCase() + q.name.slice(1), 's' + qi, +q.value || 0, 0, Math.max(3, (+q.value || 0) * 2), 0.05)).join('');
+    }).join('');
+    const rules = window.BKRules ? BKRules.check({ code: getCode() }) : [], ok = rules.filter(x => x.ok).length;
+    const any = rows.length || prow;
+    body.innerHTML = `<h2>${escapeHtml(cart.name || 'untitled')}</h2>
+      <p class="dim">Change how the game feels without touching its code. ${any ? 'Move a slider while the game runs and it starts again with the new value.' : ''}</p>
+      <div class="game-sec"><h3>Settings to play with</h3>
+        ${rows.join('')}${prow}
+        ${any ? '' : `<p>This game has no settings here yet.</p>`}
+        <details class="tune-how"${any ? '' : ' open'}><summary>How do I add a setting?</summary>
+          <p>Wrap a number in your code in <code>tune()</code> and it shows up here as a slider:</p>
+          <pre>SPEED = tune("Speed", 2, 1, 6)        -- name, starting value, lowest, highest
+GHOST = tune("Ghost mode", false)     -- a switch
+LEVEL = tune("Rivals", "Normal", {"Easy", "Normal", "Hard"})   -- a list</pre>
+          <p class="dim">The values you pick are saved with the game, so the device plays it the same way.</p></details>
+        ${rows.some((r, i) => cur(tunes[i]) !== tunes[i].def) ? '<p><button id="tuneResetAll">↺ Reset all to the game\'s own values</button></p>' : ''}
+      </div>
+      <div class="game-sec"><h3>${ok === rules.length ? '✓ Checklist: everything a BitKit game needs is here' : `Checklist: ${ok} of ${rules.length}`}</h3>
+        <ul class="rules-list">${rules.map(x => `<li class="${x.ok ? 'ok' : 'todo'}"><b>${x.ok ? '✓' : '○'} ${escapeHtml(x.name)}</b>${x.ok ? '' : `<br><span class="dim">${escapeHtml(x.about)}</span>`}</li>`).join('')}</ul>
+        <p class="dim small">This is a quick look at your code. <a href="${RULES_URL}" target="_blank" rel="noopener">Read the rules</a></p>
+      </div>`;
+    const setTune = (t, v) => {
+      if (!ents.tune) ents.tune = {};
+      if (v === t.def) delete ents.tune[t.name]; else ents.tune[t.name] = v;
+      tuneChanged();
+    };
+    body.querySelectorAll('[data-tune]').forEach(el => {
+      const t = tunes[+el.dataset.tune];
+      el.oninput = el.onchange = e => {
+        let v;
+        if (t.kind === 'bool') { v = el.checked; el.nextElementSibling.textContent = v ? 'On' : 'Off'; }
+        else if (t.kind === 'list') v = el.value;
+        else {
+          v = +el.value;
+          if (!isFinite(v) || el.value === '') return;
+          if (e.type === 'change') v = Math.max(t.min, Math.min(t.max, v));
+          el.parentNode.querySelectorAll('input').forEach(x => { if (x !== el || e.type === 'change') x.value = x.type === 'number' ? fmtNum(v) : v; });
+        }
+        setTune(t, v);
+        const rowEl = el.closest('.tune-row'), ch = v !== t.def;
+        rowEl.classList.toggle('changed', ch); rowEl.querySelector('.tune-reset').disabled = !ch;
+        if (e.type === 'change') renderGameTab.soon();
+      };
+    });
+    body.querySelectorAll('[data-treset]').forEach(b => { b.onclick = () => { setTune(tunes[+b.dataset.treset], tunes[+b.dataset.treset].def); renderGameTab(); }; });
+    if ($('tuneResetAll')) $('tuneResetAll').onclick = () => { ents.tune = {}; tuneChanged(); renderGameTab(); };
+    body.querySelectorAll('[data-pl]').forEach(el => {
+      el.oninput = el.onchange = e => {
+        const t = ents.types[+el.dataset.pl], key = el.dataset.key, v = +el.value;
+        if (!t || !isFinite(v) || el.value === '') return;
+        if (key === 'hp') t.hp = Math.max(1, v | 0); else if (t.stats[+key.slice(1)]) t.stats[+key.slice(1)].value = v;
+        el.parentNode.querySelectorAll('input').forEach(x => { if (x !== el) x.value = x.type === 'number' ? fmtNum(v) : v; });
+        tuneChanged();
+      };
+    });
+  }
+  // the Reset all button comes and goes: redraw once the pointer is up (never while a slider is being dragged)
+  renderGameTab.soon = () => setTimeout(() => { if (activeTab === 'game' && !$('gameBody').contains(document.activeElement)) renderGameTab(); }, 50);
 
   /* ------------------------------------------------------------ map editor */
   const mv = $('mapView'), mvCtx = mv.getContext('2d');
   const mapSheet = $('mapSheet'), msCtx = mapSheet.getContext('2d');
-  const mp = { x: 0, y: 0, zoom: 2, tile: 1, tool: 'paint', grid: true, hover: null, layer: 'tiles', ent: '' };
+  const mp = { x: 0, y: 0, zoom: 2, tile: 1, tool: 'paint', grid: true, hover: null, layer: 'tiles', ent: '', rect: null, space: false, autoz: true };
   let mapPainting = false, mapPanning = null;
+  // the map fills the room the tab has: the canvas is as big as its box
+  const mvBox = mv.parentNode;
+  function fitMap() {
+    const w = Math.max(160, mvBox.clientWidth | 0), h = Math.max(120, mvBox.clientHeight | 0);
+    if (!mvBox.clientHeight) return;                 // the tab is not showing
+    if (mp.autoz) {                                  // a level just opened: zoom so its height fits
+      const L = cart.levels[cart.level];
+      mp.autoz = false; mp.zoom = Math.max(2, Math.min(4, Math.floor(h / ((L ? L.h : 30) * 8))));
+      mp.y = Math.max(0, (L ? L.h : 30) - Math.floor(h / (8 * mp.zoom)));     // a short view starts at the ground, not the sky
+    } else if (mv.width === w && mv.height === h) return;
+    mv.width = w; mv.height = h;
+    if (activeTab === 'map') panMap(0, 0);
+  }
+  if (window.ResizeObserver) new ResizeObserver(fitMap).observe(mvBox);
+  const MAP_HINT = { paint: 'Paint: drag to draw with the picked tile.', erase: 'Eraser: drag to clear tiles.', rect: 'Box: drag a rectangle and let go to fill it.', fill: 'Fill: click an area to flood it (only what you see).', pick: 'Pick: click a tile on the map to draw with it.' };
 
   function mapViewTiles() { return [Math.ceil(mv.width / (8 * mp.zoom)), Math.ceil(mv.height / (8 * mp.zoom))]; }
   function drawMap() {
@@ -540,19 +855,39 @@ end
       $('mapPos').textContent = `x ${hx * 8}, y ${hy * 8} px  (tile ${hx}, ${hy})`;
     } else if (mp.hover) {
       const [hx, hy] = mp.hover;
-      mvCtx.globalAlpha = .6;
-      mvCtx.drawImage(atlas, (mp.tile % 16) * 8, (mp.tile >> 4) * 8, 8, 8, (hx - mp.x) * s, (hy - mp.y) * s, s, s);
-      mvCtx.globalAlpha = 1;
-      mvCtx.strokeStyle = '#fff'; mvCtx.strokeRect((hx - mp.x) * s + .5, (hy - mp.y) * s + .5, s - 1, s - 1);
-      $('mapPos').textContent = `x ${hx}, y ${hy}  tile ${cart.map[hy * MAPW + hx]}  (view ${mp.x},${mp.y})`;
-    } else $('mapPos').textContent = `view ${mp.x},${mp.y}`;
+      if (mp.rect) {                 // the box being dragged
+        const [x0, y0, x1, y1] = rectOf(mp.rect, mp.hover);
+        mvCtx.fillStyle = mp.rect.erase ? 'rgba(255,107,94,.25)' : 'rgba(138,211,90,.25)';
+        mvCtx.fillRect((x0 - mp.x) * s, (y0 - mp.y) * s, (x1 - x0 + 1) * s, (y1 - y0 + 1) * s);
+        mvCtx.strokeStyle = '#fff'; mvCtx.strokeRect((x0 - mp.x) * s + .5, (y0 - mp.y) * s + .5, (x1 - x0 + 1) * s - 1, (y1 - y0 + 1) * s - 1);
+        $('mapPos').textContent = `${x1 - x0 + 1} × ${y1 - y0 + 1} tiles`;
+      } else {
+        if (mp.tool !== 'erase' && mp.tool !== 'pick') {
+          mvCtx.globalAlpha = .6;
+          mvCtx.drawImage(atlas, (mp.tile % 16) * 8, (mp.tile >> 4) * 8, 8, 8, (hx - mp.x) * s, (hy - mp.y) * s, s, s);
+          mvCtx.globalAlpha = 1;
+        }
+        mvCtx.strokeStyle = mp.tool === 'erase' ? '#ff6b5e' : '#fff'; mvCtx.strokeRect((hx - mp.x) * s + .5, (hy - mp.y) * s + .5, s - 1, s - 1);
+        const hit = entAt(hx * 8 + 4, hy * 8 + 4);
+        $('mapPos').textContent = `x ${hx}, y ${hy}  tile ${cart.map[hy * MAPW + hx]}` + (hit >= 0 ? `  ·  ${cart.entities.placed[hit].type}` : '');
+        if (hit >= 0) {              // say who stands here
+          const pl = cart.entities.placed[hit], lx = (pl.x - mp.x * 8) * pz, ly = (pl.y - mp.y * 8) * pz;
+          mvCtx.font = '11px system-ui'; const w = mvCtx.measureText(pl.type).width + 8;
+          mvCtx.fillStyle = 'rgba(10,10,18,.85)'; mvCtx.fillRect(lx, ly - 16, w, 14);
+          mvCtx.fillStyle = '#fff'; mvCtx.fillText(pl.type, lx + 4, ly - 5);
+        }
+      }
+    } else $('mapPos').textContent = '';
     // picker
+    const prow = Math.max(sheetRows(), (mp.tile >> 4) + 2);      // the rows in use, like on the Sprites tab
+    if (mapSheet.height !== prow * 16) mapSheet.height = prow * 16;
     msCtx.imageSmoothingEnabled = false;
-    msCtx.fillStyle = '#000'; msCtx.fillRect(0, 0, 256, 512);
-    msCtx.drawImage(atlas, 0, 0, 256, 512);
+    msCtx.fillStyle = '#000'; msCtx.fillRect(0, 0, 256, prow * 16);
+    msCtx.drawImage(atlas, 0, 0, 128, prow * 8, 0, 0, 256, prow * 16);
     msCtx.strokeStyle = '#ffd23f'; msCtx.lineWidth = 2;
     msCtx.strokeRect((mp.tile % 16) * 16 + 1, (mp.tile >> 4) * 16 + 1, 14, 14); msCtx.lineWidth = 1;
     $('mapTileInfo').textContent = mp.tile + (mp.tile === 0 ? ' (empty)' : '');
+    $('mapZoom').value = mp.zoom;
   }
   function drawRoute() {
     const z = mp.zoom, ox = mp.x * 8, oy = mp.y * 8;
@@ -576,6 +911,7 @@ end
     });
     mvCtx.lineWidth = 1;
   }
+  const rectOf = (a, b) => [Math.min(a.x, b[0]), Math.min(a.y, b[1]), Math.max(a.x, b[0]), Math.max(a.y, b[1])];
   function mapPos(e) {
     const r = mv.getBoundingClientRect(), s = 8 * mp.zoom;
     const x = Math.floor((e.clientX - r.left) / r.width * mv.width / s) + mp.x;
@@ -606,8 +942,10 @@ end
       markDirty(); drawMap();
       return;
     }
-    if (mp.tool === 'pick' || e.altKey) { mp.tile = cart.map[y * MAPW + x]; drawMap(); return; }
-    const t = (e.buttons & 2 || e.button === 2) ? 0 : mp.tile;
+    if (mp.tool === 'pick' || e.altKey) { mp.tile = cart.map[y * MAPW + x]; if (first && mp.tool === 'pick') setMapTool('paint'); drawMap(); return; }
+    const erase = e.buttons & 2 || e.button === 2 || mp.tool === 'erase';
+    const t = erase ? 0 : mp.tile;
+    if (mp.tool === 'rect') { if (first) mp.rect = { x, y, erase: !!(e.buttons & 2 || e.button === 2) }; drawMap(); return; }
     if (first) mapHist.push();
     if (mp.tool === 'fill') {
       if (!first) return;
@@ -626,9 +964,21 @@ end
     mapDirtyRT = true; markDirty(); drawMap();
   }
   mv.addEventListener('contextmenu', e => e.preventDefault());
+  window.addEventListener('mouseup', () => {          // letting go fills the dragged box
+    mapPainting = false;
+    if (!mp.rect) return;
+    const r = mp.rect; mp.rect = null;
+    if (mp.hover) {
+      const [x0, y0, x1, y1] = rectOf(r, mp.hover);
+      mapHist.push();
+      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) cart.map[y * MAPW + x] = r.erase ? 0 : mp.tile;
+      mapDirtyRT = true; markDirty();
+    }
+    drawMap();
+  });
   mv.addEventListener('mousedown', e => {
     mv.focus();
-    if (e.button === 1) { mapPanning = { x: e.clientX, y: e.clientY, mx: mp.x, my: mp.y }; e.preventDefault(); return; }
+    if (e.button === 1 || (e.button === 0 && mp.space)) { mapPanning = { x: e.clientX, y: e.clientY, mx: mp.x, my: mp.y }; e.preventDefault(); return; }
     mapPainting = true; mapApply(e, true);
   });
   mv.addEventListener('mousemove', e => {
@@ -640,27 +990,47 @@ end
     mp.hover = mapPos(e);
     if (mapPainting && e.buttons) mapApply(e, false); else drawMap();
   });
-  mv.addEventListener('mouseleave', () => { mp.hover = null; drawMap(); });
-  mv.addEventListener('wheel', e => { e.preventDefault(); panMap(Math.sign(e.shiftKey ? e.deltaY : e.deltaX) * 2, e.shiftKey ? 0 : Math.sign(e.deltaY) * 2); }, { passive: false });
+  mv.addEventListener('mouseleave', () => { if (mp.rect) return; mp.hover = null; drawMap(); });
+  // the wheel zooms in and out around the pointer (Shift or a sideways swipe pans)
+  let wheelAcc = 0;
+  mv.addEventListener('wheel', e => {
+    e.preventDefault();
+    if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return panMap(Math.sign(e.shiftKey ? e.deltaY : e.deltaX) * 2, 0);
+    wheelAcc += e.deltaMode ? e.deltaY * 40 : e.deltaY;
+    if (Math.abs(wheelAcc) < 40) return;
+    const z = Math.max(1, Math.min(4, mp.zoom + (wheelAcc < 0 ? 1 : -1)));
+    wheelAcc = 0;
+    if (z === mp.zoom) return;
+    const r = mv.getBoundingClientRect(), cx = (e.clientX - r.left) / 8, cy = (e.clientY - r.top) / 8;
+    const tx = mp.x + cx / mp.zoom, ty = mp.y + cy / mp.zoom;      // the tile under the pointer stays there
+    mp.zoom = z; mp.x = Math.round(tx - cx / z); mp.y = Math.round(ty - cy / z);
+    panMap(0, 0);
+  }, { passive: false });
   function panMap(dx, dy) {
-    const [vw, vh] = mapViewTiles();
+    const vw = Math.floor(mv.width / (8 * mp.zoom)), vh = Math.floor(mv.height / (8 * mp.zoom));
     mp.x = Math.max(0, Math.min(MAPW - vw, mp.x + dx));
     mp.y = Math.max(0, Math.min(MAPH - vh, mp.y + dy));
     drawMap();
   }
+  mv.addEventListener('keyup', e => { if (e.key === ' ') { mp.space = false; mv.style.cursor = ''; } });
+  mv.addEventListener('blur', () => { mp.space = false; mv.style.cursor = ''; });
   mv.addEventListener('keydown', e => {
     const k = e.key.toLowerCase(), st = e.shiftKey ? 10 : 2;
+    if (e.key === ' ') { mp.space = true; mv.style.cursor = 'grab'; e.preventDefault(); return; }
     const d = { arrowleft: [-st, 0], a: [-st, 0], arrowright: [st, 0], d: [st, 0], arrowup: [0, -st], w: [0, -st], arrowdown: [0, st], s: [0, st] }[k];
     if (d && !e.ctrlKey && !e.metaKey) { panMap(d[0], d[1]); e.preventDefault(); }
   });
   mapSheet.addEventListener('mousedown', e => {
     const r = mapSheet.getBoundingClientRect();
-    mp.tile = Math.floor((e.clientY - r.top) / r.height * 32) * 16 + Math.floor((e.clientX - r.left) / r.width * 16);
-    if (mp.tool === 'pick') setMapTool('paint');
+    mp.tile = Math.floor((e.clientY - r.top) / r.height * (mapSheet.height / 16)) * 16 + Math.floor((e.clientX - r.left) / r.width * 16);
+    if (mp.tool === 'pick' || mp.tool === 'erase') setMapTool('paint');
     drawMap();
   });
   document.querySelectorAll('.mtool').forEach(b => b.onclick = () => setMapTool(b.dataset.mtool));
-  function setMapTool(t) { mp.tool = t; document.querySelectorAll('.mtool').forEach(b => b.classList.toggle('active', b.dataset.mtool === t)); }
+  function setMapTool(t) {
+    mp.tool = t; document.querySelectorAll('.mtool').forEach(b => b.classList.toggle('active', b.dataset.mtool === t));
+    $('mapHint').textContent = mp.layer === 'ents' ? 'Click to place the picked entity, right click removes one.' : MAP_HINT[t];
+  }
   // ---- levels
   function refreshLevels() {
     $('mapLevel').innerHTML = cart.levels.map((L, i) => `<option value="${i}"${i === cart.level ? ' selected' : ''}>${i + 1}. ${escapeHtml(L.name)}</option>`).join('');
@@ -668,7 +1038,7 @@ end
   }
   function switchLevel(i) {
     syncLevel(); bindLevel(i); mapHist.clear();
-    mp.x = 0; mp.y = 0;
+    mp.x = 0; mp.y = 0; mp.autoz = true; fitMap();
     refreshLevels(); drawMap(); markDirty();
   }
   $('mapLevel').onchange = e => switchLevel(+e.target.value);
@@ -716,7 +1086,7 @@ end
   $('mapLayer').onchange = e => {
     mp.layer = e.target.value;
     $('mapEnt').hidden = mp.layer !== 'ents';
-    refreshEntSelect(); drawMap();
+    refreshEntSelect(); setMapTool(mp.tool); drawMap();
   };
   $('mapEnt').onchange = e => { mp.ent = e.target.value; };
   $('mapZoom').onchange = e => { mp.zoom = +e.target.value; panMap(0, 0); };
@@ -728,20 +1098,19 @@ end
   // editor shortcuts
   window.addEventListener('keydown', e => {
     const inText = e.target.closest && (e.target.closest('.CodeMirror') || /INPUT|TEXTAREA|SELECT/.test(e.target.tagName));
-    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); run(); return; }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); if (mode === 'play') playStart(true); else run(); return; }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
       e.preventDefault(); saveLocal();
       if (cartFile) saveToBit(false); else toast('Saved in this browser');
       return;
     }
     if (inText || e.target === screen) return;
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
-      if (activeTab === 'sprites') { tileHist.pop(); e.preventDefault(); }
-      if (activeTab === 'map') { mapHist.pop(); e.preventDefault(); }
+    if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'z' || e.key.toLowerCase() === 'y')) {
+      if (mode === 'edit') { undoHere(e.shiftKey || e.key.toLowerCase() === 'y'); e.preventDefault(); }
       return;
     }
     if (activeTab === 'sprites') { const t = { p: 'pen', f: 'fill', i: 'pick' }[e.key.toLowerCase()]; if (t) setTool(t); }
-    if (activeTab === 'map' && e.target !== mv) { const t = { p: 'paint', f: 'fill', i: 'pick' }[e.key.toLowerCase()]; if (t) setMapTool(t); }
+    if (activeTab === 'map') { const t = { p: 'paint', f: 'fill', i: 'pick', e: 'erase', r: 'rect', b: 'rect' }[e.key.toLowerCase()]; if (t && !e.ctrlKey && !e.metaKey) setMapTool(t); }
   });
 
   /* ------------------------------------------------------------ input */
@@ -770,12 +1139,21 @@ end
   // Every studio window is a Bit. Extra Bits open as ?bit=N windows that show just the screen.
   const BIT_NO = Math.max(1, Math.min(99, parseInt((location.search.match(/[?&]bit=(\d+)/) || [])[1], 10) || 1));
   const IS_BIT2 = BIT_NO > 1;   // an extra Bit window (not the studio)
+  // Play mode can show a second Bit next to the first: an extra Bit in a frame (?bit=N&embed=1). The studio
+  // window reads the buttons for it (player 2's keys or controller) and hands them over, so one keyboard and
+  // any controllers work for both without clicking between them.
+  const EMBED = IS_BIT2 && /[?&]embed=1/.test(location.search);
+  const ext = { mask: 0, press: new Uint8Array(12) };              // embedded Bit: buttons from the studio window
+  const embed = { on: false, frame: null, api: null, num: 2 };     // studio window: the Bit next to this one
+  const p2Local = () => playMode === '2' && !embed.on;             // two players sharing this screen
+  const wantP2 = () => playMode === '2' || embed.on;               // player 2's buttons are read in this window
+  let forceCombo = 0;                                              // frames of Start+Select from the Home button
   let playMode = lsGet('bitkit.players') === '2' ? '2' : '1';   // '2' = two players on this one screen
   const screen = $('screen');
   function gameHasFocus() { const a = document.activeElement; return a === screen || a === document.body || a === null; }
   window.addEventListener('keydown', e => {
     if (!gameHasFocus() || e.ctrlKey || e.metaKey || e.altKey) return;
-    const i = KEYMAP[e.code], j = playMode === '2' ? KEYMAP2[e.code] : undefined;
+    const i = KEYMAP[e.code], j = wantP2() ? KEYMAP2[e.code] : undefined;
     if (i !== undefined) { keys[i] = 1; e.preventDefault(); }
     else if (j !== undefined) { keys2[j] = 1; e.preventDefault(); }
   });
@@ -806,12 +1184,15 @@ end
   // Kept per tab (sessionStorage), so two studio windows can each take their own controller, or one the keyboard.
   const PICK_KEY = 'bitkit.inputPick.bit' + BIT_NO;
   const picks = [{ k: 'auto' }, { k: 'auto' }];
-  try { const v = JSON.parse(sessionStorage.getItem(PICK_KEY) || 'null'); if (Array.isArray(v)) v.slice(0, 2).forEach((o, i) => { if (o && o.k) picks[i] = o; }); } catch (e) { /* ignore */ }
+  try { const v = EMBED ? null : JSON.parse(sessionStorage.getItem(PICK_KEY) || 'null'); if (Array.isArray(v)) v.slice(0, 2).forEach((o, i) => { if (o && o.k) picks[i] = o; }); } catch (e) { /* ignore */ }
   function savePicks() { try { sessionStorage.setItem(PICK_KEY, JSON.stringify(picks)); } catch (e) { /* ignore */ } }
   function pickedPad(pads, pk) { return pads.find(p => p.index === pk.i && p.id === pk.id) || pads.find(p => p.id === pk.id) || null; }
   // pads and keyboard for player n (0 or 1) in this tab
   function sourcesFor(n, pads) {
     const pk = picks[n];
+    if (n === 0 && pk.k !== 'pad' && wantP2() && picks[1].k === 'pad') {   // a controller picked for player 2 is not player 1's too
+      const p2 = pickedPad(pads, picks[1]); pads = pads.filter(p => p !== p2);
+    }
     if (pk.k === 'pad') { const p = pickedPad(pads, pk); return { pads: p ? [p] : [], kb: false }; }
     const kb = n === 0 ? keys : (picks[0].k === 'pad' ? orKeys() : keys2);   // player 2 gets the arrow keys too when player 1 is on a controller
     if (pk.k === 'kb') return { pads: [], kb };
@@ -821,7 +1202,7 @@ end
       if (taken.length) return { pads: pads.filter(p => !taken.includes(p)), kb };   // other Bits chose controllers: use the rest
       if (pads.length > 1) { const r = linkRank(); return { pads: pads.slice(r, r + 1), kb }; }
     }
-    if (playMode === '2') return { pads: pads.slice(0, 1), kb };
+    if (wantP2()) return { pads: pads.slice(0, 1), kb };
     return { pads, kb };
   }
   // controllers other Bits picked for themselves
@@ -832,10 +1213,13 @@ end
   function pollInput() {
     const pads = navigator.getGamepads ? [...navigator.getGamepads()].filter(Boolean) : [];
     input.pads = pads;
+    if (EMBED) { input.mine = []; input.mask = ext.mask; input.press.set(ext.press); return; }
     const s1 = sourcesFor(0, pads);
     input.mine = s1.pads;
     readInput(input, s1.kb || noKeys, s1.pads);
-    if (playMode === '2') { const s2 = sourcesFor(1, pads); readInput(input2, s2.kb || noKeys, s2.pads); }
+    if (forceCombo > 0) { forceCombo--; input.mask |= START | SELECT; }
+    if (wantP2()) { const s2 = sourcesFor(1, pads); readInput(input2, s2.kb || noKeys, s2.pads); }
+    if (embed.on && embed.api) { try { embed.api.extInput(input2.mask, input2.press); } catch (e) { /* the frame is gone */ } }
     if (chooser.open) chooserPoll(pads);
   }
 
@@ -945,19 +1329,39 @@ end
   // the "Input" pickers next to the screen
   function padName(id) { return id.replace(/\s*\(.*?\)\s*/g, ' ').trim().slice(0, 32) || 'Controller'; }
   function buildPickers() {
-    const pads = input.pads;
+    const pads = input.pads, two = wantP2();
     [0, 1].forEach(n => {
       const sel = $(n ? 'inputPick2' : 'inputPick'), pk = picks[n];
-      const autoTxt = n ? 'P2: auto (2nd controller + IJKL)' : (pads.length ? 'Auto: keyboard + controllers' : 'Auto: keyboard (press a button on a controller to list it)');
-      let html = `<option value="auto">${escapeHtml(autoTxt)}</option><option value="kb">${n ? 'P2: ' : ''}Keyboard only</option>`;
-      html += pads.map(p => `<option value="pad:${p.index}">${n ? 'P2: ' : ''}🎮 ${p.index + 1}: ${escapeHtml(padName(p.id))}</option>`).join('');
+      const who = embed.on ? '' : n ? 'P2: ' : two ? 'P1: ' : '';
+      const autoTxt = n ? 'Auto: 2nd controller + keys I J K L' : (pads.length ? 'Auto: keyboard + controller' : 'Keyboard');
+      let html = `<option value="auto">${who}${escapeHtml(autoTxt)}</option>` + (pads.length || n || pk.k === 'kb' ? `<option value="kb">${who}Keyboard only</option>` : '');
+      html += pads.map(p => `<option value="pad:${p.index}">${who}🎮 ${p.index + 1}: ${escapeHtml(padName(p.id))}</option>`).join('');
       const cur = pk.k === 'pad' ? pickedPad(pads, pk) : null;
-      if (pk.k === 'pad' && !cur) html += `<option value="missing">${n ? 'P2: ' : ''}🎮 ${escapeHtml(padName(pk.id))} (press a button on it)</option>`;
+      if (pk.k === 'pad' && !cur) html += `<option value="missing">${who}🎮 ${escapeHtml(padName(pk.id))} (press a button on it)</option>`;
       sel.innerHTML = html;
       sel.value = pk.k === 'pad' ? (cur ? 'pad:' + cur.index : 'missing') : pk.k;
       sel.classList.toggle('on', pk.k === 'pad' ? !!cur : pads.length > 0 || pk.k === 'kb');
     });
-    $('inputPick2').hidden = playMode !== '2';
+    // player 2's picker sits under Bit 2 when there is one, else next to player 1's
+    const p2 = $('inputPick2'), home = embed.on ? $('bitCol2').querySelector('.input-row') : $('inputPick').parentElement;
+    if (p2.parentElement !== home) { if (embed.on) home.appendChild(p2); else home.insertBefore(p2, $('padHint')); }
+    p2.hidden = !two;
+    // browsers hide a controller from a page until a button on it is pressed: say so instead of showing nothing
+    const h = $('padHint');
+    if (pads.length) { h.className = 'pad-hint on'; h.textContent = `🎮 ${pads.map(p => padName(p.id)).join(', ')} connected`; }
+    else { h.className = 'pad-hint wait'; h.innerHTML = '🎮 Have a controller? <b>Press any button on it</b> to connect it.'; }
+    renderKeys();
+  }
+  // the keyboard keys for each button, under the screen they play on
+  const KEYS1 = [['← ↑ ↓ →', 'move'], ['Z', 'A'], ['X', 'B'], ['A', 'X'], ['S', 'Y'], ['Q', 'L'], ['W', 'R'], ['Enter', 'Start'], ['Shift', 'Select']];
+  const KEYS2 = [['I J K L', 'move'], ['N', 'A'], ['M', 'B'], ['H', 'X'], ['U', 'Y'], ['Y', 'L'], ['O', 'R'], ['Backspace', 'Start'], ['B', 'Select']];
+  function renderKeys() {
+    const row = (list, who) => `<div class="keys-row">${who ? `<b>${who}</b>` : ''}${list.map(([k, b]) => `<span class="k"><kbd>${k}</kbd>${b}</span>`).join('')}</div>`;
+    const two = wantP2(), kb1 = picks[0].k !== 'pad', kb2 = picks[1].k !== 'pad';
+    const home = bit.on ? '<div class="keys-row dim">Hold Start + Select to go back to the home screen.</div>' : '';
+    let h1 = kb1 ? row(KEYS1, two && !embed.on ? 'P1' : '') : '', h2 = '';
+    if (two && kb2) { const r = row(KEYS2, embed.on ? '' : 'P2') + (kb1 ? '' : '<div class="keys-row dim">The arrow keys, Z and X work for this player too.</div>'); if (embed.on) h2 = r; else h1 += r; }
+    $('keys1').innerHTML = h1 + (h1 || !embed.on ? home : ''); $('keys2').innerHTML = h2;
   }
   ['inputPick', 'inputPick2'].forEach((id, n) => {
     $(id).onchange = e => {
@@ -969,9 +1373,8 @@ end
       screen.focus();
     };
   });
-  buildPickers();
   function escapeHtml(s) { return s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
-  window.addEventListener('gamepadconnected', e => log(`controller connected: ${e.gamepad.id}`, 'sys'));
+  window.addEventListener('gamepadconnected', e => { log(`controller connected: ${e.gamepad.id}`, 'sys'); if (!EMBED) toast(`🎮 ${padName(e.gamepad.id)} connected`); });
   window.addEventListener('gamepaddisconnected', e => log(`controller disconnected: ${e.gamepad.id}`, 'sys'));
 
   /* ------------------------------------------------------------ audio */
@@ -1073,7 +1476,7 @@ end
     playingEditor = true; playingLevels = cart.levels; playingLevel = start;
     if (bit.on) bit.playing = 'studio';
     bit.cur = bit.on ? gameKey(bit.games.find(g => g.studio) || { studio: true }) : null;
-    const np = playMode === '2' ? 2 : 1, me = 0;
+    const np = p2Local() ? 2 : 1, me = 0;
     running = loadCode(getCode(), BKEntities.toLua(cart.entities, levelsMeta(cart.levels), start, extraLua), cart.name || 'untitled', np, me) === 0;
     acc = 0; last = performance.now();
     screen.focus();
@@ -1091,9 +1494,10 @@ end
     showErrLine(msg);
   };
   $('btnRun').onclick = () => run();
-  $('btnStop').onclick = () => { stop(); if (bit.on) setBitPower(false); };
+  $('btnStop').onclick = () => { stop(); };
+  overlay.onclick = () => { if (!IS_BIT2) onErrorClick(overlay.textContent); };
   screen.addEventListener('mousedown', () => screen.focus());
-  $('btnFull').onclick = () => { const g = $('gameWrap'); (g.requestFullscreen || g.webkitRequestFullscreen).call(g); screen.focus(); };
+  $('btnFull').onclick = () => { const g = embed.on ? $('stage') : $('gameWrap'); (g.requestFullscreen || g.webkitRequestFullscreen).call(g); screen.focus(); };
 
   let routeTick = 0;
   let acc = 0, last = performance.now(), fpsCount = 0, fpsT = last;
@@ -1125,7 +1529,7 @@ end
           const e = r.e;
           [m1, p1] = e[1];
           for (let k = 2; k <= ls.np; k++) { RT.HEAPU8.set(e[k][1], ptr.pressN[k]); RT._bkw_input(k, e[k][0], ptr.pressN[k]); }
-        } else if (playMode === '2') {
+        } else if (p2Local()) {
           RT.HEAPU8.set(input2.press, ptr.press2); RT._bkw_input(2, input2.mask, ptr.press2);
         }
         RT.HEAPU8.set(p1, ptr.press);
@@ -1503,7 +1907,9 @@ end
     homeRefreshT = setTimeout(() => { if (bit.on && bit.playing === 'home' && !bit.busy && !link.s) bootHome(); }, 400);
   }
   function linkUI(msg) {
-    $('linkBar').hidden = false;
+    // the bar is for Bits in other windows: alone, or with only the Bit next door in Play mode, it stays out of the way
+    const outside = link.peers.size - (embed.on && embed.api && link.peers.has(embed.api.link.id) ? 1 : 0);
+    $('linkBar').hidden = EMBED || (!IS_BIT2 && !outside && !msg);
     if (!msg) $('linkWait').hidden = true;
     $('linkBar').classList.toggle('ok', link.peers.size > 0);
     const s = link.s, others = bitsSorted().filter(b => b[0] !== link.id).map(b => 'Bit ' + b[1]);
@@ -1514,26 +1920,28 @@ end
   }
   $('players').value = playMode;
   $('players').onchange = e => {
+    if (e.target.value === 'win') { e.target.value = playMode; openBitWindow(); return; }
     if (running && !link.s) stop(true);
     playMode = e.target.value; lsSet('bitkit.players', playMode);
     buildPickers();
     if (playMode === '2') log('2 players on this screen: player 2 uses the second controller, or I J K L to move, N to jump, M to throw. Linked Bits play one player each instead.', 'sys');
   };
   $('linkPad').onclick = () => openChooser();
-  $('linkOpen').onclick = () => {
+  $('linkOpen').onclick = openBitWindow;
+  function openBitWindow() {
     const used = new Set(bitsSorted().map(b => b[1]));
     let n = 2;
     while (used.has(n)) n++;
     const w = window.open(location.pathname + '?bit=' + n, 'bitkit-bit' + n, 'width=720,height=640');
     if (!w) toast('The browser blocked the new window. Allow pop-ups, or open this page again in another window.');
-  };
+  }
 
   /* ------------------------------------------------------------ boot screen */
   function bootScreen() {
     loadCode(`function _draw() cls(1)
   text("${APP.toUpperCase()}", 160 - ${APP.length * 12}, 84, 17, 3)
-  text("Press Run or Ctrl+Enter", 68, 130, 29)
-  text("or try the Demo", 100, 144, 29) end`);
+  text("Press Run to test your game", 52, 130, 29)
+  text("Play shows it on a Bit", 72, 144, 29) end`);
     RT.HEAPU8.fill(0, ptr.press, ptr.press + 12);
     RT._bkw_frame(0, ptr.press);
     blit();
@@ -1543,52 +1951,69 @@ end
   /* ------------------------------------------------------------ cart actions */
   function applyCart(keepUndo) {
     $('cartName').value = cart.name;
+    const ch = cartChanged;
     setCode(cart.code, keepUndo);
+    setChanged(ch);            // putting the code in the editor is not a change to the game
     atlasDirty = true; gfxDirtyRT = true;
     if (activeTab === 'sprites') drawSprites();
-    if (activeTab === 'map') { refreshLevels(); refreshEntSelect(); drawMap(); }
+    mp.x = 0; mp.y = 0; mp.autoz = true;
+    if (activeTab === 'map') { refreshLevels(); refreshEntSelect(); fitMap(); drawMap(); }
     if (activeTab === 'entities') entEd.render();
     if (activeTab === 'cutscenes') csEd.render();
     if (activeTab === 'track') trkEd.render();
-    showTrackTab();
+    if (activeTab === 'game') renderGameTab();
+    if (!tabUsed(activeTab)) showTab('code'); else refreshTabs();
   }
   // built-in demos: each demo file pushes {name, code, buildGfx, about} onto window.BK_DEMOS
   const DEMOS = () => (window.BK_DEMOS && window.BK_DEMOS.length ? window.BK_DEMOS : [BK_DEMO]);
-  function loadDemo(d) {
-    d = d || DEMOS()[0];
-    cart.name = d.name; cart.code = d.code; cart.palette.set(DEFAULT_PAL);
+  function blankInto(name, code) {
+    cart.name = name; cart.code = code; cart.palette.set(DEFAULT_PAL);
     cart.tiles.fill(0); cart.flags.fill(0);
     cart.levels = null; cart.map = new Uint16Array(MAPW * MAPH);
     cart.entities = { types: [], placed: [] };
-    d.buildGfx(cart); normalizeLevels();
-    applyCart(); saveLocal();
   }
+  function loadDemo(d) { d = d || DEMOS()[0]; blankInto(d.name, d.code); d.buildGfx(cart); normalizeLevels(); }
   $('cartName').addEventListener('input', e => { cart.name = e.target.value || 'untitled'; markDirty(); });
-  $('btnNew').onclick = async () => {
-    if (!await ask('Start a new cart?', 'This replaces the current cart. Use Save / share first if you want to keep a copy.', 'Start new cart')) return;
-    cart.name = 'my game'; cart.code = NEW_CODE; cart.palette.set(DEFAULT_PAL);
-    cart.tiles.fill(0); cart.flags.fill(0);
-    cart.levels = null; cart.map = new Uint16Array(MAPW * MAPH);
-    cart.entities = { types: [], placed: [] };
-    normalizeLevels();
-    setCartFile(null); applyCart(); saveLocal();
-  };
-  $('btnDemo').onclick = async () => {
-    const list = DEMOS();
-    if (list.length === 1) {
-      if (!await ask('Load the demo cart?', `This replaces the current cart with ${list[0].name}. Use Save / share first if you want to keep a copy.`, 'Load demo')) return;
-      setCartFile(null); loadDemo(list[0]); run();
-      return;
-    }
-    modal('Load a demo', '<p class="dim">This replaces the current cart. Use Save / share first if you want to keep a copy.</p>' +
-      list.map(d => `<p><b>${escapeHtml(d.name)}</b>${d.about ? ' <span class="dim">' + escapeHtml(d.about) + '</span>' : ''}</p>`).join(''),
-      list.map((d, i) => [d.name, () => { closeModal(); setCartFile(null); loadDemo(d); run(); }, i === 0 ? 'primary' : '']).concat([['Cancel', closeModal]]));
-  };
+
+  /* ------------------------------------------------------------ games: switch, new, open */
+  // Switching games never loses work. Every game in the editor has an id (gid): a built-in game ("demo:Kart Lab"),
+  // a file on the Bit's memory card ("file:my-game.bitkit") or a new game not saved as a file yet ("new:...").
+  // Leaving a game you changed keeps your version as a draft (in this browser); opening it again brings it back.
+  let gid = lsGet(LS.cart + '.gid') || '';
+  function setGid(g) { gid = g; lsSet(LS.cart + '.gid', g); }
+  const newGid = () => 'new:' + Date.now().toString(36);
+  async function stashCurrent() {
+    syncLevel(); saveLocal(); dirtySave = false;
+    if (!cartChanged || !gid) return;
+    try { await BKStore.drafts.put(gid, { name: cart.name, data: serialize(), t: Date.now() }); }
+    catch (e) { log(`Could not keep your changes to "${cart.name}": ${e.message}`, 'err'); }
+  }
+  // ref: { demo } a built-in game, { file, data } a game on the Bit, { draft: gid }, { blank: true }, or { data } (a file or pasted text)
+  async function openGame(ref) {
+    await stashCurrent();
+    const key = ref.demo ? 'demo:' + ref.demo.name : ref.file ? 'file:' + ref.file : ref.draft || newGid();
+    let draft = null;
+    try { draft = await BKStore.drafts.get(key); } catch (e) { /* no drafts here */ }
+    try {
+      if (draft) deserialize(draft.data);
+      else if (ref.demo) loadDemo(ref.demo);
+      else if (ref.blank) { blankInto('my game', NEW_CODE); normalizeLevels(); }
+      else if (ref.data) deserialize(ref.data);
+      else throw new Error('that game is gone');
+    } catch (e) { toast('Could not open it: ' + e.message); return false; }
+    setGid(key); setCartFile(ref.file || null);
+    setChanged(!!draft || !(ref.demo || ref.file || ref.blank));
+    applyCart(); saveLocal(); dirtySave = false; histReset();
+    closeModal();
+    toast(draft ? `Opened ${cart.name}, with your changes` : `Opened ${cart.name}`);
+    if (mode !== 'edit') await setMode('edit'); else { stop(true); bootScreen(); }
+    return true;
+  }
   function cartFileName() { return (cart.name || 'cart').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').toLowerCase() + '.bitkit'; }
   $('btnSave').onclick = () => {
     saveLocal();
     const text = JSON.stringify(serialize());
-    modal('Save / share cart', `<p class="dim">Your cart is already saved in this browser. To keep a file or move it to another computer, download it or copy the text below (paste it back with Open).</p>
+    modal('Save / share', `<p class="dim">Your work is saved in this browser as you go. <b>Save to my games</b> also puts it on the Bit's home screen${BKStore.state === 'folder' ? ` (the folder ${escapeHtml(BKStore.label())})` : ''}. To move it to another computer, download the file or copy the text below (open it there from the Games menu).</p>
       <textarea id="mText" readonly></textarea>`, [
       ['Copy text', b => { const t = $('mText'); t.select(); (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(() => toast('Copied'), () => { document.execCommand && document.execCommand('copy'); toast('Text selected, press Ctrl+C'); }); }],
       ['Download ' + cartFileName(), () => {
@@ -1596,20 +2021,21 @@ end
         a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
         a.download = cartFileName(); a.click();
         setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-      }, 'primary'],
+      }],
+      [cartFile ? `Save to my games (${cartFile})` : 'Save to my games', async () => { if (await saveToBit(true)) closeModal(); }, 'primary'],
       ['Close', closeModal]]);
     $('mText').value = text;
   };
-  $('btnOpen').onclick = () => {
-    modal('Open cart', `<p class="dim">Pick a .bitkit file, or paste cart text. This replaces the current cart.</p><textarea id="mText" placeholder="Paste cart text here"></textarea>`, [
+  function openDialog() {
+    modal('Open a game file', `<p class="dim">Pick a .bitkit file, or paste the text of a game. The game you have open now is kept: find it again in the Games menu.</p><textarea id="mText" placeholder="Paste game text here"></textarea>`, [
       ['Choose file…', () => $('fileOpen').click()],
-      ['Load pasted text', () => { try { deserialize(JSON.parse($('mText').value)); setCartFile(null); applyCart(); saveLocal(); closeModal(); toast('Cart loaded'); } catch (err) { toast('That text is not a cart: ' + err.message); } }, 'primary'],
+      ['Open pasted text', () => { let o; try { o = JSON.parse($('mText').value); decodeCart(o); } catch (err) { toast('That text is not a game: ' + err.message); return; } openGame({ data: o }); }, 'primary'],
       ['Cancel', closeModal]]);
-  };
+  }
   $('fileOpen').onchange = async e => {
     const f = e.target.files[0]; if (!f) return;
-    try { deserialize(JSON.parse(await f.text())); setCartFile(null); applyCart(); saveLocal(); closeModal(); toast(`Opened ${f.name}`); }
-    catch (err) { log('Could not open cart: ' + err.message, 'err'); }
+    try { const o = JSON.parse(await f.text()); decodeCart(o); await openGame({ data: o }); }
+    catch (err) { log('Could not open that file: ' + err.message, 'err'); toast('That file is not a game'); }
     e.target.value = '';
   };
 
@@ -1759,7 +2185,7 @@ end
     RT.HEAPU16.set(c.levels[0].map, ptr.map >> 1);
     gfxDirtyRT = true; playingEditor = false; bit.playing = label; playingLevels = c.levels; playingLevel = 0;
     log(`▶ Bit: playing "${c.name}"`, 'sys');
-    running = loadCode(c.code, BKEntities.toLua(c.entities, levelsMeta(c.levels), 0, extraLua), c.name || label, playMode === '2' ? 2 : 1, 0) === 0;
+    running = loadCode(c.code, BKEntities.toLua(c.entities, levelsMeta(c.levels), 0, extraLua), c.name || label, p2Local() ? 2 : 1, 0) === 0;
     acc = 0; last = performance.now();
     screen.focus();
   }
@@ -1806,15 +2232,10 @@ end
       if (g.studio) run();
       else playCart(c, g.demo ? 'demo:' + g.name : g.file);
       bit.cur = key;
-    } else if (cmd === 3) {
-      if (g.studio) { toast('That is the cart in the studio'); return; }
-      if (g.demo) {
-        if (!await ask(`Open "${g.name}" in the studio?`, 'This replaces the cart in the studio. Use Save / share or save it to the Bit first if you want to keep it.', 'Open')) return;
-        setCartFile(null); loadDemo(g.demo); toast(`Opened ${g.name}`);
-        bit.sel = 1; bootHome();
-        return;
-      }
-      openFromBit(g.file, g.data);
+    } else if (cmd === 3) {          // Y on the home screen: edit that game (the one open before is kept, see openGame)
+      if (IS_BIT2) return;
+      bit.sel = 1;
+      if (g.studio) setMode('edit'); else openGame(g.demo ? { demo: g.demo } : { file: g.file, data: g.data });
     }
   }
   function bitCombo() {
@@ -1829,20 +2250,8 @@ end
   }
   function setBitPower(on) {
     bit.on = on;
-    $('btnBit').classList.toggle('active', on);
-    $('btnBit').textContent = on ? '⏻ Bit on' : '⏻ Bit';
-    if (!IS_BIT2) lsSet('bitkit.bitOn', on ? '1' : '0');
     if (on) { log('Bit on: home screen. Hold Start+Select in a game to pause it and come back; picking it again carries on.', 'sys'); bootHome(); }
     else { suspendGame(); stop(true); bit.playing = null; bit.cur = null; bootScreen(); }
-  }
-  $('btnBit').onclick = () => setBitPower(!bit.on);
-
-  async function openFromBit(file, data) {
-    if (!await ask(`Open "${data.name || file}" in the studio?`, 'This replaces the cart in the studio. If you want to keep it, save it to the Bit first.', 'Open')) return;
-    try { deserialize(data); } catch (e) { toast(e.message); return; }
-    setCartFile(file); applyCart(); saveLocal();
-    closeModal(); toast(`Opened ${file}`);
-    if (bit.on) bootHome();
   }
   async function saveToBit(confirmNew) {
     const file = cartFile || cartFileName();
@@ -1850,67 +2259,297 @@ end
       if (!cartFile && confirmNew && await BKStore.exists(file) &&
           !await ask(`Replace ${file}?`, 'A game with this file name is already on the Bit.', 'Replace')) return false;
       await BKStore.save(file, serialize());
-      setCartFile(file);
-      toast(`Saved to the Bit: ${file}`);
+      try { await BKStore.drafts.del(gid); await BKStore.drafts.del('file:' + file); } catch (e) { /* no drafts here */ }
+      setCartFile(file); setGid('file:' + file); setChanged(false);
+      toast(`Saved to my games: ${file}`);
       return true;
     } catch (e) { log('Could not save to the Bit: ' + e.message, 'err'); toast('Save failed'); return false; }
   }
 
-  async function showLibrary() {
-    const games = await BKStore.list().catch(e => { log(e.message, 'err'); return []; });
+  // a game's 16x16 icon on a small canvas
+  function drawIcon(cv, c) {
+    try {
+      const x = cv.getContext('2d'), im = x.createImageData(16, 16), tl = new Uint8Array(64 * 18);
+      if (!iconFor(c, 0, tl)) return false;
+      for (let y = 0; y < 16; y++) for (let xx = 0; xx < 16; xx++) {
+        const v = tl[((y >> 3) * 16 + (xx >> 3)) * 64 + (y & 7) * 8 + (xx & 7)], o = (y * 16 + xx) * 4;
+        im.data[o] = c.palette[v * 3]; im.data[o + 1] = c.palette[v * 3 + 1]; im.data[o + 2] = c.palette[v * 3 + 2]; im.data[o + 3] = v ? 255 : 0;
+      }
+      x.putImageData(im, 0, 0);
+      return true;
+    } catch (e) { return false; }
+  }
+  // The Games menu: every game in one place. Your games (files on the Bit's memory card, and new games not saved
+  // as a file yet), the built-in games, a new game, a file from somewhere else.
+  async function showGames() {
+    await stashCurrent();
+    const lib = await BKStore.list().catch(e => { log(e.message, 'err'); return []; });
+    const drafts = await BKStore.drafts.list().catch(() => []);
+    const dmap = new Map(drafts.map(d => [d.key, d]));
     const st = BKStore.state;
-    const where = st === 'folder' ? `📁 <b>${escapeHtml(BKStore.label())}</b> on this computer`
-      : st === 'reconnect' ? `📁 <b>${escapeHtml(BKStore.label())}</b>`
-      : `🌐 <b>this browser</b>${BKStore.canPickFolder ? '' : ' (this browser can\'t open folders; Chrome or Edge can)'}`;
-    const rows = games.map((g, i) => {
-      const nm = g.data ? escapeHtml(g.data.name || g.file) : `<span class="err">${escapeHtml(g.file)} (unreadable)</span>`;
-      const cur = g.file === cartFile ? ' <span class="lib-tag">in studio</span>' : '';
-      return `<div class="lib-row"><canvas width="16" height="16" data-i="${i}"></canvas><div class="lib-name">${nm}${cur}<div class="dim small">${escapeHtml(g.file)}</div></div>
-        ${g.data ? `<button class="tiny" data-play="${i}">Play</button><button class="tiny" data-open="${i}">Open</button>` : ''}<button class="tiny danger" data-del="${i}">✕</button></div>`;
-    }).join('') || '<div class="dim">No games yet. Save the current cart to put it on the Bit.</div>';
-    modal('Bit library', `<div class="lib-where">Memory card: ${where}</div>
-      <div class="lib-actions">
+    const tag = (t, cls) => ` <span class="lib-tag ${cls || ''}">${t}</span>`;
+    const openTag = k => (k === gid ? tag('open in the editor') : '');
+    const mine = lib.map(g => ({ key: 'file:' + g.file, name: g.data ? (g.data.name || g.file) : g.file, sub: g.file, bad: !g.data,
+      data: (dmap.get('file:' + g.file) || {}).data || g.data, ref: { file: g.file, data: g.data }, file: g.file, edited: dmap.has('file:' + g.file) || ('file:' + g.file === gid && cartChanged) }));
+    drafts.filter(d => d.key.startsWith('new:')).forEach(d => mine.push({ key: d.key, name: d.name, sub: 'not saved as a file yet', data: d.data, ref: { draft: d.key }, draft: true }));
+    if (gid.startsWith('new:') && !dmap.has(gid)) mine.push({ key: gid, name: cart.name, sub: 'not saved as a file yet', data: serialize(), ref: { draft: gid }, draft: true });
+    const rows = mine.map((g, i) => `<div class="lib-row${g.key === gid ? ' cur' : ''}"><canvas width="16" height="16" data-mine="${i}"></canvas>
+        <div class="lib-name">${g.bad ? `<span class="err">${escapeHtml(g.name)} (unreadable)</span>` : escapeHtml(g.name)}${openTag(g.key)}${g.edited ? tag('unsaved changes', 'warn') : ''}<div class="dim small">${escapeHtml(g.sub)}</div></div>
+        ${g.bad ? '' : `<button class="tiny" data-open="${i}" title="Edit this game">Edit</button>`}${g.bad || g.draft && g.key !== gid ? '' : `<button class="tiny" data-play="${i}" title="Play it on the Bit">Play</button>`}
+        ${g.key === gid && g.draft ? '' : `<button class="tiny danger" data-del="${i}" title="Delete this game">✕</button>`}</div>`).join('')
+      || '<div class="dim">Nothing here yet. Start a new game, or edit one of the built-in games: your version is kept for you.</div>';
+    const demos = DEMOS();
+    const cards = demos.map((d, i) => {
+      const key = 'demo:' + d.name, edited = dmap.has(key) || (key === gid && cartChanged);
+      return `<div class="game-card${key === gid ? ' cur' : ''}"><canvas width="16" height="16" data-demo="${i}"></canvas>
+        <div class="gc-text"><div><b>${escapeHtml(d.name)}</b>${openTag(key)}${edited ? tag('your version', 'warn') : ''}</div><div class="dim small">${escapeHtml(d.about || '')}</div>
+        <div class="gc-btns"><button class="tiny" data-dopen="${i}" title="Look inside and change it. Your changes are kept as your own version">Edit</button><button class="tiny" data-dplay="${i}" title="Play it on the Bit">Play</button>${edited ? `<button class="tiny danger" data-dreset="${i}" title="Throw away your changes and go back to the original">Reset</button>` : ''}</div></div></div>`;
+    }).join('');
+    const where = st === 'folder' ? `the folder 📁 <b>${escapeHtml(BKStore.label())}</b> on this computer`
+      : st === 'reconnect' ? `the folder 📁 <b>${escapeHtml(BKStore.label())}</b> (needs reconnecting)`
+      : `<b>this browser</b>${BKStore.canPickFolder ? '' : ' (this browser can\'t open folders; Chrome or Edge can)'}`;
+    modal('Games', `<div class="games">
+      <div class="games-head"><b>Your games</b><span class="grow"></span><button id="gmNew" class="tiny primary">＋ New game</button><button id="gmOpen" class="tiny">Open a file…</button></div>
+      <div class="lib-list">${rows}</div>
+      <div class="lib-where">Kept on the Bit's memory card: ${where}.
         ${BKStore.canPickFolder ? '<button id="libPick" class="tiny">Choose folder…</button>' : ''}
         ${st === 'reconnect' ? '<button id="libReconnect" class="tiny primary">Reconnect folder</button>' : ''}
-        ${st !== 'browser' ? '<button id="libBrowser" class="tiny">Use this browser instead</button>' : ''}
-      </div>
-      <div class="lib-list">${rows}</div>`, [
-      ['Save current cart to the Bit', async () => { if (await saveToBit(true)) showLibrary(); }, 'primary'],
-      ['Close', closeModal]]);
-    // icons
-    document.querySelectorAll('.lib-row canvas').forEach(cv => {
-      const g = games[+cv.dataset.i]; if (!g.data) return;
-      try {
-        const c = decodeCart(g.data), x = cv.getContext('2d'), im = x.createImageData(16, 16), tl = new Uint8Array(64 * 18);
-        iconFor(c, 0, tl);
-        for (let y = 0; y < 16; y++) for (let xx = 0; xx < 16; xx++) {
-          const v = tl[((y >> 3) * 16 + (xx >> 3)) * 64 + (y & 7) * 8 + (xx & 7)], o = (y * 16 + xx) * 4;
-          im.data[o] = c.palette[v * 3]; im.data[o + 1] = c.palette[v * 3 + 1]; im.data[o + 2] = c.palette[v * 3 + 2]; im.data[o + 3] = v ? 255 : 0;
-        }
-        x.putImageData(im, 0, 0);
-      } catch (e) { /* no icon */ }
-    });
+        ${st !== 'browser' ? '<button id="libBrowser" class="tiny">Use this browser instead</button>' : ''}</div>
+      <div class="games-head"><b>Built-in games</b><span class="dim small">Play them, or open one to see how it is made.</span></div>
+      <div class="game-cards">${cards}</div>
+      <p class="dim small">Switching games never loses work: a game you changed is kept as it was when you left it.</p></div>`,
+      [['Close', closeModal, 'primary']], 'wide');
+    document.querySelectorAll('canvas[data-mine]').forEach(cv => { const g = mine[+cv.dataset.mine]; if (g.data) { try { drawIcon(cv, decodeCart(g.data)); } catch (e) { /* no icon */ } } });
+    document.querySelectorAll('canvas[data-demo]').forEach(cv => { try { drawIcon(cv, demoCart(demos[+cv.dataset.demo])); } catch (e) { /* no icon */ } });
     const on = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
+    const each = (attr, fn) => document.querySelectorAll(`#modal [data-${attr}]`).forEach(b => b.onclick = () => fn(+b.dataset[attr], b));
+    on('gmNew', () => openGame({ blank: true }));
+    on('gmOpen', openDialog);
     on('libPick', async () => {
-      try { await BKStore.chooseFolder(); showCartFile(); toast(`Memory card: ${BKStore.label()}`); if (bit.on) bootHome(); showLibrary(); }
+      try { await BKStore.chooseFolder(); showCartFile(); toast(`Memory card: ${BKStore.label()}`); if (bit.on) bootHome(); showGames(); }
       catch (e) { if (e.name !== 'AbortError') { log('Folder not available here: ' + e.message, 'err'); toast('Folders are blocked here. Open the studio in its own tab.'); } }
     });
-    on('libReconnect', async () => { try { await BKStore.reconnect(); } catch (e) { log(e.message, 'err'); } if (bit.on) bootHome(); showLibrary(); });
-    on('libBrowser', async () => { await BKStore.useBrowser(); setCartFile(null); if (bit.on) bootHome(); showLibrary(); });
-    document.querySelectorAll('[data-play]').forEach(b => b.onclick = () => {
-      const g = games[+b.dataset.play]; closeModal();
-      try { if (!bit.on) { bit.on = true; $('btnBit').classList.add('active'); $('btnBit').textContent = '⏻ Bit on'; } playCart(decodeCart(g.data), g.file); } catch (e) { log(e.message, 'err'); }
-    });
-    document.querySelectorAll('[data-open]').forEach(b => b.onclick = () => { const g = games[+b.dataset.open]; openFromBit(g.file, g.data); });
-    document.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
-      const g = games[+b.dataset.del];
-      if (!await ask(`Delete ${g.file}?`, BKStore.state === 'folder' ? 'The file is deleted from the folder on your computer. This cannot be undone.' : 'It is removed from this browser.', 'Delete')) { showLibrary(); return; }
-      try { await BKStore.remove(g.file); if (g.file === cartFile) setCartFile(null); toast('Deleted'); } catch (e) { log(e.message, 'err'); }
+    on('libReconnect', async () => { try { await BKStore.reconnect(); } catch (e) { log(e.message, 'err'); } if (bit.on) bootHome(); showGames(); });
+    on('libBrowser', async () => { await BKStore.useBrowser(); setCartFile(null); if (gid.startsWith('file:')) setGid(newGid()); if (bit.on) bootHome(); showGames(); });
+    const openOrShow = g => (g.key === gid ? (closeModal(), setMode('edit')) : openGame(g.ref));
+    each('open', i => openOrShow(mine[i]));
+    each('play', i => { const g = mine[i]; playOnBit(x => (g.key === gid ? x.studio : x.file === g.file)); });
+    each('del', async i => {
+      const g = mine[i];
+      const what = g.draft ? 'It was never saved as a file, so it is gone for good.' : BKStore.state === 'folder' ? 'The file is deleted from the folder on your computer. This cannot be undone.' : 'It is removed from this browser.';
+      if (!await ask(`Delete ${g.name}?`, what, 'Delete')) { showGames(); return; }
+      try {
+        if (g.file) await BKStore.remove(g.file);
+        await BKStore.drafts.del(g.key);
+        if (g.key === gid) { setCartFile(null); setGid(newGid()); setChanged(true); }   // still open in the editor: it lives on as a new game
+        toast('Deleted');
+      } catch (e) { log(e.message, 'err'); }
       if (bit.on && bit.playing === 'home') bootHome();
-      showLibrary();
+      showGames();
+    });
+    each('dopen', i => openOrShow({ key: 'demo:' + demos[i].name, ref: { demo: demos[i] } }));
+    each('dplay', i => { const d = demos[i]; playOnBit(x => x.demo === d || (x.studio && cart.name === d.name)); });
+    each('dreset', async i => {
+      const d = demos[i], key = 'demo:' + d.name;
+      if (!await ask(`Reset ${d.name}?`, 'Your changes to it are thrown away and it goes back to the original.', 'Reset')) { showGames(); return; }
+      try { await BKStore.drafts.del(key); } catch (e) { /* no drafts here */ }
+      if (key === gid) { loadDemo(d); setChanged(false); applyCart(); saveLocal(); dirtySave = false; histReset(); if (!bit.on) { stop(true); bootScreen(); } }
+      toast(`${d.name} is back to the original`);
+      showGames();
     });
   }
-  $('btnLib').onclick = showLibrary;
+  $('btnGames').onclick = showGames;
+  // play a game from the Games menu: on the Bit, picked from its home screen
+  async function playOnBit(match) {
+    closeModal();
+    await setMode('play', { start: false });
+    if (bit.playing !== 'home') { suspendGame(); stop(true); await bootHome(); }
+    if (!await homeReady()) return;
+    if (embed.on) await childReady(5000);
+    const i = bit.games.findIndex(match);
+    if (i >= 0 && bit.playing === 'home') bitRequest(1, i + 1);
+  }
+
+  /* ------------------------------------------------------------ Edit and Play */
+  // Edit: the editors, with a test screen that runs the game you are making (Run). Play: the screen is a Bit
+  // (an emulated PocketBit: home screen, paused games), on its own or with a second Bit next to it. The two
+  // Bits are linked like any two Bit windows, so a game started on one starts on both, a player each.
+  let mode = 'edit';
+  let playBits = lsGet('bitkit.playBits') === '2' ? 2 : 1;
+  const waitFor = (test, ms) => new Promise(res => {
+    const t0 = performance.now();
+    (function tick() { if (test()) return res(true); if (performance.now() - t0 > ms) return res(false); setTimeout(tick, 60); })();
+  });
+  const homeReady = ms => waitFor(() => bit.on && bit.playing === 'home' && running && !bit.busy, ms || 5000);
+  const childPeer = () => { try { return embed.api ? link.peers.get(embed.api.link.id) : null; } catch (e) { return null; } };
+  const childReady = ms => waitFor(() => { const p = childPeer(); return !embed.on || !embed.frame || (p && (p.st === 'home' || p.st === 'idle')); }, ms || 8000);
+  function setEmbed(on) {
+    if (on === embed.on) return;
+    if (!on && link.s) { linkSend({ t: 'end', sid: link.s.sid, why: 'went back to one Bit' }); linkLeave(false); }
+    embed.on = on;
+    $('bitCol2').hidden = !on;
+    document.body.classList.toggle('two-bits', on);
+    if (on) {
+      if (running && playMode === '2' && !link.s) stop(true);
+      const used = new Set(bitsSorted().map(b => b[1]));
+      let n = 2;
+      while (used.has(n)) n++;
+      embed.num = n;
+      const f = document.createElement('iframe');
+      f.className = 'bit2-frame'; f.title = 'Bit ' + n; f.tabIndex = -1;
+      f.src = location.pathname + '?bit=' + n + '&embed=1';
+      const note = $('bit2Note');
+      note.hidden = false; note.textContent = `Starting Bit ${n}…`;
+      if (location.protocol === 'file:') {             // pages opened from a file cannot see each other
+        note.innerHTML = 'Two Bits side by side need the studio from a web address. Opened as a file on your computer, the Bits cannot find each other.<br><br><a href="https://dvrkstvr.github.io/bitkit/" target="_blank" rel="noopener">Open the online studio</a>';
+        embed.frame = null; embed.api = null; buildPickers(); linkUI();
+        return;
+      }
+      $('gameWrap2').appendChild(f);
+      embed.frame = f; embed.api = null;
+      const t0 = performance.now();
+      (function wait() {
+        if (embed.frame !== f) return;
+        let api = null;
+        try { api = f.contentWindow.bkStudio; } catch (e) { /* not reachable */ }
+        if (api && api.embedReady) { embed.api = api; note.hidden = true; linkUI(); return; }
+        if (performance.now() - t0 > 12000) { note.innerHTML = 'A second Bit could not start here. Open the studio in its own browser tab to play on two Bits: <a href="https://dvrkstvr.github.io/bitkit/" target="_blank" rel="noopener">dvrkstvr.github.io/bitkit</a>'; return; }
+        setTimeout(wait, 100);
+      })();
+    } else {
+      try { if (embed.api) embed.api.bye(); } catch (e) { /* already gone */ }
+      if (embed.frame) embed.frame.remove();
+      embed.frame = null; embed.api = null;
+    }
+    buildPickers(); linkUI();
+  }
+  // start the game from the editor on the Bit (and on the Bit next to it)
+  async function playStart(fresh) {
+    if (bit.playing !== 'home') { if (link.s) { linkSend({ t: 'end', sid: link.s.sid, why: 'restarted the game' }); linkLeave(false); } else { if (!fresh) suspendGame(); stop(true); await bootHome(); } }
+    if (!await homeReady()) return;
+    if (embed.on && !await childReady()) toast('Bit 2 is not ready yet, starting on Bit 1');
+    if (mode !== 'play' || bit.playing !== 'home') return;
+    bit.sel = 1;
+    if (fresh) bitRestart(1); else bitRequest(1, 1);
+    if (embed.on && embed.api && isNetGame(getCode())) { try { embed.api.playData(serialize()); } catch (e) { /* the frame is gone */ } }   // these meet in the game's own lobby
+  }
+  async function setMode(m, opt) {
+    opt = opt || {};
+    if (IS_BIT2) return;
+    mode = m; lsSet('bitkit.mode', m);
+    document.body.classList.toggle('mode-play', m === 'play');
+    document.body.classList.toggle('mode-edit', m === 'edit');
+    $('modeEdit').classList.toggle('active', m === 'edit'); $('modePlay').classList.toggle('active', m === 'play');
+    $('playOne').classList.toggle('active', playBits === 1); $('playTwo').classList.toggle('active', playBits === 2);
+    if (m === 'play') {
+      syncLevel(); saveLocal(); dirtySave = false;
+      setEmbed(playBits === 2);
+      if (!bit.on) setBitPower(true);
+      buildPickers(); linkUI(); screen.focus();
+      if (opt.start !== false) await playStart(false);
+    } else {
+      setEmbed(false);
+      if (bit.on) setBitPower(false); else if (!running) bootScreen();
+      buildPickers(); linkUI();
+      showTab(activeTab);
+    }
+  }
+  function setBits(n) {
+    playBits = n; lsSet('bitkit.playBits', String(n));
+    $('playOne').classList.toggle('active', n === 1); $('playTwo').classList.toggle('active', n === 2);
+    if (mode !== 'play') return setMode('play');
+    const had = link.s || (running && bit.playing !== 'home');
+    setEmbed(n === 2);
+    screen.focus();
+    return had || n === 2 ? playStart(false) : null;
+  }
+  $('modeEdit').onclick = () => { if (mode !== 'edit') setMode('edit'); };
+  $('modePlay').onclick = () => { if (mode !== 'play') setMode('play'); };
+  $('playOne').onclick = () => setBits(1);
+  $('playTwo').onclick = () => setBits(2);
+  $('playRestart').onclick = () => { screen.focus(); playStart(true); };
+  $('playHome').onclick = () => { screen.focus(); if (bit.playing !== 'home') forceCombo = 4; };
+  $('stage').addEventListener('mousedown', e => { if (!/SELECT|INPUT|BUTTON/.test(e.target.tagName)) { e.preventDefault(); screen.focus(); } });
+
+  // what each screen is showing, in words, above it
+  function screenText() {
+    const s = link.s, me = `Bit ${link.num}`;
+    if (mode === 'edit' && !IS_BIT2) {
+      if (running && playingEditor) return `Test screen · running ${cart.name}` + (s ? `, with ${s.np - 1} more Bit${s.np > 2 ? 's' : ''}` : '');
+      return `Test screen · press Run to try ${cart.name}`;
+    }
+    if (s) return `${me} · ${s.name} · player ${s.slot} of ${s.np}`;
+    if (bit.playing === 'home') return `${me} · home screen: pick a game, A plays it`;
+    if (running) return `${me} · ${bit.playing === 'studio' ? cart.name : (bit.cur && bit.cur.name) || (lastPlayed && lastPlayed.c.name) || 'a game'}`;
+    return `${me} · stopped`;
+  }
+  let labelSeen = '';
+  function updateLabels() {
+    let two = '';
+    if (embed.on) { try { two = embed.api ? embed.api.label() : `Bit ${embed.num} · starting…`; } catch (e) { two = ''; } }
+    const one = screenText(), sig = one + '|' + two + '|' + running;
+    if (sig === labelSeen) return;
+    labelSeen = sig;
+    $('screenLabel').textContent = one; $('screenLabel2').textContent = two;
+    $('bitCol1').classList.toggle('live', running);
+    $('playHint').textContent = embed.on ? 'Two linked Bits: a game started on one starts on both, one player each.' : '';
+  }
+
+  /* ------------------------------------------------------------ undo and redo, on every tab */
+  // Sprites and map tiles keep their own history (see makeHistory). Entities, effects, cutscenes, placed
+  // entities and race tracks share one: a snapshot is taken shortly after each change.
+  const hist = { undo: [], redo: [], last: null, t: 0, levels: 0 };
+  function docSnap() {
+    syncLevel();
+    return JSON.stringify({ e: Object.assign({}, cart.entities, { placed: undefined }),
+      lv: cart.levels.map(L => ({ name: L.name, w: L.w, h: L.h, placed: L.placed, track: L.track || null, height: L.height ? b64(L.height) : null })) });
+  }
+  function histReset() { clearTimeout(hist.t); hist.t = 0; hist.undo.length = 0; hist.redo.length = 0; hist.last = docSnap(); hist.levels = cart.levels.length; }
+  function histCheck() {
+    clearTimeout(hist.t); hist.t = 0;
+    if (cart.levels.length !== hist.levels) return histReset();   // a level was added or removed: start over
+    const cur = docSnap();
+    if (cur === hist.last) return;
+    if (hist.last !== null) { hist.undo.push(hist.last); if (hist.undo.length > 80) hist.undo.shift(); }
+    hist.redo.length = 0; hist.last = cur;
+  }
+  onDirty = () => { if (activeTab !== 'code') { clearTimeout(hist.t); hist.t = setTimeout(histCheck, 400); } };
+  function docApply(str) {
+    const o = JSON.parse(str);
+    if (o.lv.length !== cart.levels.length) return false;
+    cart.entities = Object.assign(o.e, { placed: [] });
+    o.lv.forEach((l, i) => {
+      const L = cart.levels[i], before = JSON.stringify(L.track || null);
+      L.name = l.name; L.w = l.w; L.h = l.h; L.placed = l.placed;
+      if (l.track) L.track = l.track; else delete L.track;
+      if (l.height) L.height = unb64(l.height); else delete L.height;
+      if (l.track && JSON.stringify(l.track) !== before) BKTracks.paint(L.map, L.track);
+    });
+    bindLevel(cart.level);
+    mapDirtyRT = true; dirtySave = true; if (!cartChanged) setChanged(true);
+    hist.last = docSnap();
+    showTab(activeTab);
+    return true;
+  }
+  function docStep(from, to, word) {
+    histCheck();
+    if (!from.length) return toast(`Nothing to ${word}`);
+    to.push(hist.last);
+    if (!docApply(from.pop())) { histReset(); return toast(`Nothing to ${word}`); }
+  }
+  // Undo / Redo act on whatever the open tab edits
+  function undoHere(redo) {
+    if (activeTab === 'code') { if (cm) (redo ? cm.redo() : cm.undo()); return; }
+    if (activeTab === 'sprites') return redo ? tileHist.redo() : tileHist.pop();
+    if (activeTab === 'map' && mp.layer === 'tiles') return redo ? mapHist.redo() : mapHist.pop();
+    if (redo) docStep(hist.redo, hist.undo, 'redo'); else docStep(hist.undo, hist.redo, 'undo');
+  }
+  // behaviour steps explain themselves, unless that is switched off
+  $('entExplain').checked = lsGet('bitkit.explain') !== '0';
+  document.body.classList.toggle('bt-no-help', !$('entExplain').checked);
+  $('entExplain').onchange = e => { lsSet('bitkit.explain', e.target.checked ? '1' : '0'); document.body.classList.toggle('bt-no-help', !e.target.checked); };
+  $('undoBtn').onclick = () => undoHere(false);
+  $('redoBtn').onclick = () => undoHere(true);
 
   /* ------------------------------------------------------------ game rules (GAME_RULES.md, studio/rules.js) */
   const RULES_URL = 'https://github.com/Dvrkstvr/bitkit/blob/main/GAME_RULES.md';
@@ -1921,14 +2560,16 @@ end
     if (code === rulesSeen) return;
     rulesSeen = code;
     const r = BKRules.check({ code }), ok = r.filter(x => x.ok).length;
-    $('btnRules').textContent = `Rules ${ok}/${r.length}`;
+    // quiet while everything is there, and it speaks up when something is missing
+    $('btnRules').textContent = ok === r.length ? '✓ Checklist' : `Checklist ${ok}/${r.length}`;
     $('btnRules').classList.toggle('rules-ok', ok === r.length);
+    $('btnRules').classList.toggle('rules-todo', ok !== r.length);
   }
   setInterval(updateRulesBadge, 1500);
   $('btnRules').onclick = () => {
     const r = BKRules.check({ code: getCode() });
     const rows = r.map(x => `<li class="${x.ok ? 'ok' : 'todo'}"><b>${x.ok ? '✓' : '○'} ${escapeHtml(x.name)}</b><br><span class="dim">${escapeHtml(x.about)}</span></li>`).join('');
-    modal('Game rules', `<p>Every BitKit game, built-in or from the community, has these. <code>game{}</code> gives you most of them in one call (see the Help tab).</p>
+    modal('Game checklist', `<p>Every BitKit game, built-in or from the community, has these. <code>game{}</code> gives you most of them in one call (see the Help tab).</p>
       <ul class="rules-list">${rows}</ul>
       <p class="dim small">This is a quick look at your code. Play it through once to be sure. <a href="${RULES_URL}" target="_blank" rel="noopener">Read the rules</a></p>`, [['Close', closeModal, 'primary']]);
   };
@@ -1937,7 +2578,8 @@ end
   /* in-page dialogs (native confirm() is unavailable in some embeds) */
   const modalEl = $('modal');
   let modalResolve = null;
-  function modal(title, html, buttons) {
+  function modal(title, html, buttons, cls) {
+    modalEl.querySelector('.m-box').className = 'm-box' + (cls ? ' ' + cls : '');
     modalEl.querySelector('h3').textContent = title;
     modalEl.querySelector('.m-body').innerHTML = html;
     const bar = modalEl.querySelector('.m-buttons'); bar.innerHTML = '';
@@ -1970,6 +2612,10 @@ end
       ['mus(note, ...)', 'sfx() for music: also turned down by the Music level (game{music=true}).'],
       ['game_play()', 'Skip the menus and go straight to gameplay.'],
       ['GAME.state', '"title", "play", "pause", "settings", "help", "confirm" or "won".']]],
+    ['Game tab: numbers to play with', [
+      ['tune(name, default, [min, max, step])', 'A number the Game tab shows as a slider: SPEED = tune("Speed", 2, 1, 6). Returns the value picked there, or the default. The picked values are saved with the game.'],
+      ['tune(name, true)', 'A switch on the Game tab. Returns true or false.'],
+      ['tune(name, "b", {"a", "b"})', 'A list on the Game tab. Returns the picked text.']]],
     ['Graphics (320x240, 256 colours)', [
       ['cls([c])', 'Clear the screen with colour c (default 0).'],
       ['pset(x,y,c) / pget(x,y)', 'Set or read a pixel.'],
@@ -1985,7 +2631,8 @@ end
       ['clip([x,y,w,h])', 'Only draw inside this rectangle. clip() resets.'],
       ['pal([c0,c1])', 'Draw colour c0 as c1. pal() resets.'],
       ['palt([c,on])', 'Make colour c transparent for sprites and maps. palt() resets (only 0 is transparent).'],
-      ['palette(i,[r,g,b])', 'Read or change palette colour i (0-255 each).']]],
+      ['palette(i,[r,g,b])', 'Read or change palette colour i (0-255 each).'],
+      ['shade([amount])', 'Darken everything drawn so far: 0 changes nothing, 1 is black (default 0.5). Good behind a menu or for night. Only inside clip().']]],
     ['2.5D (perspective floor)', [
       ['floor(x,y,angle,height,horizon,[focal],[outside],[step])', 'Draw the map as a floor seen in perspective, like a classic kart racer. x,y = camera position in world pixels, angle in radians (0 looks toward +x, turning toward +y), height = camera height in pixels, horizon = screen row of the horizon. focal (default 160) is the zoom. outside = colour past the map edge and far away (-1 leaves those pixels alone, so draw the sky first). step 2 draws every other column (faster on the device). Fills the rows below the horizon inside clip().'],
       ['project(x,y,[z])', 'Where world point x,y (z = height above the floor) lands on screen with the last floor() or floorh() camera. Returns sx, sy, scale (screen pixels per world pixel) and dist (how far away it is), or nil if it is behind the camera. Draw far things first.'],
@@ -2040,8 +2687,8 @@ end
       ['Trigger zones', 'An invisible entity with the "Play cutscene" step. "Place a trigger zone" on the Cutscenes tab makes one for you. Level intros play when their level starts.'],
       ['Needs', 'ents_update() in _update (it runs the cutscene) and ents_camera() if the camera should pan. The dialog box, bars and fades are drawn for you on top of _draw. START skips.']]],
     ['Multiplayer', [
-      ['Players menu', '"2 players": both play on this screen. Player 2 uses the second controller, or I J K L to move, N = A, M = B, H = X, U = Y, Y = L, O = R.'],
-      ['Linked Bits', '"+ Add a Bit" opens another Bit window. Bits link by themselves like PocketBits over ESP-NOW and the home screen shows them. A game started on one Bit starts on every Bit on its home screen (up to 8 players), each with its own camera. Start+Select (or home()) on any Bit takes all of them home, paused; picking the game again carries on together. A Bit that reloads gets its seat back.'],
+      ['2 players on this screen', 'Pick it in the list under the game screen: both play on one screen. Player 2 uses the second controller, or I J K L to move, N = A, M = B, H = X, U = Y, Y = L, O = R. The keys are shown under the screen.'],
+      ['Linked Bits', 'Play (at the top) with "2 Bits side by side" shows two Bits next to each other, each with its own screen and controls. "+ Bit in a new window" opens more. Bits link by themselves like PocketBits over ESP-NOW and the home screen shows them. A game started on one Bit starts on every Bit on its home screen (up to 8 players), each with its own camera. Start+Select (or home()) on any Bit takes all of them home, paused; picking the game again carries on together. A Bit that reloads gets its seat back.'],
       ['btn(b, [p]) / btnp / btnr / press', 'The last argument picks the player (1-8, default 1). Player entities read their own player\'s buttons by themselves.'],
       ['PLAYERS / ME', 'How many play, and which player this screen belongs to (0 when everyone shares this screen). Use ME only for what you draw, never for game logic, or linked Bits drift apart.'],
       ['ents_players()', 'The player entities, player 1 first. PLAYER is player 1. Extra players start next to player 1 as copies of its entity; e.pnum is the player number.'],
@@ -2058,10 +2705,10 @@ end
       ['saved()', 'The table from the last save(), or nil if there is none.'],
       ['clock()', 'Real time in unix seconds (the RTC on PocketBit). Use it for idle games and offline progress. It is not deterministic, so keep it out of multiplayer game logic.']]],
     ['The Bit (emulated PocketBit)', [
-      ['⏻ Bit button', 'Turns on the emulated PocketBit: a home screen with the studio cart and every game on its memory card. D-pad chooses, A plays, Y opens a game in the studio.'],
+      ['Play (at the top)', 'Switches from editing to the emulated PocketBit: a home screen with the game you are editing and every game on its memory card. D-pad chooses, A plays, Y opens a game in the studio. Edit takes you back to the editors.'],
       ['Start + Select', 'Hold both in a game to go back to the home screen, like on the device.'],
       ['Paused games', 'Hold Start+Select (or call home()) to go back to the home screen: the game is paused, not closed. Pick it again and it carries on where you were, even after a reload. X on the home screen starts a paused game over. Changing a game\'s code or art starts it fresh.'],
-      ['Library', 'The Bit\'s memory card: a folder on your computer (Chrome/Edge) or this browser. Save carts to it, then play or open them from the home screen. Ctrl+S saves the open cart back to its file.'],
+      ['Memory card (Games menu)', 'The Bit\'s memory card: a folder on your computer (Chrome/Edge) or this browser. Save / share puts a game on it, then play or open it from the Games menu or the home screen. Ctrl+S saves the open game back to its file.'],
       ['launch(n, [edit]) / home()', 'System calls used by the home screen: start game n, or return home. A game can call home() from its own menu.']]],
     ['Time and randomness', [
       ['t()', 'Frames since the cart started (60 per second).'],
@@ -2069,15 +2716,43 @@ end
       ['rnd() / rnd(n) / rnd(a,b)', 'Random float 0-1, integer 1..n, or integer a..b. Deterministic: the same seed gives the same game, which multiplayer relies on.'],
       ['srand(seed)', 'Set the random seed. math.random uses the same generator.']]],
     ['Studio keys', [
-      ['Ctrl+Enter', 'Run the cart (works anywhere).'],
-      ['Ctrl+S', 'Save to this browser (it also autosaves). Use Save / share to keep a file.'],
-      ['Ctrl+/', 'Comment or uncomment lines in the code editor.'],
-      ['Sprites: P / F / I', 'Pen, fill, pick colour. Ctrl+Z undo.'],
-      ['Map: P / F / I, WASD', 'Paint, fill, pick tile; pan the view (Shift = faster).'],
+      ['Ctrl+Enter', 'Run the game (works anywhere).'],
+      ['Ctrl+S', 'Save to this browser (it also saves by itself). Use Save / share to keep a file.'],
+      ['Ctrl+Z / Ctrl+Shift+Z', 'Undo and redo, on every tab.'],
+      ['Code: Ctrl+Space', 'Complete the word you are typing. The line under the code says what a function does and what it needs.'],
+      ['Code: Ctrl+F', 'Find in the code. Enter jumps to the next match, Ctrl+Shift+F replaces.'],
+      ['Code: Ctrl+/', 'Comment or uncomment lines.'],
+      ['Sprites: P / F / I', 'Pen, fill, pick colour.'],
+      ['Map: P / E / R / F / I', 'Paint, eraser, box, fill, pick tile. WASD or the arrows move the view (Shift = faster), scrolling zooms.'],
       ['Keyboard as controller', 'Arrows, Z=A, X=B, A=X, S=Y, Q=L, W=R, Enter=Start, Shift=Select. Click the game screen first.']]]
   ];
-  $('helpBody').innerHTML = `<h2>${APP} API</h2><p class="dim">Lua 5.4. The same runtime (C, compiled to WebAssembly here) runs on the PocketBit handheld. Carts are deterministic: no clock, no file access, seeded random.</p>` +
-    HELP.map(([h, rowsH]) => `<h3>${h}</h3><table>${rowsH.map(([a, b]) => `<tr><td>${escapeHtml(a)}</td><td>${escapeHtml(b)}</td></tr>`).join('')}</table>`).join('');
+  // Help: getting started first, then everything the code can call. The search box filters both.
+  const FIRST_STEPS = [
+    ['Pick a game', 'The <b>Games</b> menu at the top has the built-in games and your own. Open one to look inside, or start a new one. Each game keeps its own changes.', 'Open the Games menu', () => showGames()],
+    ['Press Run', '<b>▶ Run</b> (or Ctrl+Enter) plays it on the left. Click the game screen, then use the arrow keys and Z / X. A controller works as soon as you press a button on it.', 'Run it', () => run()],
+    ['Change something', 'The <b>Game</b> tab has sliders for how the game feels. <b>Sprites</b> is for drawing, <b>Map</b> for building levels, <b>Code</b> for everything else. Undo works on every tab.', 'Show the Game tab', () => showTab('game')],
+    ['Play it like on the device', '<b>Play</b> at the top shows the game on a Bit, the emulated PocketBit, with its home screen. Pick <b>2 Bits side by side</b> to try a game that is played together.', 'Switch to Play', () => setMode('play')],
+    ['Keep it', 'The studio saves as you go, in this browser. <b>Save / share</b> puts the game on the memory card or gives you a file to share.', null, null],
+    ['Finish it', 'The <b>Checklist</b> at the top says what every BitKit game needs, like a title screen and a goal.', null, null],
+  ];
+  $('helpBody').innerHTML = `<input id="helpSearch" class="help-search" type="search" placeholder="Search the help: try spr, jump, save, controller..." spellcheck="false">
+    <div id="helpStart"><h2>Getting started</h2><ol class="start-list">${FIRST_STEPS.map(([h, t, b], i) => `<li><b>${h}</b><span>${t}</span>${b ? `<button class="tiny" data-start="${i}">${b}</button>` : ''}</li>`).join('')}</ol></div>
+    <h2 id="helpApiHead">Everything your code can use</h2><p class="dim" id="helpApiIntro">Lua 5.4. The same runtime (C, compiled to WebAssembly here) runs on the PocketBit handheld. Carts are deterministic: no clock, no file access, seeded random.</p>` +
+    HELP.map(([h, rowsH]) => `<div class="help-sec"><h3>${h}</h3><table>${rowsH.map(([a, b]) => `<tr><td>${escapeHtml(a)}</td><td>${escapeHtml(b)}</td></tr>`).join('')}</table></div>`).join('') +
+    '<p id="helpNone" class="dim" hidden>Nothing found. Try a shorter word.</p>';
+  $('helpBody').querySelectorAll('[data-start]').forEach(b => { b.onclick = () => FIRST_STEPS[+b.dataset.start][3](); });
+  $('helpSearch').oninput = e => {
+    const words = e.target.value.toLowerCase().split(/\s+/).filter(Boolean);
+    let any = false;
+    $('helpStart').hidden = words.length > 0; $('helpApiIntro').hidden = words.length > 0; $('helpApiHead').hidden = words.length > 0;
+    $('helpBody').querySelectorAll('.help-sec').forEach(sec => {
+      const head = sec.querySelector('h3').textContent.toLowerCase();
+      let shown = 0;
+      sec.querySelectorAll('tr').forEach(tr => { const t = head + ' ' + tr.textContent.toLowerCase(), ok = words.every(w => t.includes(w)); tr.hidden = !ok; if (ok) shown++; });
+      sec.hidden = !shown; if (shown) any = true;
+    });
+    $('helpNone').hidden = any;
+  };
 
   /* ------------------------------------------------------------ start */
   try { localStorage.removeItem('bitkit.ai'); } catch (e) { /* storage unavailable */ }   // forget API keys the removed AI tab stored
@@ -2085,18 +2760,25 @@ end
   $('appName').textContent = APP;
   let restored = false;
   try { const s = lsGet(LS.cart); if (s) { deserialize(JSON.parse(s)); restored = true; } } catch (e) { log('Saved cart was unreadable, starting fresh', 'sys'); }
-  if (!restored) { const d = DEMOS()[0]; cart.name = d.name; cart.code = d.code; d.buildGfx(cart); normalizeLevels(); }
-  applyCart();
+  if (!restored) { const d = DEMOS()[0]; cart.name = d.name; cart.code = d.code; d.buildGfx(cart); normalizeLevels(); setChanged(false); }
+  if (!gid) {    // a cart from before games had ids
+    const d = DEMOS().find(x => x.name === cart.name);
+    setGid(cartFile ? 'file:' + cartFile : d ? 'demo:' + d.name : newGid());
+    setChanged(restored && !(d && d.code === cart.code));
+  }
+  applyCart(); histReset();
   log(`${APP} Studio ready${window.BK_BUILD ? ` (build ${window.BK_BUILD})` : ''}. ${restored ? 'Restored your last cart.' : 'Loaded the demo cart.'} Press Run (Ctrl+Enter).`, 'sys');
   showTab(lsGet(LS.settings + '.tab') || 'code');
   linkOpen(); linkUI();          // link with the other Bit windows
+  buildPickers();
+  setInterval(updateLabels, 250);
   if (IS_BIT2) {                 // an extra Bit: just its screen, on its home screen
     document.body.classList.add('bit-only');
+    if (EMBED) { document.body.classList.add('bit-embed'); settings.muted = true; }   // next to Bit 1 in the studio: that one makes the sound
     document.title = `${APP} · Bit ${BIT_NO}`;
     setBitPower(true);
-    if (picks[0].k === 'auto') openChooser();   // a new Bit window: ask which controller plays on it
-  } else if (lsGet('bitkit.bitOn') !== '0') setBitPower(true);   // start on the Bit's home screen (turn it off with the Bit button)
-  else bootScreen();
+    if (picks[0].k === 'auto' && !EMBED) openChooser();   // a new Bit window: ask which controller plays on it
+  } else setMode(lsGet('bitkit.mode') === 'play' ? 'play' : 'edit', { start: false });   // Play carries on at the Bit's home screen
   // browsers only start sound after a click or key press: wake the audio up on the first one
   const wakeAudio = () => { if (actx && actx.state === 'suspended') actx.resume(); };
   window.addEventListener('pointerdown', wakeAudio);
@@ -2104,7 +2786,11 @@ end
   requestAnimationFrame(frame);
 
   // expose for tests / debugging
-  window.bkStudio = { cart, run, stop, input, input2, picks, link, RT, bitRequest, bootHome, ptrMap: () => ptr.map >> 1, isRunning: () => running, bit, setBitPower, showLibrary, saveToBit, BKStore };
+  window.bkStudio = { cart, run, stop, input, input2, picks, link, RT, bitRequest, bootHome, ptrMap: () => ptr.map >> 1, isRunning: () => running, bit, setBitPower, showLibrary: showGames, showGames, saveToBit, BKStore,
+    setMode, setBits, openGame, embed, mode: () => mode, gid: () => gid, label: screenText, showTab, undoHere,
+    // for the studio window, when this Bit is the one shown next to it
+    embedReady: true, extInput(m, p) { ext.mask = m; ext.press.set(p); }, bye() { linkSend({ t: 'bye' }); },
+    playData(o) { try { stop(true); playCart(decodeCart(o), 'studio-copy'); } catch (e) { log(e.message, 'err'); } } };
 })().catch(e => {
   document.body.innerHTML = `<pre style="color:#ff6b5e;padding:20px">Studio failed to start: ${e && e.stack || e}</pre>`;
 });

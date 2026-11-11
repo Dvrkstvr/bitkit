@@ -112,6 +112,7 @@ int  bk_pget(int x, int y);
 void bk_line(int x0, int y0, int x1, int y1, int c);
 void bk_rect(int x, int y, int w, int h, int c);
 void bk_rectfill(int x, int y, int w, int h, int c);
+void bk_shade(float k);   /* darken the screen inside the clip rectangle: 0 nothing, 1 black */
 void bk_circ(int cx, int cy, int r, int c);
 void bk_circfill(int cx, int cy, int r, int c);
 int  bk_text(const char *s, int x, int y, int c, int scale);

@@ -36,31 +36,38 @@ The game runtime and browser studio for **PocketBit**, a DIY ESP32-S3 handheld.
 
 <img src="docs/media/studio-entities.png" alt="BitKit Studio entity editor with behavior tree">
 
+**Edit** and **Play** at the top switch between making a game and playing it on a Bit, the emulated PocketBit. Play can show two linked Bits side by side, each with its own controls, to try a game for two. **Games** has the demos and your own games, and each one keeps its own changes.
+
 | Tab | What it does |
 |---|---|
-| **Code** | Lua editor with syntax highlighting, error-line markers and a console |
-| **Sprites** | 512 tiles of 8×8 pixels; pen, fill, pick, flip, rotate and tile behaviours (named flags: tick `solid`, `water`… and ask `fget(tile, "water")`); a 256-colour palette editor |
-| **Map** | 256×128 tile map with Tiles and Entities layers. A ghost of your last 3 play routes shows where the player actually goes |
-| **Track** | For racing games (shows up when a cart has tracks): spline road editor, items along the lap, elevation brush and the road's segment tiles |
-| **Entities** | Sprites, animations, team, HP, stats, effects (heal, slow…) and a behavior tree with presets |
+| **Game** | Sliders, switches and lists for every number a game declares with `tune()`, the player's hearts and stats, and the game checklist |
+| **Code** | Lua editor with syntax highlighting, completion with a line of help for every function, find (Ctrl+F), error-line markers and a console |
+| **Sprites** | 512 tiles of 8×8 pixels; pen, fill, pick, flip, rotate and tile behaviours (named chips: switch on `solid`, `water`… and ask `fget(tile, "water")`); a 256-colour palette editor |
+| **Map** | 256×128 tile map with Tiles and Entities layers, paint, eraser, box and fill tools, zoom with the wheel. A ghost of your last 3 play routes shows where the player actually goes |
+| **Track** | For racing games: spline road editor, items along the lap, elevation brush and the road's segment tiles |
+| **Entities** | Sprites, animations, team, HP, stats, effects (heal, slow…) and a behavior tree with presets, where every step says what it does |
 | **Cutscenes** | Dialog with portraits, camera pans, walks, fades and screen shake. Play them when a level starts, from a trigger zone on the map, or from code |
 | **Controller** | Live view of every button, remapping, threshold and deadzone |
-| **Help** | Full API reference |
+| **Help** | Getting started, and the full API reference with search |
+
+Tabs a game does not use (Track for a platformer, Map for a racer) wait under **More**. Undo and redo work on every tab.
 
 <details>
 <summary>📸 More screenshots</summary>
 
 <img src="docs/media/studio-map.png" alt="Map editor with the player route overlay">
 
+<img src="docs/media/studio-two-bits.png" alt="Play: two linked Bits side by side">
+
 </details>
 
 ## 🚀 Quick start
 
 1. Open **[dvrkstvr.github.io/bitkit](https://dvrkstvr.github.io/bitkit/)** in Chrome, Edge or Firefox.
-2. Plug in a controller and press any button on it.
-3. The studio starts on the Bit's home screen with every demo (Sprout Hop, Beacon Keeper, Sweep Storm, Kart Lab, Crossgate, Tinwing). Pick one with ← → and press A (Z on the keyboard). Hold Start+Select to come back.
-4. Press **Run** (or Ctrl+Enter) to play the cart that is open in the studio.
-5. Change something and press Run again.
+2. Press **▶ Run** (or Ctrl+Enter) to play the game that is open, Sprout Hop at first. Click the game screen and use the arrow keys with Z and X, or plug in a controller and press any button on it.
+3. **Games** at the top has every demo (Sprout Hop, Beacon Keeper, Sweep Storm, Kart Lab, Crossgate, Tinwing) and your own games. Each one keeps its own changes.
+4. Change something and press Run again. The **Game** tab has sliders for how the game feels, the other tabs are the editors.
+5. **Play** at the top shows the game on a Bit, the emulated PocketBit, with its home screen. Pick **2 Bits side by side** to try playing together. Hold Start+Select to go back to the home screen.
 
 Want it offline? [`dist/bitkit-studio.html`](dist/bitkit-studio.html) is one self-contained file.
 
@@ -86,11 +93,11 @@ function _init()
 end
 ```
 
-The studio's **Rules** button checks your cart. Read the details in **[GAME_RULES.md](GAME_RULES.md)**.
+The studio's **Checklist** button checks your game. Read the details in **[GAME_RULES.md](GAME_RULES.md)**.
 
 ## 🌱 The demos
 
-Press **Demo** in the studio to pick one.
+Open **Games** in the studio to pick one.
 
 ### Sprout Hop
 
@@ -191,7 +198,8 @@ A kart racer drawn SNES-style: the map becomes a floor seen in perspective, with
 |---|---|
 | Callbacks | `_init` `_update` `_draw` |
 | Game shell | `game{}` `checkpoint` `game_win` `setting` `mus` `game_play` `GAME.state` (title screen, pause menu, settings: see [GAME_RULES.md](GAME_RULES.md)) |
-| Graphics | `cls pset pget line rect rectfill circ circfill text spr map camera clip pal palt palette` |
+| Graphics | `cls pset pget line rect rectfill circ circfill text spr map camera clip pal palt palette shade` |
+| Tunables | `tune(name, default, min, max)` (a slider on the studio's Game tab, saved with the game) |
 | Map | `mget mset fget fset` |
 | 2.5D | `floor floorh hset hget depth project sspr` (perspective floor from the map, hills, world-to-screen, scaled sprites) |
 | Input | `btn btnp btnr press` |

@@ -28,10 +28,10 @@ ITEMS = {                            -- spr = tile number
   { name = "Freeze", spr = 133, info = "stuns every other digger" },
 }
 POOL = { { 1, 1, 2, 3 }, { 1, 2, 3, 4, 4 }, { 4, 5, 5, 6, 6, 1 } }   -- power-ups found in each zone
-MATCH_LEN = 60 * 60 * 4              -- frames: four minutes
-STORM_AT, STORM_END = 60 * 40, 60 * 60 * 3 + 60 * 40
+MATCH_LEN = 60 * 60 * tune("Match length (minutes)", 4, 2, 10)   -- frames. tune(): a slider on the Game tab
+STORM_AT, STORM_END = MATCH_LEN // 6, MATCH_LEN * 11 // 12   -- 0:40 and 3:40 of a four minute match
 STORM_HIT = 150                      -- frames in the storm per lost heart
-STUN = 100
+STUN = tune("Stun time (frames)", 100, 30, 300, 10)
 DX = { -1, 0, 1, -1, 1, -1, 0, 1 }
 DY = { -1, -1, -1, 0, 0, 1, 1, 1 }
 

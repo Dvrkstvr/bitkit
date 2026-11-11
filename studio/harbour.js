@@ -22,12 +22,12 @@
 W, H = 480, 360                           -- the sea is bigger than the screen
 LX, LY = 240, 168                         -- the lamp
 ISLE = { x = 240, y = 186, r = 21 }       -- the lighthouse island (small, so the beam isn't hidden)
-DAYLEN, NIGHTLEN = 3600, 3600             -- one minute of day, one minute of night
+DAYLEN, NIGHTLEN = 60 * tune("Day length (seconds)", 60, 20, 180, 10), 60 * tune("Night length (seconds)", 60, 20, 180, 10)   -- tune(): sliders on the Game tab
 DOCKS = { { x = 40, y = 340 }, { x = 440, y = 340 } }
 CANNONS = { { x = 224, y = 196 }, { x = 256, y = 196 }, { x = 230, y = 203 }, { x = 250, y = 203 } }
 MOOR = { { x = 196, y = 214 }, { x = 284, y = 214 }, { x = 196, y = 160 }, { x = 284, y = 160 } }
 PCOL = { 17, 21, 26, 27 }                 -- boat colours for players 1-4
-CAP = 6                                   -- crates a rowboat can carry
+CAP = tune("Crates a rowboat carries", 6, 2, 12)                                   -- crates a rowboat can carry
 KINDS = {
   { spr = 1, w = 1, speed = 0.30, toll = 3,  r = 5 },   -- dinghy
   { spr = 2, w = 1, speed = 0.36, toll = 8,  r = 5 },   -- trawler
@@ -43,7 +43,7 @@ SHOP = {
   { key = "auto",    name = "Clockwork lens", max = 3, base = 120, info = "Sweeps the beam while you rest." },
 }
 
-GOAL = 100                                -- ships to bring home
+GOAL = tune("Ships to bring home", 100, 10, 300, 10)                                -- ships to bring home
 
 function _init()
   -- title screen, pause menu (Start) and settings: the game shell (see GAME_RULES.md).

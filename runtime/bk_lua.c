@@ -39,6 +39,7 @@ static int l_pget(lua_State *l) { lua_pushinteger(l, bk_pget(ci(l, 1), ci(l, 2))
 static int l_line(lua_State *l) { bk_line(ci(l, 1), ci(l, 2), ci(l, 3), ci(l, 4), ci(l, 5)); return 0; }
 static int l_rect(lua_State *l) { bk_rect(ci(l, 1), ci(l, 2), ci(l, 3), ci(l, 4), ci(l, 5)); return 0; }
 static int l_rectfill(lua_State *l) { bk_rectfill(ci(l, 1), ci(l, 2), ci(l, 3), ci(l, 4), ci(l, 5)); return 0; }
+static int l_shade(lua_State *l) { bk_shade((float)optn(l, 1, 0.5)); return 0; }
 static int l_circ(lua_State *l) { bk_circ(ci(l, 1), ci(l, 2), ci(l, 3), ci(l, 4)); return 0; }
 static int l_circfill(lua_State *l) { bk_circfill(ci(l, 1), ci(l, 2), ci(l, 3), ci(l, 4)); return 0; }
 
@@ -349,7 +350,7 @@ static int l_print(lua_State *l) {
 
 static const luaL_Reg API[] = {
   {"cls", l_cls}, {"pset", l_pset}, {"pget", l_pget}, {"line", l_line},
-  {"rect", l_rect}, {"rectfill", l_rectfill}, {"circ", l_circ}, {"circfill", l_circfill},
+  {"rect", l_rect}, {"rectfill", l_rectfill}, {"shade", l_shade}, {"circ", l_circ}, {"circfill", l_circfill},
   {"text", l_text}, {"spr", l_spr}, {"map", l_map}, {"floor", l_floorplane}, {"floorh", l_floorh}, {"hset", l_hset}, {"hget", l_hget}, {"depth", l_depth}, {"project", l_project}, {"sspr", l_sspr}, {"mget", l_mget}, {"mset", l_mset},
   {"fget", l_fget}, {"fset", l_fset}, {"camera", l_camera}, {"clip", l_clip},
   {"pal", l_pal}, {"palt", l_palt}, {"palette", l_palette},
