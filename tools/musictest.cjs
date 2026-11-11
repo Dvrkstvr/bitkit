@@ -97,8 +97,34 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
     ok('home screen apps shelf');
   }
 
-  // ------------------------------------------------ the Bit apps, played with buttons
-  for (const app of window.BK_APPS) {
+  // ------------------------------------------------ the Settings app: change the look, save it
+  {
+    const app = window.BK_APPS.find(a => a.settings);
+    errors = [];
+    M.HEAP32[sv] = -1; M.HEAP32[sv + 1] = 0;
+    if (!app) fail('no Settings app');
+    else if (M._bkw_load_ex(s(''), s(app.code)) !== 0) fail('Settings did not load: ' + errors.join(' '));
+    else {
+      const press = b => { M._bkw_frame(1 << BTN[b], 0); M._bkw_frame(0, 0); };
+      M._bkw_frame(0, 0);
+      press('right'); press('right');                      // GAME'S OWN -> OFF -> CRT
+      press('down'); press('left'); press('left');           // strength 8
+      press('down'); press('down'); for (let i = 0; i < 12; i++) press('left');   // volume 0, and no lower
+      for (let i = 0; i < 60; i++) M._bkw_frame(0, 0);
+      let str = '';
+      for (let i = 0; i < M.HEAP32[sv]; i++) str += String.fromCharCode(M.HEAPU8[((sv + 2) << 2) + i]);
+      let o = {};
+      try { o = MU.parseLua(str); } catch (e) { fail('Settings save does not parse: ' + str); }
+      if (o.look !== 'crt' || o.strength !== 8 || o.volume !== 0 || o.bright !== 10) fail('Settings saved ' + JSON.stringify(o));
+      const d = M._bkw_display() >> 2;
+      if (M.HEAP32[d] !== 45) fail('Settings did not show the CRT look while choosing it');
+      if (errors.length) fail('Settings: ' + errors.join(' '));
+      ok('Settings app: look, strength, volume saved');
+    }
+  }
+
+  // ------------------------------------------------ the music apps, played with buttons
+  for (const app of window.BK_APPS.filter(a => !a.settings)) {
     errors = []; logs = [];
     M.HEAP32[sv] = -1; M.HEAP32[sv + 1] = 0;
     if (M._bkw_load_ex(s(''), s(app.code)) !== 0) { fail(`${app.name} did not load: ${errors.join(' ')}`); continue; }

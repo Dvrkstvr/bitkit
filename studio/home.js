@@ -5,19 +5,23 @@
    track(-2, n) tells the host game n is selected. With BIT.link the host keeps the linked Bits in map rows 0-1:
    mget(0,0) how many, mget(1,0) which one is this Bit, mget(1+i,0) Bit i's number, mget(1+i,1) 1 home 2 in a game 3 idle.
    A game started here starts on every linked Bit that is on its home screen.
-   Entries with app = true (Hexbeat, Loopbox: studio/bitapps.js) sit on the apps shelf below the games: Down goes there.
+   Entries with app = true (utilities such as Hexbeat and Loopbox: studio/bitapps.js) are a second row below the games: Down scrolls to it.
    MIT License. */
 window.BK_HOME = `
 local sel, tt, slide = 1, 0, 0
 local stars = {}
 local GAMES, APPS = {}, {}     -- games and apps, as indexes into BIT.games
-local row, asel = 0, 1         -- 0 the games, 1 the apps shelf
+local row, asel = 0, 1         -- 0 the games, 1 the utilities (Down / Up)
+local aslide, vy = 0, 0        -- the utilities' sideways slide; how far the screen has scrolled down
+local ROWH = 200               -- the utilities row sits one screen below the games
 
 function _init()
   for i, g in ipairs(BIT.games) do if g.app then APPS[#APPS + 1] = i else GAMES[#GAMES + 1] = i end end
   local want = math.max(1, math.min(BIT.sel or 1, #BIT.games))
   for k, i in ipairs(GAMES) do if i == want then sel = k end end
   for k, i in ipairs(APPS) do if i == want then asel = k; row = 1 end end
+  if #GAMES == 0 and #APPS > 0 then row = 1 end
+  vy = row * ROWH
   for i = 1, 40 do stars[i] = { rnd(320) - 1, rnd(200) + 18, rnd(3) } end
 end
 
@@ -75,15 +79,18 @@ function _update()
     if s[1] < 0 then s[1] = 320 end
   end
   slide = slide * 0.7
+  aslide = aslide * 0.7
+  vy = vy + (row * ROWH - vy) * 0.3
+  if math.abs(row * ROWH - vy) < 0.5 then vy = row * ROWH end
   if #APPS > 0 then
     if btnp("down") and row == 0 then row = 1; sfx("G5", 4, 0.2, 4); track(-2, APPS[asel]) end
-    if (btnp("up") or #GAMES == 0) and row == 1 and #GAMES > 0 then row = 0; sfx("G5", 4, 0.2, 4); track(-2, GAMES[sel]) end
+    if btnp("up") and row == 1 and #GAMES > 0 then row = 0; sfx("G5", 4, 0.2, 4); track(-2, GAMES[sel]) end
     if #GAMES == 0 then row = 1 end
   end
   if row == 1 then
     local was = asel
-    if btnp("right") then asel = asel % #APPS + 1 end
-    if btnp("left") then asel = (asel - 2) % #APPS + 1 end
+    if btnp("right") then asel = asel % #APPS + 1; aslide = 24 end
+    if btnp("left") then asel = (asel - 2) % #APPS + 1; aslide = -24 end
     if asel ~= was then sfx("E5", 4, 0.2, 4); track(-2, APPS[asel]) end
     local i = APPS[asel]
     if btnp("a") or btnp("start") then sfx("C6", 1, 0.3, 10); launch(i) end
@@ -102,26 +109,57 @@ function _update()
   if BIT.studio and btnp("y") then sfx("G5", 1, 0.3, 6); launch(i, true) end
 end
 
-local function draw_apps()
-  if #APPS == 0 then return end
-  rectfill(0, 196, 320, 26, 31)
-  text("APPS", 8, 205, row == 1 and 13 or 30)
-  local x = 48
-  for k, i in ipairs(APPS) do
-    local g = BIT.games[i]
-    local on = row == 1 and k == asel
-    local w = #g.name * 8 + 26
-    if on then rectfill(x - 3, 198, w + 2, 22, 21) end
-    icon(g, x, 201, 1, row == 0)
-    text(g.name, x + 20, 205, on and 13 or 29)
-    if g.paused then rectfill(x + w - 8, 200, 2, 6, 13) rectfill(x + w - 5, 200, 2, 6, 13) end
-    x = x + w + 8
+-- one row of the home screen: the picked card in the middle, its neighbours as silhouettes, page dots
+local function draw_row(list, s, sl, dy, label, sub)
+  local n = #list
+  text(label, 8, 22 + dy, 28)
+  local g = BIT.games[list[s]]
+  if n > 2 then icon(BIT.games[list[(s - 2) % n + 1]], 40 + sl, 76 + dy, 2, true) end
+  if n > 1 then icon(BIT.games[list[s % n + 1]], 248 + sl, 76 + dy, 2, true) end
+  local bob = math.floor(math.sin(tt / 20) * 2 + 0.5)
+  local cx, cy = 120 + math.floor(sl), 48 + bob + dy
+  rectfill(cx - 4, cy - 4, 88, 88, 19)
+  rect(cx - 4, cy - 4, 88, 88, 21)
+  rect(cx - 5, cy - 5, 90, 90, 31)
+  icon(g, cx + 8, cy + 8, 4)
+  if g.paused then   -- pause badge on the card's corner
+    rectfill(cx + 64, cy - 2, 16, 14, 31)
+    rectfill(cx + 68, cy + 1, 3, 8, 13) rectfill(cx + 73, cy + 1, 3, 8, 13)
+  end
+  local name = g.name
+  if #name > 18 then name = string.sub(name, 1, 17) .. "." end
+  ctext(name, 146 + dy, 13, 2)
+  if g.paused then ctext("paused where you left it", 168 + dy, 21)
+  elseif g.studio then ctext("open in the studio", 168 + dy, 27)
+  else ctext(sub(g), 168 + dy, 28) end
+  local w = math.min(n, 20) * 8
+  for i = 1, math.min(n, 20) do
+    local x = 160 - w / 2 + (i - 1) * 8 + 2
+    if i == s then rectfill(x, 186 + dy, 4, 4, 13) else rect(x, 186 + dy, 4, 4, 30) end
   end
 end
 
 function _draw()
   cls(1)
   for _, s in ipairs(stars) do pset(s[1], s[2], s[3] > 1.5 and 29 or 30) end
+
+  local n = #GAMES
+  local dy = -math.floor(vy + 0.5)
+  clip(0, 18, 320, 204)
+  if n == 0 then
+    ctext("No games on this Bit yet", 92 + dy, 13)
+    ctext("Save a cart to the Bit from the studio,", 116 + dy, 29)
+    ctext("or choose a folder in the Library.", 128 + dy, 29)
+  else
+    draw_row(GAMES, sel, slide, dy, #APPS > 0 and "GAMES" or "", function(g) return g.file or "" end)
+  end
+  if #APPS > 0 then
+    draw_row(APPS, asel, aslide, dy + ROWH, "UTILITIES", function(g) return g.sub or "utility" end)
+    -- the edge of the other row, so it is clear there is more
+    if row == 0 then ctext("v  UTILITIES  v", 205 + dy + math.floor(math.sin(tt / 15) * 1.5), 21)
+    elseif n > 0 then text("^ GAMES", 312 - 7 * 8, 22 + dy + ROWH + math.floor(math.sin(tt / 15) * 1.5), 21) end
+  end
+  clip()
 
   -- top bar
   rectfill(0, 0, 320, 17, 31)
@@ -132,43 +170,6 @@ function _draw()
   text(src, 284 - #src * 8, 5, 28)
   draw_linked()
 
-  local n = #GAMES
-  if n == 0 then
-    ctext("No games on this Bit yet", 92, 13)
-    ctext("Save a cart to the Bit from the studio,", 116, 29)
-    ctext("or choose a folder in the Library.", 128, 29)
-  else
-    local g = BIT.games[GAMES[sel]]
-    -- neighbours as silhouettes
-    if n > 2 then icon(BIT.games[GAMES[(sel - 2) % n + 1]], 40 + slide, 76, 2, true) end
-    if n > 1 then icon(BIT.games[GAMES[sel % n + 1]], 248 + slide, 76, 2, true) end
-    -- selected card
-    local bob = math.floor(math.sin(tt / 20) * 2 + 0.5)
-    local cx = 120 + math.floor(slide)
-    rectfill(cx - 4, 48 + bob - 4, 88, 88, 19)
-    rect(cx - 4, 48 + bob - 4, 88, 88, 21)
-    rect(cx - 5, 48 + bob - 5, 90, 90, 31)
-    icon(g, cx + 8, 56 + bob, 4)
-    if g.paused then   -- pause badge on the card's corner
-      rectfill(cx + 64, 48 + bob - 2, 16, 14, 31)
-      rectfill(cx + 68, 48 + bob + 1, 3, 8, 13) rectfill(cx + 73, 48 + bob + 1, 3, 8, 13)
-    end
-
-    local name = g.name
-    if #name > 18 then name = string.sub(name, 1, 17) .. "." end
-    ctext(name, 146, 13, 2)
-    if g.paused then ctext("paused where you left it", 168, 21)
-    elseif g.studio then ctext("open in the studio", 168, 27)
-    else ctext(g.file or "", 168, 28) end
-
-    -- page dots
-    local w = math.min(n, 20) * 8
-    for i = 1, math.min(n, 20) do
-      local x = 160 - w / 2 + (i - 1) * 8 + 2
-      if i == sel then rectfill(x, 186, 4, 4, 13) else rect(x, 186, 4, 4, 30) end
-    end
-  end
-
   -- bottom bar
   rectfill(0, 222, 320, 18, 31)
   local _, ready = linked()
@@ -177,11 +178,8 @@ function _draw()
   if BIT.studio and n > 0 then hint = hint .. "   Y edit" end
   if row == 1 then
     hint = BIT.games[APPS[asel]].paused and "A continue   X restart" or "A open   < > choose"
-    hint = hint .. "   UP games"
-  elseif #APPS > 0 then hint = hint .. "  DOWN apps" end
-  if #APPS > 0 then hint = string.gsub(hint, "   ", "  ") end
+  end
   text(hint, 8, 227, 29)
-  if #APPS > 0 then draw_apps()
-  elseif n > 0 then ctext("hold START+SELECT to come back", 204, 30) end
+  if #APPS == 0 and n > 0 then ctext("hold START+SELECT to come back", 204, 30) end
 end
 `;

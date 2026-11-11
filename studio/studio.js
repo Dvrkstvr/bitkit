@@ -1475,8 +1475,8 @@ display()                                   -- off</pre><p class="dim">The Help 
       audioNode.onaudioprocess = ev => {
         const L = ev.outputBuffer.getChannelData(0), R = ev.outputBuffer.getChannelData(1);
         if (!running || settings.muted) { L.fill(0); R.fill(0); return; }
-        const p = RT._bkw_audio(L.length) >> 2, f = RT.HEAPF32;
-        for (let i = 0; i < L.length; i++) { L[i] = f[p + i * 2]; R[i] = f[p + i * 2 + 1]; }
+        const p = RT._bkw_audio(L.length) >> 2, f = RT.HEAPF32, g = bit.on ? Math.max(0, Math.min(10, +bitSet.volume)) / 10 : 1;
+        for (let i = 0; i < L.length; i++) { L[i] = f[p + i * 2] * g; R[i] = f[p + i * 2 + 1] * g; }
       };
       audioNode.connect(actx.destination);
     } catch (e) { log('audio unavailable: ' + e.message, 'sys'); }
@@ -1526,6 +1526,7 @@ display()                                   -- off</pre><p class="dim">The Help 
     let str = '';
     for (let i = 0; i < n; i++) str += String.fromCharCode(RT.HEAPU8[off + i]);
     lsSet('bitkit.save.' + saveKey, str);
+    return true;
   }
   function loadCode(code, data, key, players, me) {
     putSave(key || null);
@@ -1590,8 +1591,25 @@ display()                                   -- off</pre><p class="dim">The Help 
   let routeTick = 0;
   let acc = 0, last = performance.now(), fpsCount = 0, fpsT = last;
   const STEP = 1000 / 60;
+  /* The Bit's own settings (the Settings app on the home screen, saved as "Bit settings"): a screen look over every
+     game and app, its strength, the backlight and the volume. Only while the studio is a Bit (bit.on). The look is
+     put in just for drawing the frame, so the game's own display() value stays as it was (and in a paused game). */
+  const bitSet = { look: 'game', strength: 10, bright: 10, volume: 10 };
+  function loadBitSettings() {
+    try { const raw = localStorage.getItem('bitkit.save.Bit settings'); if (raw) Object.assign(bitSet, BKMusic.parseLua(raw)); } catch (e) { /* keep the last ones */ }
+    screen.style.filter = bit.on && bitSet.bright < 10 ? `brightness(${(0.35 + bitSet.bright * 0.065).toFixed(3)})` : '';
+  }
+  window.BKBitSettings = bitSet;
   function blit() {
+    const look = bit.on && bitSet.look !== 'game' && RT._bkw_display ? (DISPLAY_LOOKS[bitSet.look] || DISPLAY_LOOKS.off) : null;
+    let keep = null, base = 0;
+    if (look) {
+      base = RT._bkw_display() >> 2; keep = RT.HEAP32.slice(base, base + 10);
+      const k = Math.max(0, Math.min(10, +bitSet.strength || 0)) / 10;
+      look.forEach((v, i) => { RT.HEAP32[base + i] = Math.round(v * k); });
+    }
     const p = RT._bkw_render();
+    if (keep) RT.HEAP32.set(keep, base);
     img.data.set(RT.HEAPU8.subarray(p, p + W * H * 4));
     sctx.putImageData(img, 0, 0);
   }
@@ -1624,7 +1642,7 @@ display()                                   -- off</pre><p class="dim">The Help 
         BKNet.before(RT);
         if (RT._bkw_frame(m1, ptr.press) !== 0) running = false;
         BKNet.after(RT);
-        takeSave();
+        if (takeSave() && saveKey === 'Bit settings') loadBitSettings();
         const tr = RT.HEAP32;
         if (playingEditor && tr[ptr.track + 2] && route.cur) route.cur.push(tr[ptr.track], tr[ptr.track + 1]);
         if (bit.playing === 'home' && tr[ptr.track + 2] && tr[ptr.track] < 0) {   // home screen: -1 = start game n over, -2 = n is selected
@@ -2237,6 +2255,7 @@ display()                                   -- off</pre><p class="dim">The Help 
 
   async function bootHome() {
     bit.cur = null; bit.hold = false;
+    loadBitSettings();
     const lib = await libraryGames();
     const libGames = lib.filter(g => g.file !== cartFile).map(g => ({ name: g.data.name || g.file, file: g.file, data: g.data }));
     // every built-in demo is on the Bit too, unless the studio or the memory card already has a game with that name
@@ -2255,7 +2274,7 @@ display()                                   -- off</pre><p class="dim">The Help 
       else if (g.studio) c = cart; else if (g.demo) { try { c = demoCart(g.demo); } catch (e) { c = null; } } else { try { c = decodeCart(g.data); } catch (e) { c = null; } }
       const has = c && iconFor(c, slot, tiles);
       const k = gameKey(g), p = np > 1 ? Array.from({ length: np }, (_, j) => paused.get(linkSnapId(np, k.id, j + 1)) === k.fp).every(Boolean) : paused.get(k.id) === k.fp;
-      return `{name=${luaStr(g.name)}, file=${luaStr(g.file || '')}, studio=${g.studio ? 'true' : 'false'}, paused=${p}, ${has || g.app ? `icon=${slot}` : `color=${COLORS[i % COLORS.length]}`}${g.app ? ', app=true' : ''}}`;
+      return `{name=${luaStr(g.name)}, file=${luaStr(g.file || '')}, studio=${g.studio ? 'true' : 'false'}, paused=${p}, ${has || g.app ? `icon=${slot}` : `color=${COLORS[i % COLORS.length]}`}${g.app ? `, app=true, sub=${luaStr(g.app.sub || '')}` : ''}}`;
     });
     if (bit.sel > bit.games.length) bit.sel = 1;
     const data = `BIT = { games = {${rows.join(',')}}, sel = ${bit.sel}, studio = ${!IS_BIT2}, link = true, source = ${luaStr(BKStore.state === 'folder' ? BKStore.label() : '')} }`;
@@ -2354,6 +2373,7 @@ display()                                   -- off</pre><p class="dim">The Help 
   }
   function setBitPower(on) {
     bit.on = on;
+    loadBitSettings();
     if (on) { log('Bit on: home screen. Hold Start+Select in a game to pause it and come back; picking it again carries on.', 'sys'); bootHome(); }
     else { suspendGame(); stop(true); bit.playing = null; bit.cur = null; bootScreen(); }
   }

@@ -23039,7 +23039,7 @@ window.BKLoopbox = (function () {
 
 </script>
 <script>
-/* PocketBit apps: Hexbeat (a tracker) and Loopbox (a loop maker) on the Bit's home screen, played with buttons.
+/* PocketBit apps: Hexbeat (a tracker), Loopbox (a loop maker) and Settings on the Bit's home screen, played with buttons.
    They are carts like any game. Both keep their songs in one save file ("Music"), so a song started in one
    opens in the other, and the studio's Tracker and Loops tabs can send songs over (→ Bit / ← Bit).
    The song format and the player are runtime/bk_music.lua. MIT License. */
@@ -23837,6 +23837,123 @@ function _draw()
 end
 `;
 
+  // the Bit's own settings: one save file ("Bit settings") that the Bit reads for every game and app
+  const SETTINGS = `
+LOOKS = {"game", "off", "crt", "arcade", "old tv", "handheld", "sepia", "night", "vivid"}
+LOOK_NAMES = {"GAME'S OWN", "OFF", "CRT", "ARCADE", "OLD TV", "HANDHELD", "SEPIA", "NIGHT", "VIVID"}
+LOOK_ABOUT = {
+  game = {"Each game picks its own look.", "Most play with no shader."},
+  off = {"A clean picture, even in games", "that ask for a look."},
+  crt = {"Scanlines and curved glass,", "like a home TV from the 80s."},
+  arcade = {"Bright scanlines and strong", "colour, like an arcade cabinet."},
+  ["old tv"] = {"A worn set: soft, grainy,", "faded colour, dark corners."},
+  handheld = {"A dim early handheld LCD,", "with washed out colour."},
+  sepia = {"Brown and warm, like an old", "photograph."},
+  night = {"Cool and dark, easy on the", "eyes late at night."},
+  vivid = {"Punchy colour and contrast,", "no lines."},
+}
+S = {look = "game", strength = 10, bright = 10, volume = 10}
+local ITEMS = {
+  {key = "look", name = "SCREEN LOOK"},
+  {key = "strength", name = "LOOK STRENGTH", min = 1, max = 10, about = {"How strong the look is.", "10 is the full look."}},
+  {key = "bright", name = "BRIGHTNESS", min = 1, max = 10, about = {"The screen's backlight."}},
+  {key = "volume", name = "VOLUME", min = 0, max = 10, about = {"Sound for every game and app.", "Games have their own on top."}},
+}
+local sel, tt, flash = 1, 0, 0
+
+local function look_index() for i, l in ipairs(LOOKS) do if l == S.look then return i end end return 1 end
+local function show_look() if S.look == "game" then display() else display(S.look) end end
+
+function _init()
+  local d = saved()
+  if type(d) == "table" then for k, v in pairs(d) do if S[k] ~= nil and type(v) == type(S[k]) then S[k] = v end end end
+  show_look()
+end
+
+local function change(d)
+  local it = ITEMS[sel]
+  if it.key == "look" then
+    S.look = LOOKS[(look_index() - 1 + d) % #LOOKS + 1]
+    show_look()
+  else
+    local v = math.max(it.min, math.min(it.max, S[it.key] + d))
+    if v == S[it.key] then return end
+    S[it.key] = v
+  end
+  save(S); flash = 20
+  sfx(it.key == "volume" and "C5" or "E5", 4, 0.25, 4)
+end
+
+function _update()
+  tt = tt + 1
+  if flash > 0 then flash = flash - 1 end
+  if btnp("down") then sel = sel % #ITEMS + 1; sfx("G5", 4, 0.15, 3) end
+  if btnp("up") then sel = (sel - 2) % #ITEMS + 1; sfx("G5", 4, 0.15, 3) end
+  if btnp("right") or btnp("a") then change(1) end
+  if btnp("left") or btnp("b") then change(-1) end
+end
+
+local function value_of(it)
+  if it.key == "look" then return LOOK_NAMES[look_index()] end
+  return S[it.key]
+end
+
+-- a test card, so the look can be seen: colour bars, a little landscape, fine lines and text
+local function test_card(x, y, w, h)
+  rectfill(x, y, w, h, 19)
+  for i = 0, 7 do rectfill(x + i * w / 8, y, w / 8 + 1, 18, ({2, 4, 8, 10, 27, 17, 21, 26})[i + 1]) end
+  for i = 0, 7 do rectfill(x + i * w / 8, y + 18, w / 8 + 1, 6, 28 + i % 4) end
+  local gy = y + 24
+  rectfill(x, gy, w, 40, 22)
+  circfill(x + w - 28, gy + 14, 9, 27)
+  for i = 0, w - 1, 2 do
+    local hgt = 10 + math.floor(math.sin((i + tt * 0.3) / 13) * 5 + math.sin(i / 5) * 2)
+    rectfill(x + i, gy + 40 - hgt, 2, hgt, 3)
+  end
+  rectfill(x, gy + 40, w, 18, 17)
+  for i = 0, w - 1, 8 do rectfill(x + i, gy + 44 + (i // 8) % 2 * 4, 4, 2, 16) end
+  local by = gy + 58
+  rectfill(x, by, w, h - (by - y), 1)
+  for i = 0, w - 1, 2 do line(x + i, by + 2, x + i, by + 8, 13) end
+  text("Aa Bb 0123", x + 6, by + 12, 13)
+  local bx = x + 6 + (tt // 2) % (w - 18)
+  rectfill(bx, by + 24, 6, 6, 26)
+  rect(x, y, w, h, 13)
+end
+
+function _draw()
+  cls(1)
+  rectfill(0, 0, 320, 14, 31)
+  text("SETTINGS", 6, 4, 13)
+  text("this Bit", 314 - 8 * 8, 4, 28)
+  for i, it in ipairs(ITEMS) do
+    local y = 24 + (i - 1) * 34
+    local on = i == sel
+    if on then rectfill(4, y - 4, 170, 32, 2) rect(4, y - 4, 170, 32, 21) end
+    text(it.name, 12, y, on and 22 or 28)
+    local v = value_of(it)
+    if type(v) == "number" then
+      for k = 1, it.max do
+        local c = k <= v and (on and 13 or 29) or 30
+        rectfill(12 + (k - 1) * 13, y + 13, 10, 8, c)
+      end
+      text(tostring(v), 150, y + 13, on and 13 or 29)
+    else
+      local s = (on and "< " or "") .. v .. (on and " >" or "")
+      text(s, 12, y + 13, on and 13 or 29)
+    end
+  end
+  test_card(184, 20, 128, 132)
+  local it = ITEMS[sel]
+  local about = it.about or LOOK_ABOUT[S.look]
+  rectfill(8, 160, 304, 1, 31)
+  for k, line_ in ipairs(about or {}) do text(line_, 12, 168 + (k - 1) * 12, 29) end
+  if flash > 0 then text("saved", 312 - 5 * 8, 206, 17) end
+  rectfill(0, 222, 320, 18, 31)
+  text("UP DOWN choose   LEFT RIGHT change", 8, 227, 29)
+end
+`;
+
   // 16x16 icons: one character per pixel, '.' transparent, others palette colours
   const PAL = { '.': 0, k: 1, w: 13, y: 27, o: 10, b: 21, l: 22, g: 17, p: 4, d: 31, r: 26, c: 12 };
   function icon(rows) { return rows.map(r => [...r].map(ch => PAL[ch] || 0)); }
@@ -23849,9 +23966,15 @@ end
     '.dkkkkkkpppkkkd.', '.dkkkkkkkkkkkkd.', '.ddddddddddddddd', '.dwkwkwkwkwkwkd.', '.dwkwkwkwkwkwkd.', '.dwwwwwwwwwwwwd.', '.dwwwwwwwwwwwwd.',
     '.dddddddddddddd.', '................']);
 
+  const SETTINGS_ICON = icon([
+    '................', '.......dd.......', '...dd.dwwd.dd...', '..dwwdwwwwdwwd..', '..dwwwwwwwwwwd..', '...dwwwddwwwd...', '.ddwwwdkkdwwwdd.', 'dwwwwdkkkkdwwwwd',
+    'dwwwwdkkkkdwwwwd', '.ddwwwdkkdwwwdd.', '...dwwwddwwwd...', '..dwwwwwwwwwwd..', '..dwwdwwwwdwwd..', '...dd.dwwd.dd...', '.......dd.......', '................']);
+
   window.BK_APPS = [
-    { name: 'Hexbeat', code: HEXBEAT, icon: HEXBEAT_ICON, saveKey: 'Music', about: 'A tracker: rows of notes and hex effects, played with buttons.' },
-    { name: 'Loopbox', code: LOOPBOX, icon: LOOPBOX_ICON, saveKey: 'Music', about: 'Loops, a piano roll and a drum grid, played with buttons.' },
+    { name: 'Hexbeat', code: HEXBEAT, icon: HEXBEAT_ICON, saveKey: 'Music', sub: 'tracker', about: 'A tracker: rows of notes and hex effects, played with buttons.' },
+    { name: 'Loopbox', code: LOOPBOX, icon: LOOPBOX_ICON, saveKey: 'Music', sub: 'loops and piano roll', about: 'Loops, a piano roll and a drum grid, played with buttons.' },
+    { name: 'Settings', code: SETTINGS, icon: SETTINGS_ICON, saveKey: 'Bit settings', sub: 'screen look, sound', settings: true,
+      about: 'The Bit itself: a retro screen look for every game, brightness and volume.' },
   ];
 })();
 
@@ -26709,19 +26832,23 @@ window.BKSnap = (() => {
    track(-2, n) tells the host game n is selected. With BIT.link the host keeps the linked Bits in map rows 0-1:
    mget(0,0) how many, mget(1,0) which one is this Bit, mget(1+i,0) Bit i's number, mget(1+i,1) 1 home 2 in a game 3 idle.
    A game started here starts on every linked Bit that is on its home screen.
-   Entries with app = true (Hexbeat, Loopbox: studio/bitapps.js) sit on the apps shelf below the games: Down goes there.
+   Entries with app = true (utilities such as Hexbeat and Loopbox: studio/bitapps.js) are a second row below the games: Down scrolls to it.
    MIT License. */
 window.BK_HOME = `
 local sel, tt, slide = 1, 0, 0
 local stars = {}
 local GAMES, APPS = {}, {}     -- games and apps, as indexes into BIT.games
-local row, asel = 0, 1         -- 0 the games, 1 the apps shelf
+local row, asel = 0, 1         -- 0 the games, 1 the utilities (Down / Up)
+local aslide, vy = 0, 0        -- the utilities' sideways slide; how far the screen has scrolled down
+local ROWH = 200               -- the utilities row sits one screen below the games
 
 function _init()
   for i, g in ipairs(BIT.games) do if g.app then APPS[#APPS + 1] = i else GAMES[#GAMES + 1] = i end end
   local want = math.max(1, math.min(BIT.sel or 1, #BIT.games))
   for k, i in ipairs(GAMES) do if i == want then sel = k end end
   for k, i in ipairs(APPS) do if i == want then asel = k; row = 1 end end
+  if #GAMES == 0 and #APPS > 0 then row = 1 end
+  vy = row * ROWH
   for i = 1, 40 do stars[i] = { rnd(320) - 1, rnd(200) + 18, rnd(3) } end
 end
 
@@ -26779,15 +26906,18 @@ function _update()
     if s[1] < 0 then s[1] = 320 end
   end
   slide = slide * 0.7
+  aslide = aslide * 0.7
+  vy = vy + (row * ROWH - vy) * 0.3
+  if math.abs(row * ROWH - vy) < 0.5 then vy = row * ROWH end
   if #APPS > 0 then
     if btnp("down") and row == 0 then row = 1; sfx("G5", 4, 0.2, 4); track(-2, APPS[asel]) end
-    if (btnp("up") or #GAMES == 0) and row == 1 and #GAMES > 0 then row = 0; sfx("G5", 4, 0.2, 4); track(-2, GAMES[sel]) end
+    if btnp("up") and row == 1 and #GAMES > 0 then row = 0; sfx("G5", 4, 0.2, 4); track(-2, GAMES[sel]) end
     if #GAMES == 0 then row = 1 end
   end
   if row == 1 then
     local was = asel
-    if btnp("right") then asel = asel % #APPS + 1 end
-    if btnp("left") then asel = (asel - 2) % #APPS + 1 end
+    if btnp("right") then asel = asel % #APPS + 1; aslide = 24 end
+    if btnp("left") then asel = (asel - 2) % #APPS + 1; aslide = -24 end
     if asel ~= was then sfx("E5", 4, 0.2, 4); track(-2, APPS[asel]) end
     local i = APPS[asel]
     if btnp("a") or btnp("start") then sfx("C6", 1, 0.3, 10); launch(i) end
@@ -26806,26 +26936,57 @@ function _update()
   if BIT.studio and btnp("y") then sfx("G5", 1, 0.3, 6); launch(i, true) end
 end
 
-local function draw_apps()
-  if #APPS == 0 then return end
-  rectfill(0, 196, 320, 26, 31)
-  text("APPS", 8, 205, row == 1 and 13 or 30)
-  local x = 48
-  for k, i in ipairs(APPS) do
-    local g = BIT.games[i]
-    local on = row == 1 and k == asel
-    local w = #g.name * 8 + 26
-    if on then rectfill(x - 3, 198, w + 2, 22, 21) end
-    icon(g, x, 201, 1, row == 0)
-    text(g.name, x + 20, 205, on and 13 or 29)
-    if g.paused then rectfill(x + w - 8, 200, 2, 6, 13) rectfill(x + w - 5, 200, 2, 6, 13) end
-    x = x + w + 8
+-- one row of the home screen: the picked card in the middle, its neighbours as silhouettes, page dots
+local function draw_row(list, s, sl, dy, label, sub)
+  local n = #list
+  text(label, 8, 22 + dy, 28)
+  local g = BIT.games[list[s]]
+  if n > 2 then icon(BIT.games[list[(s - 2) % n + 1]], 40 + sl, 76 + dy, 2, true) end
+  if n > 1 then icon(BIT.games[list[s % n + 1]], 248 + sl, 76 + dy, 2, true) end
+  local bob = math.floor(math.sin(tt / 20) * 2 + 0.5)
+  local cx, cy = 120 + math.floor(sl), 48 + bob + dy
+  rectfill(cx - 4, cy - 4, 88, 88, 19)
+  rect(cx - 4, cy - 4, 88, 88, 21)
+  rect(cx - 5, cy - 5, 90, 90, 31)
+  icon(g, cx + 8, cy + 8, 4)
+  if g.paused then   -- pause badge on the card's corner
+    rectfill(cx + 64, cy - 2, 16, 14, 31)
+    rectfill(cx + 68, cy + 1, 3, 8, 13) rectfill(cx + 73, cy + 1, 3, 8, 13)
+  end
+  local name = g.name
+  if #name > 18 then name = string.sub(name, 1, 17) .. "." end
+  ctext(name, 146 + dy, 13, 2)
+  if g.paused then ctext("paused where you left it", 168 + dy, 21)
+  elseif g.studio then ctext("open in the studio", 168 + dy, 27)
+  else ctext(sub(g), 168 + dy, 28) end
+  local w = math.min(n, 20) * 8
+  for i = 1, math.min(n, 20) do
+    local x = 160 - w / 2 + (i - 1) * 8 + 2
+    if i == s then rectfill(x, 186 + dy, 4, 4, 13) else rect(x, 186 + dy, 4, 4, 30) end
   end
 end
 
 function _draw()
   cls(1)
   for _, s in ipairs(stars) do pset(s[1], s[2], s[3] > 1.5 and 29 or 30) end
+
+  local n = #GAMES
+  local dy = -math.floor(vy + 0.5)
+  clip(0, 18, 320, 204)
+  if n == 0 then
+    ctext("No games on this Bit yet", 92 + dy, 13)
+    ctext("Save a cart to the Bit from the studio,", 116 + dy, 29)
+    ctext("or choose a folder in the Library.", 128 + dy, 29)
+  else
+    draw_row(GAMES, sel, slide, dy, #APPS > 0 and "GAMES" or "", function(g) return g.file or "" end)
+  end
+  if #APPS > 0 then
+    draw_row(APPS, asel, aslide, dy + ROWH, "UTILITIES", function(g) return g.sub or "utility" end)
+    -- the edge of the other row, so it is clear there is more
+    if row == 0 then ctext("v  UTILITIES  v", 205 + dy + math.floor(math.sin(tt / 15) * 1.5), 21)
+    elseif n > 0 then text("^ GAMES", 312 - 7 * 8, 22 + dy + ROWH + math.floor(math.sin(tt / 15) * 1.5), 21) end
+  end
+  clip()
 
   -- top bar
   rectfill(0, 0, 320, 17, 31)
@@ -26836,43 +26997,6 @@ function _draw()
   text(src, 284 - #src * 8, 5, 28)
   draw_linked()
 
-  local n = #GAMES
-  if n == 0 then
-    ctext("No games on this Bit yet", 92, 13)
-    ctext("Save a cart to the Bit from the studio,", 116, 29)
-    ctext("or choose a folder in the Library.", 128, 29)
-  else
-    local g = BIT.games[GAMES[sel]]
-    -- neighbours as silhouettes
-    if n > 2 then icon(BIT.games[GAMES[(sel - 2) % n + 1]], 40 + slide, 76, 2, true) end
-    if n > 1 then icon(BIT.games[GAMES[sel % n + 1]], 248 + slide, 76, 2, true) end
-    -- selected card
-    local bob = math.floor(math.sin(tt / 20) * 2 + 0.5)
-    local cx = 120 + math.floor(slide)
-    rectfill(cx - 4, 48 + bob - 4, 88, 88, 19)
-    rect(cx - 4, 48 + bob - 4, 88, 88, 21)
-    rect(cx - 5, 48 + bob - 5, 90, 90, 31)
-    icon(g, cx + 8, 56 + bob, 4)
-    if g.paused then   -- pause badge on the card's corner
-      rectfill(cx + 64, 48 + bob - 2, 16, 14, 31)
-      rectfill(cx + 68, 48 + bob + 1, 3, 8, 13) rectfill(cx + 73, 48 + bob + 1, 3, 8, 13)
-    end
-
-    local name = g.name
-    if #name > 18 then name = string.sub(name, 1, 17) .. "." end
-    ctext(name, 146, 13, 2)
-    if g.paused then ctext("paused where you left it", 168, 21)
-    elseif g.studio then ctext("open in the studio", 168, 27)
-    else ctext(g.file or "", 168, 28) end
-
-    -- page dots
-    local w = math.min(n, 20) * 8
-    for i = 1, math.min(n, 20) do
-      local x = 160 - w / 2 + (i - 1) * 8 + 2
-      if i == sel then rectfill(x, 186, 4, 4, 13) else rect(x, 186, 4, 4, 30) end
-    end
-  end
-
   -- bottom bar
   rectfill(0, 222, 320, 18, 31)
   local _, ready = linked()
@@ -26881,12 +27005,9 @@ function _draw()
   if BIT.studio and n > 0 then hint = hint .. "   Y edit" end
   if row == 1 then
     hint = BIT.games[APPS[asel]].paused and "A continue   X restart" or "A open   < > choose"
-    hint = hint .. "   UP games"
-  elseif #APPS > 0 then hint = hint .. "  DOWN apps" end
-  if #APPS > 0 then hint = string.gsub(hint, "   ", "  ") end
+  end
   text(hint, 8, 227, 29)
-  if #APPS > 0 then draw_apps()
-  elseif n > 0 then ctext("hold START+SELECT to come back", 204, 30) end
+  if #APPS == 0 and n > 0 then ctext("hold START+SELECT to come back", 204, 30) end
 end
 `;
 
@@ -28404,8 +28525,8 @@ display()                                   -- off</pre><p class="dim">The Help 
       audioNode.onaudioprocess = ev => {
         const L = ev.outputBuffer.getChannelData(0), R = ev.outputBuffer.getChannelData(1);
         if (!running || settings.muted) { L.fill(0); R.fill(0); return; }
-        const p = RT._bkw_audio(L.length) >> 2, f = RT.HEAPF32;
-        for (let i = 0; i < L.length; i++) { L[i] = f[p + i * 2]; R[i] = f[p + i * 2 + 1]; }
+        const p = RT._bkw_audio(L.length) >> 2, f = RT.HEAPF32, g = bit.on ? Math.max(0, Math.min(10, +bitSet.volume)) / 10 : 1;
+        for (let i = 0; i < L.length; i++) { L[i] = f[p + i * 2] * g; R[i] = f[p + i * 2 + 1] * g; }
       };
       audioNode.connect(actx.destination);
     } catch (e) { log('audio unavailable: ' + e.message, 'sys'); }
@@ -28455,6 +28576,7 @@ display()                                   -- off</pre><p class="dim">The Help 
     let str = '';
     for (let i = 0; i < n; i++) str += String.fromCharCode(RT.HEAPU8[off + i]);
     lsSet('bitkit.save.' + saveKey, str);
+    return true;
   }
   function loadCode(code, data, key, players, me) {
     putSave(key || null);
@@ -28519,8 +28641,25 @@ display()                                   -- off</pre><p class="dim">The Help 
   let routeTick = 0;
   let acc = 0, last = performance.now(), fpsCount = 0, fpsT = last;
   const STEP = 1000 / 60;
+  /* The Bit's own settings (the Settings app on the home screen, saved as "Bit settings"): a screen look over every
+     game and app, its strength, the backlight and the volume. Only while the studio is a Bit (bit.on). The look is
+     put in just for drawing the frame, so the game's own display() value stays as it was (and in a paused game). */
+  const bitSet = { look: 'game', strength: 10, bright: 10, volume: 10 };
+  function loadBitSettings() {
+    try { const raw = localStorage.getItem('bitkit.save.Bit settings'); if (raw) Object.assign(bitSet, BKMusic.parseLua(raw)); } catch (e) { /* keep the last ones */ }
+    screen.style.filter = bit.on && bitSet.bright < 10 ? `brightness(${(0.35 + bitSet.bright * 0.065).toFixed(3)})` : '';
+  }
+  window.BKBitSettings = bitSet;
   function blit() {
+    const look = bit.on && bitSet.look !== 'game' && RT._bkw_display ? (DISPLAY_LOOKS[bitSet.look] || DISPLAY_LOOKS.off) : null;
+    let keep = null, base = 0;
+    if (look) {
+      base = RT._bkw_display() >> 2; keep = RT.HEAP32.slice(base, base + 10);
+      const k = Math.max(0, Math.min(10, +bitSet.strength || 0)) / 10;
+      look.forEach((v, i) => { RT.HEAP32[base + i] = Math.round(v * k); });
+    }
     const p = RT._bkw_render();
+    if (keep) RT.HEAP32.set(keep, base);
     img.data.set(RT.HEAPU8.subarray(p, p + W * H * 4));
     sctx.putImageData(img, 0, 0);
   }
@@ -28553,7 +28692,7 @@ display()                                   -- off</pre><p class="dim">The Help 
         BKNet.before(RT);
         if (RT._bkw_frame(m1, ptr.press) !== 0) running = false;
         BKNet.after(RT);
-        takeSave();
+        if (takeSave() && saveKey === 'Bit settings') loadBitSettings();
         const tr = RT.HEAP32;
         if (playingEditor && tr[ptr.track + 2] && route.cur) route.cur.push(tr[ptr.track], tr[ptr.track + 1]);
         if (bit.playing === 'home' && tr[ptr.track + 2] && tr[ptr.track] < 0) {   // home screen: -1 = start game n over, -2 = n is selected
@@ -29166,6 +29305,7 @@ display()                                   -- off</pre><p class="dim">The Help 
 
   async function bootHome() {
     bit.cur = null; bit.hold = false;
+    loadBitSettings();
     const lib = await libraryGames();
     const libGames = lib.filter(g => g.file !== cartFile).map(g => ({ name: g.data.name || g.file, file: g.file, data: g.data }));
     // every built-in demo is on the Bit too, unless the studio or the memory card already has a game with that name
@@ -29184,7 +29324,7 @@ display()                                   -- off</pre><p class="dim">The Help 
       else if (g.studio) c = cart; else if (g.demo) { try { c = demoCart(g.demo); } catch (e) { c = null; } } else { try { c = decodeCart(g.data); } catch (e) { c = null; } }
       const has = c && iconFor(c, slot, tiles);
       const k = gameKey(g), p = np > 1 ? Array.from({ length: np }, (_, j) => paused.get(linkSnapId(np, k.id, j + 1)) === k.fp).every(Boolean) : paused.get(k.id) === k.fp;
-      return `{name=${luaStr(g.name)}, file=${luaStr(g.file || '')}, studio=${g.studio ? 'true' : 'false'}, paused=${p}, ${has || g.app ? `icon=${slot}` : `color=${COLORS[i % COLORS.length]}`}${g.app ? ', app=true' : ''}}`;
+      return `{name=${luaStr(g.name)}, file=${luaStr(g.file || '')}, studio=${g.studio ? 'true' : 'false'}, paused=${p}, ${has || g.app ? `icon=${slot}` : `color=${COLORS[i % COLORS.length]}`}${g.app ? `, app=true, sub=${luaStr(g.app.sub || '')}` : ''}}`;
     });
     if (bit.sel > bit.games.length) bit.sel = 1;
     const data = `BIT = { games = {${rows.join(',')}}, sel = ${bit.sel}, studio = ${!IS_BIT2}, link = true, source = ${luaStr(BKStore.state === 'folder' ? BKStore.label() : '')} }`;
@@ -29283,6 +29423,7 @@ display()                                   -- off</pre><p class="dim">The Help 
   }
   function setBitPower(on) {
     bit.on = on;
+    loadBitSettings();
     if (on) { log('Bit on: home screen. Hold Start+Select in a game to pause it and come back; picking it again carries on.', 'sys'); bootHome(); }
     else { suspendGame(); stop(true); bit.playing = null; bit.cur = null; bootScreen(); }
   }

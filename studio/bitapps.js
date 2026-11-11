@@ -1,4 +1,4 @@
-/* PocketBit apps: Hexbeat (a tracker) and Loopbox (a loop maker) on the Bit's home screen, played with buttons.
+/* PocketBit apps: Hexbeat (a tracker), Loopbox (a loop maker) and Settings on the Bit's home screen, played with buttons.
    They are carts like any game. Both keep their songs in one save file ("Music"), so a song started in one
    opens in the other, and the studio's Tracker and Loops tabs can send songs over (→ Bit / ← Bit).
    The song format and the player are runtime/bk_music.lua. MIT License. */
@@ -796,6 +796,123 @@ function _draw()
 end
 `;
 
+  // the Bit's own settings: one save file ("Bit settings") that the Bit reads for every game and app
+  const SETTINGS = `
+LOOKS = {"game", "off", "crt", "arcade", "old tv", "handheld", "sepia", "night", "vivid"}
+LOOK_NAMES = {"GAME'S OWN", "OFF", "CRT", "ARCADE", "OLD TV", "HANDHELD", "SEPIA", "NIGHT", "VIVID"}
+LOOK_ABOUT = {
+  game = {"Each game picks its own look.", "Most play with no shader."},
+  off = {"A clean picture, even in games", "that ask for a look."},
+  crt = {"Scanlines and curved glass,", "like a home TV from the 80s."},
+  arcade = {"Bright scanlines and strong", "colour, like an arcade cabinet."},
+  ["old tv"] = {"A worn set: soft, grainy,", "faded colour, dark corners."},
+  handheld = {"A dim early handheld LCD,", "with washed out colour."},
+  sepia = {"Brown and warm, like an old", "photograph."},
+  night = {"Cool and dark, easy on the", "eyes late at night."},
+  vivid = {"Punchy colour and contrast,", "no lines."},
+}
+S = {look = "game", strength = 10, bright = 10, volume = 10}
+local ITEMS = {
+  {key = "look", name = "SCREEN LOOK"},
+  {key = "strength", name = "LOOK STRENGTH", min = 1, max = 10, about = {"How strong the look is.", "10 is the full look."}},
+  {key = "bright", name = "BRIGHTNESS", min = 1, max = 10, about = {"The screen's backlight."}},
+  {key = "volume", name = "VOLUME", min = 0, max = 10, about = {"Sound for every game and app.", "Games have their own on top."}},
+}
+local sel, tt, flash = 1, 0, 0
+
+local function look_index() for i, l in ipairs(LOOKS) do if l == S.look then return i end end return 1 end
+local function show_look() if S.look == "game" then display() else display(S.look) end end
+
+function _init()
+  local d = saved()
+  if type(d) == "table" then for k, v in pairs(d) do if S[k] ~= nil and type(v) == type(S[k]) then S[k] = v end end end
+  show_look()
+end
+
+local function change(d)
+  local it = ITEMS[sel]
+  if it.key == "look" then
+    S.look = LOOKS[(look_index() - 1 + d) % #LOOKS + 1]
+    show_look()
+  else
+    local v = math.max(it.min, math.min(it.max, S[it.key] + d))
+    if v == S[it.key] then return end
+    S[it.key] = v
+  end
+  save(S); flash = 20
+  sfx(it.key == "volume" and "C5" or "E5", 4, 0.25, 4)
+end
+
+function _update()
+  tt = tt + 1
+  if flash > 0 then flash = flash - 1 end
+  if btnp("down") then sel = sel % #ITEMS + 1; sfx("G5", 4, 0.15, 3) end
+  if btnp("up") then sel = (sel - 2) % #ITEMS + 1; sfx("G5", 4, 0.15, 3) end
+  if btnp("right") or btnp("a") then change(1) end
+  if btnp("left") or btnp("b") then change(-1) end
+end
+
+local function value_of(it)
+  if it.key == "look" then return LOOK_NAMES[look_index()] end
+  return S[it.key]
+end
+
+-- a test card, so the look can be seen: colour bars, a little landscape, fine lines and text
+local function test_card(x, y, w, h)
+  rectfill(x, y, w, h, 19)
+  for i = 0, 7 do rectfill(x + i * w / 8, y, w / 8 + 1, 18, ({2, 4, 8, 10, 27, 17, 21, 26})[i + 1]) end
+  for i = 0, 7 do rectfill(x + i * w / 8, y + 18, w / 8 + 1, 6, 28 + i % 4) end
+  local gy = y + 24
+  rectfill(x, gy, w, 40, 22)
+  circfill(x + w - 28, gy + 14, 9, 27)
+  for i = 0, w - 1, 2 do
+    local hgt = 10 + math.floor(math.sin((i + tt * 0.3) / 13) * 5 + math.sin(i / 5) * 2)
+    rectfill(x + i, gy + 40 - hgt, 2, hgt, 3)
+  end
+  rectfill(x, gy + 40, w, 18, 17)
+  for i = 0, w - 1, 8 do rectfill(x + i, gy + 44 + (i // 8) % 2 * 4, 4, 2, 16) end
+  local by = gy + 58
+  rectfill(x, by, w, h - (by - y), 1)
+  for i = 0, w - 1, 2 do line(x + i, by + 2, x + i, by + 8, 13) end
+  text("Aa Bb 0123", x + 6, by + 12, 13)
+  local bx = x + 6 + (tt // 2) % (w - 18)
+  rectfill(bx, by + 24, 6, 6, 26)
+  rect(x, y, w, h, 13)
+end
+
+function _draw()
+  cls(1)
+  rectfill(0, 0, 320, 14, 31)
+  text("SETTINGS", 6, 4, 13)
+  text("this Bit", 314 - 8 * 8, 4, 28)
+  for i, it in ipairs(ITEMS) do
+    local y = 24 + (i - 1) * 34
+    local on = i == sel
+    if on then rectfill(4, y - 4, 170, 32, 2) rect(4, y - 4, 170, 32, 21) end
+    text(it.name, 12, y, on and 22 or 28)
+    local v = value_of(it)
+    if type(v) == "number" then
+      for k = 1, it.max do
+        local c = k <= v and (on and 13 or 29) or 30
+        rectfill(12 + (k - 1) * 13, y + 13, 10, 8, c)
+      end
+      text(tostring(v), 150, y + 13, on and 13 or 29)
+    else
+      local s = (on and "< " or "") .. v .. (on and " >" or "")
+      text(s, 12, y + 13, on and 13 or 29)
+    end
+  end
+  test_card(184, 20, 128, 132)
+  local it = ITEMS[sel]
+  local about = it.about or LOOK_ABOUT[S.look]
+  rectfill(8, 160, 304, 1, 31)
+  for k, line_ in ipairs(about or {}) do text(line_, 12, 168 + (k - 1) * 12, 29) end
+  if flash > 0 then text("saved", 312 - 5 * 8, 206, 17) end
+  rectfill(0, 222, 320, 18, 31)
+  text("UP DOWN choose   LEFT RIGHT change", 8, 227, 29)
+end
+`;
+
   // 16x16 icons: one character per pixel, '.' transparent, others palette colours
   const PAL = { '.': 0, k: 1, w: 13, y: 27, o: 10, b: 21, l: 22, g: 17, p: 4, d: 31, r: 26, c: 12 };
   function icon(rows) { return rows.map(r => [...r].map(ch => PAL[ch] || 0)); }
@@ -808,8 +925,14 @@ end
     '.dkkkkkkpppkkkd.', '.dkkkkkkkkkkkkd.', '.ddddddddddddddd', '.dwkwkwkwkwkwkd.', '.dwkwkwkwkwkwkd.', '.dwwwwwwwwwwwwd.', '.dwwwwwwwwwwwwd.',
     '.dddddddddddddd.', '................']);
 
+  const SETTINGS_ICON = icon([
+    '................', '.......dd.......', '...dd.dwwd.dd...', '..dwwdwwwwdwwd..', '..dwwwwwwwwwwd..', '...dwwwddwwwd...', '.ddwwwdkkdwwwdd.', 'dwwwwdkkkkdwwwwd',
+    'dwwwwdkkkkdwwwwd', '.ddwwwdkkdwwwdd.', '...dwwwddwwwd...', '..dwwwwwwwwwwd..', '..dwwdwwwwdwwd..', '...dd.dwwd.dd...', '.......dd.......', '................']);
+
   window.BK_APPS = [
-    { name: 'Hexbeat', code: HEXBEAT, icon: HEXBEAT_ICON, saveKey: 'Music', about: 'A tracker: rows of notes and hex effects, played with buttons.' },
-    { name: 'Loopbox', code: LOOPBOX, icon: LOOPBOX_ICON, saveKey: 'Music', about: 'Loops, a piano roll and a drum grid, played with buttons.' },
+    { name: 'Hexbeat', code: HEXBEAT, icon: HEXBEAT_ICON, saveKey: 'Music', sub: 'tracker', about: 'A tracker: rows of notes and hex effects, played with buttons.' },
+    { name: 'Loopbox', code: LOOPBOX, icon: LOOPBOX_ICON, saveKey: 'Music', sub: 'loops and piano roll', about: 'Loops, a piano roll and a drum grid, played with buttons.' },
+    { name: 'Settings', code: SETTINGS, icon: SETTINGS_ICON, saveKey: 'Bit settings', sub: 'screen look, sound', settings: true,
+      about: 'The Bit itself: a retro screen look for every game, brightness and volume.' },
   ];
 })();
