@@ -111,6 +111,20 @@ A small platformer that shows off most of the engine:
 - **Goal:** reach the red flag at the end of Mossy Cave. Continue picks up at your last tree.
 - Two players: pick **2 players** under the screen (player 2 is the blue sprout), or press **＋ Add a Bit** to play from several linked windows (up to 8 players).
 
+### Windrow (the farming game)
+
+<img src="docs/media/windrow.png" width="400" alt="Windrow: a farmer on a small plot of radishes and barley, with a hut, a crate and a trader's wagon"> <img src="docs/media/windrow-woods.png" width="400" alt="Windrow: foraging among the pines of Bramble Woods">
+
+BitKit's flagship game, and it is growing. You arrive in the valley of Windrow with a digging stick, a leaky bucket and four radish seeds. This first slice is the farm, the hand work and the woods.
+
+- **Hand work.** Your plot is overgrown. **A** uses your hands on what is in front of you: pull weeds (fibre), dig a cell (three goes with the stick), plant the seed you picked with **L / R**, and pick what is ripe. **B** waters, and the bucket holds five splashes before you walk back to the pond. **X** opens your bag and **Y** looks closer.
+- **Days and seasons.** Watered crops grow overnight. A day lasts five minutes, a season seven days, and each of the four seasons has its own crops: radishes, barley and sweet peas in spring, tomatoes, corn and sunmelons in summer, pumpkins in autumn, snowleeks and frostcaps in winter. Rain and snow water the fields for you.
+- **Foraging.** The road west leads to Bramble Woods, where new things turn up every morning: wild garlic, brambleberries, pennybuns or pine cones to sell, and sticks, pebbles and reeds to build with. That is how you earn your first coins.
+- **Marrow's wagon** sells the season's seeds, a hoe, watering cans, a bigger basket, a pickaxe and an axe for the stones and stumps on your land, and the deeds to the East meadow and the Long acre. Every day she pays extra for one crop.
+- **While the Bit is off**, the farm carries on (`save()`, `saved()` and `clock()`): up to three days pass, and what you watered keeps growing.
+- **Goal:** rebuild the old windmill in three steps, with wood, stone, fibre, coins and crops for the builders. With the sails up, grain sells for double.
+- Coming next: animals, the old mine and what is under it, tractors, and visits between linked Bits.
+
 ### Beacon Keeper
 
 <img src="docs/media/beacon-keeper.png" width="480" alt="Beacon Keeper: a lighthouse beam guiding ships past rocks">
