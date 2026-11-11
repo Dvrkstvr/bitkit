@@ -799,7 +799,11 @@ end
     if (pk.k === 'kb') return { pads: [], kb };
     if (n === 1) return { pads: pads.slice(1, 2), kb };   // auto, player 2: the second controller + I J K L
     if (playMode === '2') return { pads: pads.slice(0, 1), kb };
-    if (playMode === 'link' && pads.length > 1) return { pads: pads.slice(IS_BIT2 ? 1 : 0, IS_BIT2 ? 2 : 1), kb };   // two Bit windows: one controller each
+    if (playMode === 'link') {          // two Bit windows: one controller each
+      const peer = link.peerPick && link.peerPick.k === 'pad' ? pickedPad(pads, link.peerPick) : null;
+      if (peer) return { pads: pads.filter(p => p !== peer), kb };   // the other Bit chose a controller: use the rest
+      if (pads.length > 1) return { pads: pads.slice(IS_BIT2 ? 1 : 0, IS_BIT2 ? 2 : 1), kb };
+    }
     return { pads, kb };
   }
   const keysBoth = new Uint8Array(12), noKeys = new Uint8Array(12);
@@ -811,7 +815,49 @@ end
     input.mine = s1.pads;
     readInput(input, s1.kb || noKeys, s1.pads);
     if (playMode === '2') { const s2 = sourcesFor(1, pads); readInput(input2, s2.kb || noKeys, s2.pads); }
+    if (chooser.open) chooserPoll(pads);
   }
+
+  // "Choose a controller" panel over the screen: opens by itself in a new Bit 2 window, and from the link bar.
+  // Press any button on a controller to take it, or any key for the keyboard.
+  const chooser = { open: false, base: new Map(), el: $('padChooser') };
+  function chooserBase(pads) { chooser.base = new Map(pads.map(p => [p.index + '|' + p.id, p.buttons.map(b => b.value)])); }
+  function openChooser() {
+    chooser.open = true; chooserBase(input.pads); chooserDraw(); chooser.el.hidden = false;
+  }
+  function closeChooser() { chooser.open = false; chooser.el.hidden = true; screen.focus(); }
+  function choose(pk) {
+    picks[0] = pk; savePicks(); buildPickers(); sendPick(); closeChooser();
+    toast(`${IS_BIT2 ? 'Bit 2' : playMode === 'link' ? 'Bit 1' : 'This tab'} uses ${pk.k === 'pad' ? padName(pk.id) : pk.k === 'kb' ? 'the keyboard' : 'auto input'}`);
+  }
+  function chooserPoll(pads) {
+    if (pads.length !== chooser.base.size) chooserDraw();
+    for (const p of pads) {
+      const base = chooser.base.get(p.index + '|' + p.id);
+      if (p.buttons.some((b, j) => b.value > .6 && (!base || base[j] < .3))) return choose({ k: 'pad', i: p.index, id: p.id });
+    }
+    for (const p of pads) if (!chooser.base.has(p.index + '|' + p.id)) chooser.base.set(p.index + '|' + p.id, p.buttons.map(b => b.value));
+  }
+  function chooserDraw() {
+    const pads = input.pads, peer = link.peerPick && link.peerPick.k === 'pad' ? pickedPad(pads, link.peerPick) : null;
+    const who = IS_BIT2 ? 'Bit 2' : playMode === 'link' ? 'Bit 1' : 'this tab';
+    chooser.el.innerHTML = `<div class="pc-box"><b>Which controller plays on ${who}?</b>
+      <div class="dim">Press any button on it, or press a key to use the keyboard.</div>
+      <div class="pc-list">${pads.map(p => `<button data-i="${p.index}">🎮 ${p.index + 1}: ${escapeHtml(padName(p.id))}${p === peer ? ` <span class="dim">(${IS_BIT2 ? 'Bit 1' : 'Bit 2'} has it)</span>` : ''}</button>`).join('')}
+        <button data-k="kb">⌨ Keyboard</button><button data-k="auto" class="dim">Auto</button></div>
+      ${pads.length ? '' : '<div class="dim">No controller yet: press a button on it so the browser shows it.</div>'}</div>`;
+    chooser.el.querySelectorAll('button').forEach(b => b.onclick = () => {
+      if (b.dataset.k) return choose({ k: b.dataset.k });
+      const p = input.pads.find(q => q.index === +b.dataset.i); if (p) choose({ k: 'pad', i: p.index, id: p.id });
+    });
+    chooserBase(pads);
+  }
+  window.addEventListener('keydown', e => {
+    if (!chooser.open || e.ctrlKey || e.metaKey || e.altKey || e.key === 'Tab') return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    if (e.key === 'Escape') closeChooser(); else choose({ k: 'kb' });
+  }, true);
+  function sendPick() { if (link.peer) linkSend({ t: 'pick', to: link.peer, pick: picks[0] }); }
 
   // controller tab UI
   const rows = $('btnRows'), rowEls = [];
@@ -897,7 +943,7 @@ end
       if (v === 'missing') return;
       if (v.startsWith('pad:')) { const p = input.pads.find(q => q.index === +v.slice(4)); if (p) picks[n] = { k: 'pad', i: p.index, id: p.id }; }
       else picks[n] = { k: v };
-      savePicks(); buildPickers();
+      savePicks(); buildPickers(); if (n === 0) sendPick();
       screen.focus();
     };
   });
@@ -1091,7 +1137,7 @@ end
     if (!link.ch) return;
     if (link.running) stop(true);
     linkSend({ t: 'bye' });
-    link.ch.close(); link.ch = null; link.peer = null;
+    link.ch.close(); link.ch = null; link.peer = null; link.peerPick = null;
     linkUI();
   }
   function linkBegin(me) {
@@ -1125,17 +1171,18 @@ end
       if (link.peer && link.peer !== m.from) return;          // already linked to another window
       const isNew = !link.peer;
       link.peer = m.from; link.peerSeen = now;
-      if (isNew) { linkSend({ t: 'hello', to: m.from }); log('🔗 linked with another Bit', 'sys'); }
+      if (isNew) { linkSend({ t: 'hello', to: m.from }); sendPick(); log('🔗 linked with another Bit', 'sys'); }
       linkUI();
       return;
     }
     if (m.from !== link.peer) return;
     link.peerSeen = now;
-    if (m.t === 'in') { if (link.running) link.theirs.set(m.f, [m.m, Uint8Array.from(m.p)]); }
+    if (m.t === 'pick') { link.peerPick = m.pick || null; buildPickers(); if (chooser.open) chooserDraw(); }
+    else if (m.t === 'in') { if (link.running) link.theirs.set(m.f, [m.m, Uint8Array.from(m.p)]); }
     else if (m.t === 'start') linkJoin(m.cart, m.level | 0);
     else if (m.t === 'stop') { if (link.running) { link.running = false; stop(true); log('■ the other Bit stopped the game', 'sys'); linkUI(); } }
     else if (m.t === 'bye') {
-      link.peer = null;
+      link.peer = null; link.peerPick = null;
       if (link.running) { link.running = false; stop(true); log('🔗 the other Bit left', 'sys'); }
       linkUI();
     }
@@ -1161,7 +1208,7 @@ end
     if (!link.ch) return;
     linkSend({ t: link.peer ? 'ping' : 'hello', to: link.peer || undefined });
     if (link.peer && performance.now() - link.peerSeen > 4000) {
-      link.peer = null;
+      link.peer = null; link.peerPick = null;
       if (link.running) { link.running = false; stop(true); log('🔗 lost the other Bit', 'sys'); }
       linkUI();
     }
@@ -1184,6 +1231,7 @@ end
     linkUI(); buildPickers();
     if (playMode === '2') log('2 players: player 2 uses the second controller, or I J K L to move, N to jump, M to throw.', 'sys');
   };
+  $('linkPad').onclick = () => openChooser();
   $('linkOpen').onclick = () => {
     const w = window.open(location.pathname + '?bit=2', 'bitkit-bit2', 'width=720,height=640');
     if (!w) toast('The browser blocked the new window. Allow pop-ups, or open this page again in another window.');
@@ -1739,6 +1787,7 @@ end
     document.title = `${APP} · Bit 2`;
     loadCode(`function _draw() cls(1) text("BIT 2", 120, 84, 22, 3) text("Linked to the studio window", 52, 130, 29) text("Press Run there to play together", 32, 144, 29) end`);
     RT._bkw_frame(0, ptr.press); blit(); RT._bkw_stop();
+    if (picks[0].k === 'auto') openChooser();   // a new Bit 2 window: ask which controller plays on it
   } else if (lsGet('bitkit.bitOn') !== '0') setBitPower(true);   // start on the Bit's home screen (turn it off with the Bit button)
   else bootScreen();
   // browsers only start sound after a click or key press: wake the audio up on the first one
