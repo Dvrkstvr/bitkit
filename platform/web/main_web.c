@@ -76,3 +76,25 @@ EMSCRIPTEN_KEEPALIVE int32_t *bkw_net(void) { return &machine.net.id; }
 /* display shader: int32 scan, vignette, curve, split, blur, grain, bright, contrast, sat, warm (see bk_machine.display) */
 EMSCRIPTEN_KEEPALIVE int32_t *bkw_display(void) { return &machine.display.scan; }
 EMSCRIPTEN_KEEPALIVE const char *bkw_error(void) { return bk_lua_error(); }
+
+/* capture: photos and clips go into growing buffers that JavaScript copies out (bkw_cap_buf / bkw_cap_len) */
+#include <stdlib.h>
+typedef struct { uint8_t *p; int len, cap; } growbuf;
+static growbuf cap_buf[2];               /* 0 = photo, 1 = clip */
+static int grow_write(void *ctx, const void *d, int n) {
+  growbuf *b = (growbuf *)ctx;
+  if (b->len + n > b->cap) {
+    int c = b->cap ? b->cap : 65536; while (c < b->len + n) c *= 2;
+    uint8_t *q = (uint8_t *)realloc(b->p, c); if (!q) return -1;
+    b->p = q; b->cap = c;
+  }
+  memcpy(b->p + b->len, d, n); b->len += n;
+  return 0;
+}
+EMSCRIPTEN_KEEPALIVE uint8_t *bkw_cap_buf(int which) { return cap_buf[which & 1].p; }
+EMSCRIPTEN_KEEPALIVE int bkw_cap_len(int which) { return cap_buf[which & 1].len; }
+EMSCRIPTEN_KEEPALIVE void bkw_cap_free(int which) { growbuf *b = &cap_buf[which & 1]; free(b->p); b->p = 0; b->len = b->cap = 0; }
+EMSCRIPTEN_KEEPALIVE int bkw_shot(int scale) { cap_buf[0].len = 0; return bk_shot_png(scale, grow_write, &cap_buf[0]) == 0 ? cap_buf[0].len : -1; }
+EMSCRIPTEN_KEEPALIVE int bkw_clip_begin(void) { cap_buf[1].len = 0; return bk_clip_begin(grow_write, &cap_buf[1]); }
+EMSCRIPTEN_KEEPALIVE int bkw_clip_frame(int frames60) { return bk_clip_frame(frames60); }
+EMSCRIPTEN_KEEPALIVE int bkw_clip_end(void) { return bk_clip_end() >= 0 ? cap_buf[1].len : -1; }

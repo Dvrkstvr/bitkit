@@ -1681,6 +1681,7 @@ display()                                   -- off</pre><p class="dim">The Help 
         BKNet.before(RT);
         if (RT._bkw_frame(m1, ptr.press) !== 0) running = false;
         BKNet.after(RT);
+        if (cap.rec && ++cap.n % 2 === 0) clipFrame();
         if (takeSave() && saveKey === 'Bit settings') loadBitSettings();
         const tr = RT.HEAP32;
         if (playingEditor && tr[ptr.track + 2] && route.cur) route.cur.push(tr[ptr.track], tr[ptr.track + 1]);
@@ -1697,9 +1698,74 @@ display()                                   -- off</pre><p class="dim">The Help 
     }
     last = now;
     if (bit.playing === 'home' && running) homeRoster();
-    bitCombo();
+    bitCombo(); captureCombo();
     if (now - fpsT >= 1000) { $('fps').textContent = running ? `${fpsCount} fps` : ''; fpsCount = 0; fpsT = now; }
     updateInputUI();
+  }
+
+  /* ------------------------------------------------------------ capture: photos and clips (Share hub) */
+  // The runtime's capture module (runtime/bk_capture.c) writes them, the same code the PocketBit runs: a PNG of the
+  // screen, or a GIF clip at 30 fps that keeps only what changed between frames. They go to the memory card's
+  // captures/ folder (on the PocketBit: the SD card), and the Share hub shows them.
+  const CLIP_MAX = 60 * 60;          // game frames (60 s)
+  const cap = { rec: false, n: 0, name: '' };
+  function capGame() { return (bit.on && bit.playing && bit.playing !== 'home' && lastPlayed && lastPlayed.c && lastPlayed.c.name) || (bit.playing === 'home' ? 'home' : cart.name) || 'bit'; }
+  function capBytes(which, n) { return new Uint8Array(RT.HEAPU8.subarray(RT._bkw_cap_buf(which), RT._bkw_cap_buf(which) + n)); }
+  function flash() { const w = $('gameWrap'); w.classList.remove('cap-flash'); void w.offsetWidth; w.classList.add('cap-flash'); }
+  async function keepCapture(blob, ext, what) {
+    try {
+      const name = await BKStore.captures.freeName(capGame(), ext);
+      await BKStore.captures.put(name, blob);
+      log(`${what} saved: captures/${name} (${(blob.size / 1024).toFixed(0)} KB). Find it in the Share hub.`, 'sys');
+      toast(`${what} saved · Share hub`);
+    } catch (e) { log(`Could not keep the ${what.toLowerCase()}: ${e.message}`, 'err'); }
+  }
+  function takePhoto() {
+    if (!running && !bit.on) { toast('Run the game first'); return; }
+    const n = RT._bkw_shot(1);
+    if (n <= 0) { toast('Could not take a photo'); return; }
+    flash();
+    keepCapture(new Blob([capBytes(0, n)], { type: 'image/png' }), 'png', 'Photo');
+    RT._bkw_cap_free(0);
+  }
+  function clipFrame() {
+    RT._bkw_clip_frame(2);
+    if (cap.n >= CLIP_MAX) toggleClip();
+  }
+  function toggleClip() {
+    if (!cap.rec) {
+      if (!running) { toast('Run the game first'); return; }
+      if (RT._bkw_clip_begin() !== 0) { toast('Could not start a clip'); return; }
+      cap.rec = true; cap.n = 0; cap.name = capGame();
+      RT._bkw_clip_frame(2);
+      log('⏺ Recording a clip (up to 60 s). Press ⏺ again, F9, or Select + R to stop.', 'sys');
+    } else {
+      cap.rec = false;
+      const n = RT._bkw_clip_end();
+      if (n > 0) keepCapture(new Blob([capBytes(1, n)], { type: 'image/gif' }), 'gif', `Clip (${(cap.n / 60).toFixed(1)} s)`);
+      else toast('Could not finish the clip');
+      RT._bkw_cap_free(1);
+    }
+    $('btnClip').classList.toggle('rec', cap.rec);
+    $('btnClip').textContent = cap.rec ? '■ Stop clip' : '⏺ Clip';
+    $('gameWrap').classList.toggle('cap-rec', cap.rec);
+  }
+  $('btnShot').onclick = () => { takePhoto(); screen.focus(); };
+  $('btnClip').onclick = () => { toggleClip(); screen.focus(); };
+  window.addEventListener('keydown', e => {
+    if (e.code === 'F8' && !e.repeat) { e.preventDefault(); takePhoto(); }
+    else if (e.code === 'F9' && !e.repeat) { e.preventDefault(); toggleClip(); }
+  });
+  // on the Bit: hold Select, press L for a photo or R for a clip (like the PocketBit)
+  let capCombo = 0;
+  function captureCombo() {
+    const m = input.mask, L = 1 << 8, R = 1 << 9;
+    const now = (m & SELECT) && !(m & START) ? m & (L | R) : 0;
+    if (bit.on && running) {
+      if ((now & L) && !(capCombo & L)) takePhoto();
+      if ((now & R) && !(capCombo & R)) toggleClip();
+    }
+    capCombo = now;
   }
 
   /* ------------------------------------------------------------ multiplayer: linked Bits */
@@ -2158,7 +2224,7 @@ display()                                   -- off</pre><p class="dim">The Help 
   $('btnSave').onclick = () => {
     saveLocal();
     const text = JSON.stringify(serialize());
-    modal('Save / share', `<p class="dim">Your work is saved in this browser as you go. <b>Save to my games</b> also puts it on the Bit's home screen${BKStore.state === 'folder' ? ` (the folder ${escapeHtml(BKStore.label())})` : ''}. To move it to another computer, download the file or copy the text below (open it there from the Games menu).</p>
+    modal('Save', `<p class="dim">Your work is saved in this browser as you go. <b>Save to my games</b> also puts it on the Bit's home screen${BKStore.state === 'folder' ? ` (the folder ${escapeHtml(BKStore.label())})` : ''}. To move it to another computer, download the file or copy the text below (open it there from the Games menu). To share it with people, use the <b>🌍 Share hub</b>.</p>
       <textarea id="mText" readonly></textarea>`, [
       ['Copy text', b => { const t = $('mText'); t.select(); (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(() => toast('Copied'), () => { document.execCommand && document.execCommand('copy'); toast('Text selected, press Ctrl+C'); }); }],
       ['Download ' + cartFileName(), () => {
@@ -2952,8 +3018,14 @@ display()                                   -- off</pre><p class="dim">The Help 
       ['Play (at the top)', 'Switches from editing to the emulated PocketBit: a home screen with the game you are editing and every game on its memory card. D-pad chooses, A plays, Y opens a game in the studio. Edit takes you back to the editors.'],
       ['Start + Select', 'Hold both in a game to go back to the home screen, like on the device.'],
       ['Paused games', 'Hold Start+Select (or call home()) to go back to the home screen: the game is paused, not closed. Pick it again and it carries on where you were, even after a reload. X on the home screen starts a paused game over. Changing a game\'s code or art starts it fresh.'],
-      ['Memory card (Games menu)', 'The Bit\'s memory card: a folder on your computer (Chrome/Edge) or this browser. Save / share puts a game on it, then play or open it from the Games menu or the home screen. Ctrl+S saves the open game back to its file.'],
+      ['Memory card (Games menu)', 'The Bit\'s memory card: a folder on your computer (Chrome/Edge) or this browser. Save puts a game on it, then play or open it from the Games menu or the home screen. Ctrl+S saves the open game back to its file.'],
       ['launch(n, [edit]) / home()', 'System calls used by the home screen: start game n, or return home. A game can call home() from its own menu.']]],
+    ['Share hub', [
+      ['🌍 Share hub (at the top)', 'Share the open game by link or QR code, post it to the hub with photos and clips, and play what other people made.'],
+      ['Photo: 📷, F8, or Select + L', 'A photo of the screen (PNG). On the Bit and on the PocketBit: hold Select and press L. It goes on the memory card in captures/.'],
+      ['Clip: ⏺, F9, or Select + R', 'Starts recording a clip (GIF, 30 fps, up to 60 s); press again to stop. On the PocketBit it is written to the SD card while you play.'],
+      ['Play link', 'The whole game packed into a link. Opening it plays the game, no server needed. Small games also fit a QR code; hub posts have a short link that always fits.'],
+      ['Post to the hub', 'Opens a short GitHub form filled in for you (a free account is needed). Drag your photos and clips into it. It shows in the hub after a quick look.']]],
     ['Time and randomness', [
       ['t()', 'Frames since the cart started (60 per second).'],
       ['time()', 'Seconds since the cart started.'],
@@ -2961,7 +3033,8 @@ display()                                   -- off</pre><p class="dim">The Help 
       ['srand(seed)', 'Set the random seed. math.random uses the same generator.']]],
     ['Studio keys', [
       ['Ctrl+Enter', 'Run the game (works anywhere).'],
-      ['Ctrl+S', 'Save to this browser (it also saves by itself). Use Save / share to keep a file.'],
+      ['Ctrl+S', 'Save to this browser (it also saves by itself). Use Save to keep a file.'],
+      ['F8 / F9', 'Take a photo / start or stop a clip of the game screen.'],
       ['Ctrl+Z / Ctrl+Shift+Z', 'Undo and redo, on every tab.'],
       ['Code: Ctrl+Space', 'Complete the word you are typing. The line under the code says what a function does and what it needs.'],
       ['Code: Ctrl+F', 'Find in the code. Enter jumps to the next match, Ctrl+Shift+F replaces.'],
@@ -2976,7 +3049,8 @@ display()                                   -- off</pre><p class="dim">The Help 
     ['Press Run', '<b>▶ Run</b> (or Ctrl+Enter) plays it on the left. Click the game screen, then use the arrow keys and Z / X. A controller works as soon as you press a button on it.', 'Run it', () => run()],
     ['Change something', 'The <b>Game</b> tab has sliders for how the game feels. <b>Sprites</b> is for drawing, <b>Map</b> for building levels, <b>Code</b> for everything else. Undo works on every tab.', 'Show the Game tab', () => showTab('game')],
     ['Play it like on the device', '<b>Play</b> at the top shows the game on a Bit, the emulated PocketBit, with its home screen. Pick <b>2 Bits side by side</b> to try a game that is played together.', 'Switch to Play', () => setMode('play')],
-    ['Keep it', 'The studio saves as you go, in this browser. <b>Save / share</b> puts the game on the memory card or gives you a file to share.', null, null],
+    ['Keep it', 'The studio saves as you go, in this browser. <b>Save</b> puts the game on the memory card or gives you a file.', null, null],
+    ['Share it', '<b>🌍 Share hub</b> gives you a link and QR code that play your game anywhere, takes photos and clips, and posts them to the hub.', 'Open the Share hub', () => BKShare.open('share')],
     ['Finish it', 'The <b>Checklist</b> at the top says what every BitKit game needs, like a title screen and a goal.', null, null],
   ];
   $('helpBody').innerHTML = `<input id="helpSearch" class="help-search" type="search" placeholder="Search the help: try spr, jump, save, controller..." spellcheck="false">
@@ -3029,8 +3103,43 @@ display()                                   -- off</pre><p class="dim">The Help 
   window.addEventListener('keydown', wakeAudio);
   requestAnimationFrame(frame);
 
+  /* ------------------------------------------------------------ Share hub */
+  BKShare.init({ modal, closeModal, ask, toast, serialize, fileName: cartFileName, storeLabel: () => BKStore.label(),
+    async openCart(o, play) {
+      decodeCart(o);
+      if (!await openGame({ data: o })) return;
+      if (play) await setMode('play');
+    } });
+  $('btnHub').onclick = () => BKShare.open();
+  // a play link (#play=...) opens its game, and plays it. The game you had open is kept as a draft.
+  async function openFromLink() {
+    if (IS_BIT2) return;
+    const hub = /#hub=(\d+)/.exec(location.hash);
+    if (hub) {
+      history.replaceState(null, '', location.pathname + location.search);
+      try {
+        const it = await BKShare.hubItem(hub[1]);
+        if (!it.cart) { BKShare.open('hub'); return; }
+        const o = await BKShare.getCart(it);
+        log(`Opened "${it.title}" by ${it.author} from the Share hub.`, 'sys');
+        if (await openGame({ data: o })) await setMode('play');
+      } catch (e) { log('That hub link did not work: ' + e.message, 'err'); toast('That hub link did not work'); }
+      return;
+    }
+    if (!BKShare.findPlay(location.hash)) return;
+    try {
+      const o = await BKShare.cartFromLink(location.hash);
+      history.replaceState(null, '', location.pathname + location.search);
+      log(`Opened "${o.name}" from a play link.`, 'sys');
+      if (await openGame({ data: o })) await setMode('play');
+    } catch (e) { log('That play link did not work: ' + e.message, 'err'); toast('That play link did not work'); }
+  }
+  openFromLink();
+  window.addEventListener('hashchange', openFromLink);
+  if (/[?&]hub\b/.test(location.search) && !IS_BIT2) BKShare.open();
+
   // expose for tests / debugging
-  window.bkStudio = { cart, run, stop, input, input2, picks, link, RT, bitRequest, bootHome, ptrMap: () => ptr.map >> 1, isRunning: () => running, bit, setBitPower, showLibrary: showGames, showGames, saveToBit, BKStore,
+  window.bkStudio = { cart, run, stop, takePhoto, toggleClip, cap, serialize, input, input2, picks, link, RT, bitRequest, bootHome, ptrMap: () => ptr.map >> 1, isRunning: () => running, bit, setBitPower, showLibrary: showGames, showGames, saveToBit, BKStore,
     setMode, setBits, openGame, embed, mode: () => mode, gid: () => gid, label: screenText, showTab, undoHere,
     // for the studio window, when this Bit is the one shown next to it
     embedReady: true, extInput(m, p) { ext.mask = m; ext.press.set(p); }, bye() { linkSend({ t: 'bye' }); },

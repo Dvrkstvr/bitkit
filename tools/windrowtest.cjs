@@ -138,7 +138,7 @@ require('../studio/runtime.js')({ onLog: (m, e) => { (e ? errors : logs).push(m)
   check('A closes the report', get('ui'), 'nil');
 
   // 7. the goal: three steps of the mill, then the game is won and carries on
-  ev('G.coins = 9999 G.inv = { wood = 99, stone = 99, fibre = 99, barley = 16 } G.bag = 3 px, py, dx, dy = 26 * 16 + 8, 4 * 16 + 14, 0, -1');
+  ev('G.coins = 9999 G.inv = { wood = 99, stone = 99, fibre = 99, barley = 16, millstone = 1 } G.bag = 3 px, py, dx, dy = 26 * 16 + 8, 4 * 16 + 14, 0, -1');
   tap('a'); check('A at the ruin opens the mill', get('ui'), 'mill');
   shot('windrow-mill');
   tap('a'); check('step 1: the frame', get('G.mill, G.inv.wood'), '1 83');
@@ -151,6 +151,137 @@ require('../studio/runtime.js')({ onLog: (m, e) => { (e ? errors : logs).push(m)
   run(30);
   check('the goal is reached', get('GAME.state'), 'won');
   if (errors.length) { errors.forEach(e => fail('mill: ' + e)); errors = []; }
+
+  // 7b. animals: mend the hen house by hand, buy a hen, fill the trough, gather the egg, pet her; goats give milk
+  load(null); run(5);
+  ev('G.coins = 1000 G.inv = { wood = 40, stone = 20, fibre = 10, radish = 3 } px, py, dx, dy = 19 * 16 + 8, 24 * 16 + 14, 0, -1');
+  tap('a'); check('A at the ruined hen house offers to mend it', get('ui, ui_kind'), 'build coop');
+  tap('a'); check('mending it takes coins, wood and fibre', get('G.coop, G.coins, G.inv.wood, G.inv.fibre'), '1 940 30 4');
+  ev('ui = "shop" local L = shop_items() for i, it in ipairs(L) do if it.name == "Hen" then ui_sel = i end end');
+  tap('a'); tap('b');
+  check('Marrow sells a hen once the house stands', get('#G.an, G.an[1].k, G.coins, #ANIM'), '1 h 820 1');
+  ev('px, py, dx, dy = 19 * 16 + 8, 26 * 16 + 14, 0, -1');
+  tap('a');
+  check('food from the bag goes in the trough', get('G.feed, G.inv.radish'), '2 2');
+  ev('new_day() G.clk = 100');
+  check('a fed hen lays an egg overnight and eats a helping', get('G.feed, (function() local n = 0 for _, o in ipairs(FORAGE) do if is_egg(o) then n = n + 1 end end return n end)()'), '1 1');
+  ev('local o for _, f in ipairs(FORAGE) do if is_egg(f) then o = f end end ANIM[1].x, ANIM[1].y, ANIM[1].wait = 9999, 9999, 9999 px, py, dx, dy = o.x * 16 + 8, o.y * 16 + 14, 0, 1');
+  tap('a');
+  check('you gather the egg by hand', num('have("egg") + have("bigegg")'), 1);
+  ev('ANIM[1].x, ANIM[1].y, ANIM[1].wait = 6 * 16 + 8, 24 * 16 + 12, 9999 px, py, dx, dy = 6 * 16 + 8, 23 * 16 + 12, 0, 1');
+  tap('a');
+  check('a pat a day wins her heart', get('G.an[1].love, G.an[1].p'), '16 1');
+  tap('a');
+  check('but only one a day', num('G.an[1].love'), 16);
+  ev('toast_t = 0 G.shed = 1 add_animal("g") G.feed = 5 new_day() G.clk = 100 ANIM[1].x = 9999 ANIM[2].x, ANIM[2].y, ANIM[2].wait = 6 * 16 + 8, 24 * 16 + 12, 9999');
+  if (shotDir) {
+    ev('add_animal("h") SX, SY = px, py ANIM[1].x, ANIM[1].y = 14 * 16, 23 * 16 + 8 ANIM[3].x, ANIM[3].y, ANIM[3].wait = 11 * 16, 25 * 16, 9999 ANIM[2].x, ANIM[2].y = 16 * 16, 24 * 16 + 12 px, py, dx, dy = 18 * 16 + 8, 26 * 16 + 4, 0, -1 G.feed = 8');
+    run(2); shot('windrow-pasture');
+    ev('table.remove(G.an) table.remove(ANIM) px, py, dx, dy = SX, SY, 0, 1 ANIM[1].x = 9999 ANIM[2].x, ANIM[2].y = 6 * 16 + 8, 24 * 16 + 12 G.feed = 4');
+  }
+  tap('a');
+  check('no pail, no milk', get('G.an[2].m, have("milk")'), '1 0');
+  ev('G.pail = 1 toast_t = 0');
+  tap('a');
+  check('with a pail you milk the goat by hand', get('G.an[2].m, have("milk")'), '0 1');
+  ev('G.feed = 0 G.an[1].love = 30 new_day()');
+  check('hungry animals lose heart and give nothing', get('G.an[1].love, G.an[2].m'), '22 0');
+  ev('persist()');
+  load(getSave()); run(3);
+  check('the animals are in the save', get('#G.an, G.an[2].k, G.coop, G.shed, G.pail, #ANIM'), '2 g 1 1 1 2');
+  if (errors.length) { errors.forEach(e => fail('animals: ' + e)); errors = []; }
+
+  // 7c. the old mine: a pickaxe opens it, rocks break into ore, a ladder leads down, things bite from floor 4,
+  // and the mill's stone waits in the chest at the bottom
+  load(null); run(5);
+  ev('G.area, px, py, dx, dy = 2, 11 * 16 + 8, 2 * 16 + 14, 0, -1');
+  tap('a'); check('the boards hold without a pickaxe', get('G.mine, G.area'), '0 2');
+  ev('G.pick = 1 toast_t = 0');
+  tap('a'); check('the pickaxe pries them off', num('G.mine'), 1);
+  tap('a', 70); check('A goes down into the mine', get('G.area, mine_n, mine_hp'), '3 1 3');
+  // every floor has a way down, and no rock is walled in
+  for (let n = 1; n <= 10; n++) {
+    ev(`mine_floor(${n})`);
+    const ok = get('(function() local seen, q, n = {}, { { 2, 1 } }, 0 seen[2 + 20] = true ' +
+      'while #q > 0 do local c = table.remove(q) for _, d in ipairs({ { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }) do local x, y = c[1] + d[1], c[2] + d[2] ' +
+      'local ch = tile(3, x, y) if ch ~= "#" and not seen[x + y * 20] then seen[x + y * 20] = true if ch ~= "<" and ch ~= "H" then q[#q + 1] = { x, y } end end end end ' +
+      `local want = ${n} < 10 and seen[mine_down.x + mine_down.y * 20] or (${n} == 10 and seen[10 + 7 * 20]) return want and #MOBS or -1 end)()`);
+    if (Number(ok) < 0) fail('mine floor ' + n + ' has no way on');
+    if (n <= 3 && Number(ok) !== 0) fail('floors 1 to 3 should be quiet');
+    if (n >= 5 && Number(ok) < 1) fail('floor ' + n + ' should have something living on it');
+  }
+  ev('G.deep = 0 mine_floor(1) MINE[2][2] = "C" px, py, dx, dy = 2 * 16 + 8, 1 * 16 + 14, 0, 1');
+  tap('a'); tap('a'); check('copper takes three blows', get('MINE[2][2], have("copper")'), 'C 0');
+  tap('a'); check('and then it is yours', get('MINE[2][2], have("copper")'), '. 1');
+  ev('MINE[2][2] = "R" mine_down = { x = 2, y = 2 }');
+  tap('a'); tap('a'); check('the ladder down hides under a rock', get('MINE[2][2]'), '>');
+  shot('windrow-mine');
+  tap('a', 70); check('A on the ladder goes one floor down', get('mine_n, G.deep'), '2 2');
+  ev('mine_floor(6) MOBS = { { x = 2 * 16 + 8, y = 2 * 16 + 12, hp = 2, bat = false, hit = 0 } } px, py, dx, dy = 2 * 16 + 8, 1 * 16 + 14, 0, 1');
+  ev('hurt_t = 999'); tap('a'); tap('a');
+  check('two blows of the pickaxe see a gloomling off', get('#MOBS, have("dust")'), '0 1');
+  ev('MOBS = { { x = px, y = py + 4, hp = 9, bat = true, hit = 0 } } hurt_t = 0');
+  run(3); check('a bite costs a heart', num('mine_hp'), 2);
+  if (shotDir) {
+    ev('SX, SY, SM = px, py, MOBS G.lamp = 1 px, py = 9 * 16 + 8, 7 * 16 + 14 for y = 6, 8 do for x = 8, 11 do MINE[y][x] = "." end end MINE[8][8] = ">" MINE[6][11] = "Q" hurt_t = 0 ' +
+       'MOBS = { { x = 12 * 16, y = 9 * 16, hp = 2, bat = false, hit = 0 }, { x = 6 * 16, y = 5 * 16, hp = 2, bat = true, hit = 0 }, { x = 13 * 16, y = 5 * 16 + 8, hp = 2, bat = false, hit = 0 } }');
+    ev('floats = {}'); run(1); shot('windrow-dungeon');
+    ev('px, py, MOBS, G.lamp = SX, SY, SM, 0');
+  }
+  ev('G.inv.copper = 10 mine_hp = 1 hurt_t = 0 MOBS[1].x, MOBS[1].y = px, py + 4');
+  const dayIn = num('G.day');
+  run(80);
+  check('out of hearts: you wake at home the next morning with half the ore', get('G.area, G.day, G.inv.copper'), `1 ${dayIn + 1} 5`);
+  ev('G.area, mine_hp = 3, 3 mine_floor(10) px, py, dx, dy = 10 * 16 + 8, 6 * 16 + 14, 0, 1 MOBS = {}');
+  tap('a'); check('the chest at the bottom holds the millstone', get('have("millstone"), G.gotms, G.deep'), '1 1 10');
+  ev('persist()');
+  load(getSave()); run(3);
+  check('a save made underground wakes at the mine door', get('G.area, G.mine, G.deep, have("millstone")'), '2 1 10 1');
+  ev('px, py, dx, dy = 11 * 16 + 8, 2 * 16 + 14, 0, -1');
+  tap('a'); check('the winch offers the floors you reached', get('ui, #lift_floors()'), 'lift 3');
+  tap('down'); tap('a', 70); check('and takes you there', get('G.area, mine_n'), '3 5');
+  if (errors.length) { errors.forEach(e => fail('mine: ' + e)); errors = []; }
+
+  // 7d. the tractor: mend the wreck with ore, climb on, and work three cells at a time with each implement
+  load(null); run(5);
+  ev('G.coins = 5000 G.inv = { iron = 12, copper = 10, wood = 6 } G.plots = { true, true, true } px, py, dx, dy = 27 * 16 + 8, 15 * 16 + 14, 0, -1');
+  tap('a'); check('A at the wreck offers to mend it', get('ui, ui_kind'), 'build trac');
+  tap('a'); check('mending takes iron, copper, wood and coins', get('G.trac, G.coins, have("iron")'), '1 4200 0');
+  ev('ui = "shop" local L = shop_items() for i, it in ipairs(L) do if it.name == "Plough" then ui_sel = i end end');
+  tap('a'); tap('b');
+  check('Marrow sells the plough once it runs', get('G.imp[1], G.impsel, G.coins'), '1 1 3800');
+  ev('toast_t = 0'); tap('a');
+  check('A climbs on', get('riding'), 'true');
+  // drive along the middle row of the Long acre, plough down
+  ev('for i, f in ipairs(FIELD[3]) do f.k, f.c = (i % 2), 0 end px, py, dx, dy = 5 * 16 + 8, 17 * 16 + 12, 1, 0');
+  run(60, (1 << B.right) | (1 << B.a));
+  const dug = num('(function() local n = 0 for i, f in ipairs(FIELD[3]) do if f.k == 4 then n = n + 1 end end return n end)()');
+  if (dug < 18 || dug % 3 !== 0) fail('the plough should turn three rows as it drives: ' + dug + ' cells');
+  check('it only works the three rows it crosses', get('FIELD[3][1].k + FIELD[3][22 * 4 + 1].k < 8'), 'true');
+  shot('windrow-tractor');
+  ev('G.imp = { 1, 1, 1, 1 } G.impsel = 2 G.sel = 1 G.seeds[1] = 50 G.tank = 90 px, py, dx, dy = 5 * 16 + 8, 17 * 16 + 12, 1, 0');
+  run(60, (1 << B.right) | (1 << B.a));
+  check('the seed drill sows what the plough turned', num('50 - G.seeds[1]'), dug);
+  tap('l'); check('L changes the implement', num('G.impsel'), 3);
+  ev('px, py, dx, dy = 5 * 16 + 8, 17 * 16 + 12, 1, 0');
+  run(60, (1 << B.right) | (1 << B.a));
+  check('the water tank waters them', num('90 - G.tank'), dug);
+  ev('for i, f in ipairs(FIELD[3]) do if f.c > 0 then f.age = 9 end end G.bag = 3 G.impsel = 4 px, py, dx, dy = 5 * 16 + 8, 17 * 16 + 12, 1, 0');
+  run(60, (1 << B.right) | (1 << B.a));
+  check('and the reaper brings them in', num('have("radish")'), dug);
+  if (shotDir) {
+    ev('for i, f in ipairs(FIELD[3]) do f.k, f.c, f.age, f.wet = 4, (i // 22) % 2 == 0 and 2 or 1, (i % 22 < 9) and 0 or 9, i % 22 < 14 end px, py, dx, dy = 13 * 16 + 4, 17 * 16 + 12, 1, 0 floats = {} G.clk = DAY_FRAMES * 0.4');
+    run(2); shot('windrow-reaper');
+    ev('G.impsel = 1 px, py, dx, dy = 8 * 16 + 8, 13 * 16 + 12, 0, 1'); run(2); shot('windrow-tractor-down');
+    ev('dx, dy = 0, -1 G.impsel = 3'); run(2); shot('windrow-tractor-up');
+    ev('G.impsel = 4');
+  }
+  ev('px, py, dx = 20, 5 * 16 + 12, -1 toast_t = 0'); run(30, 1 << B.left);
+  check('the tractor stays on the farm', get('G.area, riding'), '1 true');
+  tap('y'); check('Y hops off and leaves it where it stands', get('riding, G.tx == 12 or G.tx > 0'), 'false true');
+  ev('persist()'); load(getSave()); run(3);
+  check('the tractor and its implements are in the save', get('G.trac, G.imp[4], riding'), '1 1 false');
+  if (errors.length) { errors.forEach(e => fail('tractor: ' + e)); errors = []; }
 
   // 8. all four seasons draw, with rain, snow and nightfall
   load(null);
@@ -170,6 +301,8 @@ require('../studio/runtime.js')({ onLog: (m, e) => { (e ? errors : logs).push(m)
   for (let f = 0; f < 16000; f++) {
     if (f % 12 === 0) mask = (1 << rand(4)) | (rand(3) === 0 ? 1 << (4 + rand(6)) : 0);
     if (f === 8000) ev('G.area, px, py = 2, 20 * 16, 10 * 16 + 12');
+    if (f === 12000) ev('G.area, mine_hp = 3, 3 mine_floor(7)');
+    if (f === 4000) ev('G.trac, G.imp, G.impsel, G.plots = 1, { 1, 1, 1, 1 }, 1, { true, true, true } G.area, px, py = 1, 10 * 16, 17 * 16 mount()');
     if (M._bkw_frame(mask, 0)) { fail('random play stopped at frame ' + f + ': ' + errors.join(' ')); break; }
   }
   if (num('G.day') < 5) fail('days should pass on their own: day ' + get('G.day'));

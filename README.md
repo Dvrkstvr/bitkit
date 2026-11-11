@@ -114,16 +114,21 @@ A small platformer that shows off most of the engine:
 ### Windrow (the farming game)
 
 <img src="docs/media/windrow.png" width="400" alt="Windrow: a farmer on a small plot of radishes and barley, with a hut, a crate and a trader's wagon"> <img src="docs/media/windrow-woods.png" width="400" alt="Windrow: foraging among the pines of Bramble Woods">
+<img src="docs/media/windrow-pasture.png" width="400" alt="Windrow: hens, a goat and an egg in the pasture, by the hen house and the goat shed">
+<img src="docs/media/windrow-tractor.png" width="400" alt="Windrow: the tractor reaping three rows of radishes and barley on the Long acre"> <img src="docs/media/windrow-mine.png" width="400" alt="Windrow: the farmer in the dark of the old mine, with rocks, ore, a ladder down, a gloomling and a bat in the lamp light">
 
-BitKit's flagship game, and it is growing. You arrive in the valley of Windrow with a digging stick, a leaky bucket and four radish seeds. This first slice is the farm, the hand work and the woods.
+BitKit's flagship game, and it is growing. You arrive in the valley of Windrow with a digging stick, a leaky bucket and four radish seeds. So far it has the farm, the hand work, the woods, the animals, the old mine and the tractor.
 
 - **Hand work.** Your plot is overgrown. **A** uses your hands on what is in front of you: pull weeds (fibre), dig a cell (three goes with the stick), plant the seed you picked with **L / R**, and pick what is ripe. **B** waters, and the bucket holds five splashes before you walk back to the pond. **X** opens your bag and **Y** looks closer.
 - **Days and seasons.** Watered crops grow overnight. A day lasts five minutes, a season seven days, and each of the four seasons has its own crops: radishes, barley and sweet peas in spring, tomatoes, corn and sunmelons in summer, pumpkins in autumn, snowleeks and frostcaps in winter. Rain and snow water the fields for you.
 - **Foraging.** The road west leads to Bramble Woods, where new things turn up every morning: wild garlic, brambleberries, pennybuns or pine cones to sell, and sticks, pebbles and reeds to build with. That is how you earn your first coins.
 - **Marrow's wagon** sells the season's seeds, a hoe, watering cans, a bigger basket, a pickaxe and an axe for the stones and stumps on your land, and the deeds to the East meadow and the Long acre. Every day she pays extra for one crop.
+- **Animals.** South of the fields lies the pasture. Mend the hen house and the goat shed with wood, fibre, stone and a few coins, and Marrow brings hens and goats. Fill the trough from your bag (each animal eats a helping a night), gather the eggs by hand, and milk the goats into a pail. A pat a day wins their hearts: loved hens lay big eggs and loved goats give creamy milk. Hungry animals lose heart.
+- **The old mine.** The boarded-up mine in the woods opens with a pickaxe. It has ten floors, new every day, and your lamp only reaches so far. Break rocks for stone, copper, iron and glowstone, and find the ladder hidden under one of them. From floor 4 down, gloomlings and bats live in the dark: **A** hits them with the pickaxe, each bite costs one of your three hearts, and if you run out you wake at home with half your ore. The winch takes you back to floor 5 or 9 once you have been there, a lantern from Marrow lights more, and the chest on floor 10 holds the millstone the windmill needs.
+- **The tractor (mid game).** A rusted tractor stands by the Long acre. Mend it with iron and copper from the mine, and Marrow sells implements for it: a plough, a seed drill, a water tank and a reaper. **A** climbs on, holding **A** works the cell under you and the one on either side as you drive, **L** changes the implement, **R** the seed, **B** fills the tank at the pond (or honks), and **Y** hops off.
 - **While the Bit is off**, the farm carries on (`save()`, `saved()` and `clock()`): up to three days pass, and what you watered keeps growing.
-- **Goal:** rebuild the old windmill in three steps, with wood, stone, fibre, coins and crops for the builders. With the sails up, grain sells for double.
-- Coming next: animals, the old mine and what is under it, tractors, and visits between linked Bits.
+- **Goal:** rebuild the old windmill in three steps, with wood, stone, fibre, coins, crops for the builders and the lost millstone. With the sails up, grain sells for double.
+- Coming next: visits and trades between linked Bits, and a little automation for the very late game.
 
 ### Beacon Keeper
 
@@ -313,6 +318,14 @@ The full reference is in the studio's **Help** tab.
 | Scripting | Lua 5.4 in a sandbox with a per-frame instruction budget |
 | Target | 60 fps locked |
 
+## 🌍 Share hub
+
+The **🌍 Share hub** button in the studio is where games, photos and clips are shared.
+
+- **Photos and clips.** 📷 (or F8) takes a photo of the screen, ⏺ (or F9) records a clip of up to 60 seconds. On the Bit (and the PocketBit): hold **Select** and press **L** for a photo or **R** for a clip. Photos are PNG, clips are GIF at 30 fps. They are made by `runtime/bk_capture.c`, plain C shared with the device, and land on the memory card in `captures/` (on the PocketBit: the SD card). Point the studio's memory card at the SD card and the Bit's photos and clips show up in the hub.
+- **Play links and QR codes, no server.** *Share this game* packs the whole game into a link (`…/bitkit/#play=1.…`, compressed): opening it plays the game. Small games fit a QR code; every hub post gets a short link (`#hub=12`) that always does.
+- **The hub.** *Post to the hub* opens a short GitHub form filled in by the studio (a free GitHub account is needed). A GitHub Action (`.github/workflows/hub.yml`, `tools/hub_publish.cjs`) checks the post and writes it to the `hub` branch, which the studio reads. No server, no keys and no cost. Posts by maintainers show at once; others show when a maintainer adds the label `hub-ok`. Close the issue or add `hub-hide` to take a post down.
+
 ## 🛠️ Build from source
 
 Needs [Emscripten](https://emscripten.org/docs/getting_started/downloads.html) and Node.
@@ -325,7 +338,7 @@ cd studio && python3 -m http.server 8000       # dev server
 ```
 
 ```
-runtime/        C core shared by device and web (bk.h, bk_core.c, bk_lua.c, bk_entities.lua)
+runtime/        C core shared by device and web (bk.h, bk_core.c, bk_capture.c, bk_lua.c, bk_entities.lua)
 platform/web/   Emscripten host glue
 studio/         Browser studio (plain HTML/JS, no build step)
 third_party/    Lua 5.4.7, Walnut-CGB + minigb_apu (Game Boy), agnes (NES)
@@ -347,6 +360,7 @@ docs/media/     README images
 - [ ] ESP32-S3 host (PocketBit firmware)
 - [ ] Local multiplayer over ESP-NOW
 - [x] Launcher and utility apps (music makers, settings, Game Boy / Game Boy Color / NES emulators with save states)
+- [x] Share hub: photos, clips, play links, QR codes and a hub on GitHub
 
 ## 🤝 Contributing
 
