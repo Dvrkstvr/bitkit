@@ -36,9 +36,19 @@
       <span id="padStatus" class="pad-status">No controller (press any button on it)</span>
       <span class="grow"></span>
       <span id="fps" class="dim">&nbsp;</span>
+      <select id="players" title="Players. Linked: two Bit windows play together like PocketBits over ESP-NOW">
+        <option value="1">1 player</option>
+        <option value="2">2 players</option>
+        <option value="link">2 Bits, linked</option>
+      </select>
       <button id="btnBit" title="Turn on the emulated PocketBit: a home screen with the games on its memory card">⏻ Bit</button>
       <button id="btnMute" title="Mute">Sound on</button>
       <button id="btnFull" title="Fullscreen">Fullscreen</button>
+    </div>
+    <div id="linkBar" class="link-bar" hidden>
+      <span id="linkStatus">Not linked</span>
+      <span class="grow"></span>
+      <button id="linkOpen" class="tiny" title="Open a second Bit in a new window">Open a 2nd Bit</button>
     </div>
     <div class="console-head">Console <button id="btnClear" class="tiny">clear</button></div>
     <pre id="console" class="console"></pre>

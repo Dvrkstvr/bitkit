@@ -37,9 +37,26 @@ local function ledge_ahead(e)
   local fx = e.dir > 0 and e.x + e.w or e.x - 1
   return not solid(fx, e.y + e.h)
 end
+-- players: PL[n] is player n's entity (n = 1..PLAYERS). PLAYER is player 1.
+local PL = {}
+-- the point enemies aim at: the nearest living player (or ents_target's point when there is no player entity)
+local function target_of(e)
+  local cx, cy = center(e)
+  local bx, by, bd = TX, TY, nil
+  for i = 1, #PL do
+    local p = PL[i]
+    if p.alive then
+      local px, py = p.x + p.w / 2, p.y + p.h / 2
+      local d = (px - cx) * (px - cx) + (py - cy) * (py - cy)
+      if not bd or d < bd then bx, by, bd = px, py, d end
+    end
+  end
+  return bx, by
+end
 local function dist(e)
   local cx, cy = center(e)
-  local dx, dy = TX - cx, TY - cy
+  local tx, ty = target_of(e)
+  local dx, dy = tx - cx, ty - cy
   return math.sqrt(dx * dx + dy * dy), dx, dy
 end
 
@@ -295,7 +312,7 @@ end
 
 local function cast_dir(e, dir)
   if dir == "up" then return 0, -1 elseif dir == "down" then return 0, 1
-  elseif dir == "player" then local cx, cy = center(e); return TX - cx, TY - cy end
+  elseif dir == "player" then local cx, cy = center(e); local tx, ty = target_of(e); return tx - cx, ty - cy end
   return e.dir, 0
 end
 
@@ -461,34 +478,35 @@ N.all = function(e, n)
 end
 -- input
 N.button = function(e, n, p)
-  local b = p.button or "a"
-  if p.mode == "held" then return btn(b) and 1 or 0 end
-  if p.mode == "released" then return btnr(b) and 1 or 0 end
-  return btnp(b) and 1 or 0
+  local b, pn = p.button or "a", e.pnum or 1   -- a player's entity reads its own player's buttons
+  if p.mode == "held" then return btn(b, pn) and 1 or 0 end
+  if p.mode == "released" then return btnr(b, pn) and 1 or 0 end
+  return btnp(b, pn) and 1 or 0
 end
 N.controls = function(e, n, p)
   local m = e.mem
+  local pn = e.pnum or 1         -- which player's buttons drive this entity
   local sp = (p.speed or 1) * stat(e, "speed")
-  if p.run and p.run ~= "" and p.run ~= "none" then sp = sp * (1 + press(p.run) / 128) end
+  if p.run and p.run ~= "" and p.run ~= "none" then sp = sp * (1 + press(p.run, pn) / 128) end
   local dir = 0
-  if btn("left") then dir = -1 end
-  if btn("right") then dir = dir + 1 end
+  if btn("left", pn) then dir = -1 end
+  if btn("right", pn) then dir = dir + 1 end
   if dir ~= 0 then e.dir = dir end
   e.vx = dir * sp
   if e.grav then
     m.coyote = e.ground and 6 or math.max(0, (m.coyote or 0) - 1)
-    m.jbuf = btnp("a") and 6 or math.max(0, (m.jbuf or 0) - 1)
+    m.jbuf = btnp("a", pn) and 6 or math.max(0, (m.jbuf or 0) - 1)
     if m.jbuf > 0 and m.coyote > 0 then
       e.vy = -(p.jump or 4.2) * stat(e, "jump")
       m.jbuf, m.coyote = 0, 0
       e.ground = false
       if p.sound and p.sound ~= "" then sfx(p.sound, 5, 0.5, 10, nil, 0, 600) end
     end
-    if not btn("a") and e.vy < -1.5 then e.vy = -1.5 end
+    if not btn("a", pn) and e.vy < -1.5 then e.vy = -1.5 end
   else
     local dy = 0
-    if btn("up") then dy = -1 end
-    if btn("down") then dy = dy + 1 end
+    if btn("up", pn) then dy = -1 end
+    if btn("down", pn) then dy = dy + 1 end
     e.vy = dy * sp
   end
   return 1
@@ -542,11 +560,25 @@ end
 function ents_reset()
   LIST = {}
   PLAYER = DUMMY
+  PL = {}
   for i = 1, #PLACED do
     local p = PLACED[i]
     ents_spawn(p[1], p[2], p[3])
   end
+  -- multiplayer: players 2..PLAYERS start next to player 1 as copies of its entity
+  if PLAYER ~= DUMMY then
+    for n = #PL + 1, PLAYERS or 1 do
+      ents_spawn(PLAYER.name, PLAYER.x - PLAYER.ox - (n - 1) * 12, PLAYER.y - PLAYER.oy)
+    end
+  end
 end
+
+-- ents_players(): the list of player entities, player 1 first
+function ents_players() return PL end
+PLAYER_COL = {17, 22, 26, 27}
+-- ents_player_pal(n, {from = to, ...}): recolour player n's sprite so players can tell themselves apart
+PLAYER_PAL = { nil, {[16] = 22, [17] = 21, [15] = 21}, {[16] = 26, [17] = 25, [15] = 25}, {[16] = 27, [17] = 10, [15] = 10} }
+function ents_player_pal(n, map) PLAYER_PAL[n] = map end
 
 function ents_spawn(name, x, y)
   local d = DEFS[name]
@@ -563,7 +595,9 @@ function ents_spawn(name, x, y)
   }
   if d.player then
     e.is_player, e.team = true, "friend"
-    PLAYER = e
+    if PLAYER == DUMMY then PLAYER = e end
+    PL[#PL + 1] = e
+    e.pnum = #PL
   end
   e.x = x + e.ox
   e.y = y + e.oy
@@ -632,6 +666,11 @@ local CUT_STEP = {}
 
 function ents_cutscenes(list) CUTSCENES = list or {} end
 
+-- any player pressed this button (cutscenes listen to everyone)
+function anyp(b)
+  for n = 1, PLAYERS or 1 do if btnp(b, n) then return true end end
+  return false
+end
 local function who(name)
   if not name or name == "" then return nil end
   if name == "player" then return PLAYER ~= DUMMY and PLAYER or nil end
@@ -667,7 +706,7 @@ CUT_STEP.say = {
     BOX.n = math.min(#BOX.text, BOX.n + 1)
     if BOX.n % 2 == 1 and BOX.n < #BOX.text and BOX.text:sub(BOX.n, BOX.n) ~= " " then sfx(p.voice or "A5", 1, 0.06, 2) end
     local auto = tonumber(p.frames) or 0
-    if s.t > 4 and (btnp("a") or btnp("b")) then
+    if s.t > 4 and (anyp("a") or anyp("b")) then
       if BOX.n < #BOX.text then BOX.n = #BOX.text else BOX = nil return true end
     end
     if auto > 0 and BOX.n >= #BOX.text and s.t >= auto then BOX = nil return true end
@@ -773,7 +812,7 @@ local function cut_update()
   if SHAKE > 0 then SHAKE = SHAKE - 1 end
   if not CUT then BARS = math.max(0, BARS - 2) return false end
   BARS = math.min(20, BARS + 2)
-  if btnp("start") then CUT.skip = true end
+  if anyp("start") then CUT.skip = true end
   for _ = 1, CUT.skip and 400 or 1 do
     local st = CUT.steps[CUT.i]
     if not st then cut_finish() return false end
@@ -872,11 +911,41 @@ function ents_target(x, y) TX, TY = x, y end
 function ents_get(name) return ents_all(name)[1] end
 
 -- ents_camera([world_w], [world_h]): centre the camera on the player, clamped to the world. Returns cx, cy.
-function ents_camera(ww, wh)
+-- where the camera looks: this device's player, or (sharing one screen) the middle of all living players
+local function view_point()
+  if (ME or 0) > 0 and PL[ME] then local p = PL[ME]; return p.x + p.w / 2, p.y + p.h / 2 end
+  if #PL > 1 then
+    local x0, x1, y0, y1
+    for i = 1, #PL do
+      local p = PL[i]
+      if p.alive then
+        x0 = math.min(x0 or p.x, p.x); x1 = math.max(x1 or p.x + p.w, p.x + p.w)
+        y0 = math.min(y0 or p.y, p.y); y1 = math.max(y1 or p.y + p.h, p.y + p.h)
+      end
+    end
+    if x0 then return (x0 + x1) / 2, (y0 + y1) / 2 end
+  end
   local p = PLAYER
+  return p.x + p.w / 2, p.y + p.h / 2
+end
+-- sharing a screen: nobody may walk out of the view (deterministic, so linked games skip it)
+local function keep_together()
+  local mx = view_point()
+  local cx = math.max(0, math.min(math.floor(mx - 160), ENT_WORLD_W - 320))
+  for i = 1, #PL do
+    local p = PL[i]
+    if p.alive then
+      if p.x < cx then p.x = cx end
+      if p.x + p.w > cx + 320 then p.x = cx + 320 - p.w end
+    end
+  end
+end
+
+function ents_camera(ww, wh)
   ww, wh = ww or ENT_WORLD_W, wh or ENT_WORLD_H
-  local cx = math.floor(p.x + p.w / 2 - 160)
-  local cy = math.floor(p.y + p.h / 2 - 120)
+  local vx, vy = view_point()
+  local cx = math.floor(vx - 160)
+  local cy = math.floor(vy - 120)
   cx = math.max(0, math.min(cx, ww - 320))
   cy = math.max(0, math.min(cy, wh - 240))
   if CAM then
@@ -972,15 +1041,18 @@ local function apply_level()
   local L = LEVELS[n]
   LEVEL = n
   ENT_WORLD_W, ENT_WORLD_H = L.w * 8, L.h * 8
-  local old = PLAYER ~= DUMMY and PLAYER.alive and PLAYER or nil
+  local old = {}
+  for i = 1, #PL do old[i] = PL[i] end
   PLACED = L.placed
   ents_reset()
-  if old then
+  if #old > 0 then
     if PLAYER ~= DUMMY then
-      PLAYER.hp, PLAYER.data = old.hp, old.data
+      for i = 1, #old do
+        if PL[i] then PL[i].hp, PL[i].data = old[i].hp, old[i].data end
+      end
     else
-      LIST[#LIST + 1] = old
-      PLAYER = old
+      for i = 1, #old do LIST[#LIST + 1] = old[i] end
+      PL, PLAYER = old, old[1]
     end
   end
   emit("level", n, L.name)
@@ -995,6 +1067,7 @@ function ents_update()
     TX, TY = PLAYER.x + PLAYER.w / 2, PLAYER.y + PLAYER.h / 2
     track(TX, TY)
   end
+  if (ME or 0) == 0 and #PL > 1 then keep_together() end
   for i = 1, #LIST do
     local e = LIST[i]
     if e.alive then
@@ -1063,9 +1136,11 @@ function ents_draw()
       local flip = e.dir < 0
       if e.def.left then flip = not flip end
       local tint = tint_of(e)
+      local swap = e.pnum and e.pnum > 1 and PLAYER_PAL[e.pnum]
+      if swap then for a, b in pairs(swap) do pal(a, b) end end
       if tint and (e.age // 6) % 2 == 0 then pal(tint) end
       spr(ents_frame(e), math.floor(e.x - e.ox), math.floor(e.y - e.oy), e.def.sw or 1, e.def.sh or 1, flip)
-      if tint then pal() end
+      if tint or swap then pal() end
     end
   end
   for i = 1, #LIST do
@@ -1074,6 +1149,17 @@ function ents_draw()
       local x, y = math.floor(e.x + e.w / 2 - 10), math.floor(e.y - e.oy) - 6
       rectfill(x, y, 20, 4, 1)
       rectfill(x + 1, y + 1, math.floor(18 * e.bar), 2, 17)
+    end
+  end
+  -- with several players, a little arrow in each player's colour shows who is who
+  if #PL > 1 then
+    for i = 1, #PL do
+      local e = PL[i]
+      if e.alive then
+        local x, y = math.floor(e.x + e.w / 2), math.floor(e.y - e.oy) - 6
+        local c = PLAYER_COL[i] or 13
+        line(x - 2, y, x + 2, y, c) line(x - 1, y + 1, x + 1, y + 1, c) pset(x, y + 2, c)
+      end
     end
   end
   for i = 1, #LIST do

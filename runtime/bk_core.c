@@ -54,6 +54,8 @@ void bk_machine_init(bk_machine *m) {
   m->rng = 0x9E3779B97F4A7C15ull;
   m->master_vol = 0.5f;
   m->save.len = -1;
+  m->players = 1;
+  m->me = 0;
 }
 
 /* ---------------- graphics ---------------- */
@@ -207,22 +209,30 @@ void bk_to_rgb565(uint16_t *out) {
 
 /* ---------------- input ---------------- */
 
-void bk_set_input(uint16_t mask, const uint8_t *press) {
-  BK->btn_prev = BK->btn;
-  BK->btn = mask;
+void bk_set_input(int player, uint16_t mask, const uint8_t *press) {
+  if (player < 0 || player >= BK_MAX_PLAYERS) return;
+  __typeof__(BK->pad[0]) *p = &BK->pad[player];
+  /* a button held while a cart starts (Start from the launcher, say) counts only after it is let go */
+  if (p->fresh) { p->ignore = mask; p->fresh = 0; }
+  p->ignore &= mask;
+  mask &= (uint16_t)~p->ignore;
+  p->btn_prev = p->btn;
+  p->btn = mask;
   for (int i = 0; i < BK_NUM_BUTTONS; i++) {
-    BK->press[i] = press ? press[i] : ((mask >> i) & 1 ? 255 : 0);
-    if ((mask >> i) & 1) { if (BK->hold[i] < 65535) BK->hold[i]++; }
-    else BK->hold[i] = 0;
+    p->press[i] = ((p->ignore >> i) & 1) ? 0 : press ? press[i] : ((mask >> i) & 1 ? 255 : 0);
+    if ((mask >> i) & 1) { if (p->hold[i] < 65535) p->hold[i]++; }
+    else p->hold[i] = 0;
   }
 }
 
-int bk_btn(int i) { return i >= 0 && i < BK_NUM_BUTTONS && ((BK->btn >> i) & 1); }
+int bk_btn(int player, int i) {
+  return player >= 0 && player < BK_MAX_PLAYERS && i >= 0 && i < BK_NUM_BUTTONS && ((BK->pad[player].btn >> i) & 1);
+}
 
 /* pressed this frame, then auto-repeat after 15 frames every 4 frames */
-int bk_btnp(int i) {
-  if (i < 0 || i >= BK_NUM_BUTTONS) return 0;
-  int h = BK->hold[i];
+int bk_btnp(int player, int i) {
+  if (player < 0 || player >= BK_MAX_PLAYERS || i < 0 || i >= BK_NUM_BUTTONS) return 0;
+  int h = BK->pad[player].hold[i];
   if (h == 1) return 1;
   return h > 15 && ((h - 15) % 4) == 0;
 }

@@ -146,21 +146,29 @@ static int btn_index(lua_State *l, int i) {
   return ci(l, i);
 }
 
+/* the optional last argument is the player (1..4, default 1) */
+static int player_arg(lua_State *l, int i) { return (int)luaL_optinteger(l, i, 1) - 1; }
 static int l_btn(lua_State *l) {
-  if (lua_isnoneornil(l, 1)) { lua_pushinteger(l, BK->btn); return 1; }
-  lua_pushboolean(l, bk_btn(btn_index(l, 1)));
+  if (lua_isnoneornil(l, 1)) { lua_pushinteger(l, BK->pad[0].btn); return 1; }
+  lua_pushboolean(l, bk_btn(player_arg(l, 2), btn_index(l, 1)));
   return 1;
 }
-static int l_btnp(lua_State *l) { lua_pushboolean(l, bk_btnp(btn_index(l, 1))); return 1; }
+static int l_btnp(lua_State *l) { lua_pushboolean(l, bk_btnp(player_arg(l, 2), btn_index(l, 1))); return 1; }
 static int l_btnr(lua_State *l) {
-  int i = btn_index(l, 1);
-  lua_pushboolean(l, i >= 0 && i < BK_NUM_BUTTONS && ((BK->btn_prev >> i) & 1) && !((BK->btn >> i) & 1));
+  int i = btn_index(l, 1), p = player_arg(l, 2);
+  int ok = i >= 0 && i < BK_NUM_BUTTONS && p >= 0 && p < BK_MAX_PLAYERS;
+  lua_pushboolean(l, ok && ((BK->pad[p].btn_prev >> i) & 1) && !((BK->pad[p].btn >> i) & 1));
   return 1;
 }
 static int l_press(lua_State *l) {
-  int i = btn_index(l, 1);
-  lua_pushinteger(l, (i >= 0 && i < BK_NUM_BUTTONS) ? BK->press[i] : 0);
+  int i = btn_index(l, 1), p = player_arg(l, 2);
+  lua_pushinteger(l, (i >= 0 && i < BK_NUM_BUTTONS && p >= 0 && p < BK_MAX_PLAYERS) ? BK->pad[p].press[i] : 0);
   return 1;
+}
+/* PLAYERS (how many play) and ME (this device's player, 0 = shared screen) as Lua globals */
+static void set_player_globals(lua_State *l) {
+  lua_pushinteger(l, BK->players < 1 ? 1 : BK->players); lua_setglobal(l, "PLAYERS");
+  lua_pushinteger(l, BK->me); lua_setglobal(l, "ME");
 }
 
 /* ---- time / rng ---- */
@@ -353,6 +361,11 @@ int bk_lua_load_ex(const char *data, const char *code) {
   bk_reset_draw_state();
   BK->frame = 0;
   for (int c = 0; c < BK_CHANNELS; c++) BK->voice[c].len = 0;
+  /* every device in a linked game must start from the same state */
+  bk_srand(0);
+  memset(BK->pad, 0, sizeof(BK->pad));
+  for (int i = 0; i < BK_MAX_PLAYERS; i++) BK->pad[i].fresh = 1;
+  set_player_globals(L);
 
   if (run_chunk(bk_prelude_lua, "=entities-runtime")) return 1;
   if (data && data[0] && run_chunk(data, "=entities")) return 1;
@@ -372,6 +385,7 @@ int bk_lua_frame(void) {
   if (!L) return 1;
   BK->track[2] = 0;
   BK->sys[0] = 0;
+  set_player_globals(L);
   lua_getglobal(L, "_update");
   if (lua_isfunction(L, -1)) { if (pcall_budget(0) != LUA_OK) return 1; }
   else lua_pop(L, 1);

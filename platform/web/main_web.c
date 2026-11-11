@@ -17,9 +17,16 @@ EMSCRIPTEN_KEEPALIVE void bkw_init(void) { bk_machine_init(&machine); bk_set_log
 EMSCRIPTEN_KEEPALIVE int bkw_load(const char *code) { return bk_lua_load(code); }
 EMSCRIPTEN_KEEPALIVE int bkw_load_ex(const char *data, const char *code) { return bk_lua_load_ex(data, code); }
 EMSCRIPTEN_KEEPALIVE void bkw_stop(void) { bk_lua_close(); for (int c = 0; c < BK_CHANNELS; c++) machine.voice[c].len = 0; }
+/* player 1's input comes with the frame; set the others first with bkw_input */
 EMSCRIPTEN_KEEPALIVE int bkw_frame(int mask, uint8_t *press) {
-  bk_set_input((uint16_t)mask, press);
+  bk_set_input(0, (uint16_t)mask, press);
   return bk_lua_frame();
+}
+EMSCRIPTEN_KEEPALIVE void bkw_input(int player, int mask, uint8_t *press) { bk_set_input(player - 1, (uint16_t)mask, press); }
+/* players in the game and this window's player (0 = everyone shares this screen); set before loading a cart */
+EMSCRIPTEN_KEEPALIVE void bkw_players(int n, int me) {
+  machine.players = n < 1 ? 1 : (n > BK_MAX_PLAYERS ? BK_MAX_PLAYERS : n);
+  machine.me = me < 0 ? 0 : (me > machine.players ? machine.players : me);
 }
 EMSCRIPTEN_KEEPALIVE uint32_t *bkw_render(void) { bk_to_rgba(rgba); return rgba; }
 EMSCRIPTEN_KEEPALIVE float *bkw_audio(int frames) {
