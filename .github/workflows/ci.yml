@@ -26,6 +26,8 @@ jobs:
         run: node tools/sweeptest.cjs
       - name: Crossgate checks
         run: node tools/crossgatetest.cjs
+      - name: Tinwing checks
+        run: node tools/tinwingtest.cjs
 
   linked-bits:
     runs-on: ubuntu-latest

@@ -65,7 +65,7 @@ Tabs a game does not use (Track for a platformer, Map for a racer) wait under **
 
 1. Open **[dvrkstvr.github.io/bitkit](https://dvrkstvr.github.io/bitkit/)** in Chrome, Edge or Firefox.
 2. Press **▶ Run** (or Ctrl+Enter) to play the game that is open, Sprout Hop at first. Click the game screen and use the arrow keys with Z and X, or plug in a controller and press any button on it.
-3. **Games** at the top has every demo (Sprout Hop, Beacon Keeper, Sweep Storm, Kart Lab, Crossgate) and your own games. Each one keeps its own changes.
+3. **Games** at the top has every demo (Sprout Hop, Beacon Keeper, Sweep Storm, Kart Lab, Crossgate, Tinwing) and your own games. Each one keeps its own changes.
 4. Change something and press Run again. The **Game** tab has sliders for how the game feels, the other tabs are the editors.
 5. **Play** at the top shows the game on a Bit, the emulated PocketBit, with its home screen. Pick **2 Bits side by side** to try playing together. Hold Start+Select to go back to the home screen.
 
@@ -151,6 +151,18 @@ A tug-of-war crossbow duel. Wren (orange) fights east out of the Sea Gate, Rook 
 - Win a fight and you get the way: run for your gate. Your rival walks back in from the far side of the screen.
 - One player fights the Rook (CPU, Easy / Normal / Hard in Settings). Two players share one screen or play on linked Bits. With more players, the winner stays on and the loser goes to the back of the queue.
 - **Goal:** get out through your gate before your rival gets out of theirs.
+
+### Tinwing (2.5D)
+
+<img src="docs/media/tinwing.png" width="480" alt="Tinwing: an orange RC plane flying past the Drowned Belltower over a flooded sea">
+<img src="docs/media/tinwing-hangar.png" width="480" alt="Tinwing: the hangar blueprint, where you drag the corners of the plane so the motor and battery fit">
+
+A story game drawn in 2.5D like Kart Lab. Perch is a town on stilts, on a planet that is nearly all sea: letters go by pigeon and people go by boat. You play Pip, who builds radio-controlled planes. You're either in the hangar building, or in the air.
+
+- **Build the plane yourself.** The hangar shows the plane as a blueprint, from the side and from above. Pick a corner with the D-pad, grab it with **A**, move it, and drop it with **A**. The motor and battery are boxes that have to fit inside the body: a bigger motor needs a fatter nose, and the Twin Cell needs a wider body. You also shape the wings, which work out how the plane flies: more wing glides further, a short span turns quicker, and a bigger motor is faster but uses more battery. **L / R** (or **X**) switch between the Side, Top, Parts and Fly pages. Parts shows your inventory of motors, batteries and paints, and scrap from crates buys new ones.
+- **Fly.** A chase camera follows you over the sea and the islands (`floorh()`). The plane is the 3D model built from your blueprint and drawn with triangles. Left and right bank, and up and down climb and dive (swap these in Settings). The controls ease in and out on springs, the camera swings round a little late, and there are wingtip trails and speed lines. Hold **A** or squeeze **R** for the motor. Let go and you glide, which costs no battery. Warm air rings give a Tailwind, which is an effect on the Entities tab. To land, fly low over the yellow pad at Perch. If the battery goes flat you splash down, and Tobin fishes you out.
+- **The story:** a squall knocked the mail satchel out of the sky past the Drowned Belltower. Your first battery can't get you there and back, but there's a Twin Cell on top of the Belltower. Widen the body to fit it, then fly out to the reef.
+- **Goal:** find the mail satchel and fly it home to Perch. Continue takes you back to the hangar with your plane and everything you found.
 
 ## 🏎️ The demo: Kart Lab (2.5D)
 
