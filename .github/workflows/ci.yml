@@ -40,6 +40,10 @@ jobs:
         run: node tools/partytest.cjs
       - name: Windrow
         run: node tools/windrowtest.cjs
+      - name: Emulator apps (WASM)
+        run: node tools/emutest.cjs
+      - name: Emulators built natively, like the device firmware
+        run: tools/emutest_native.sh
       - name: Themes and player names
         run: node tools/themetest.cjs
       - name: Photos and clips (capture module)
@@ -62,5 +66,7 @@ jobs:
           npx playwright install --with-deps chromium || npx playwright install chromium
       - name: Linked Bits (browser)
         run: node tools/linktest.cjs
+      - name: Emulator apps (browser)
+        run: node tools/emubrowsertest.cjs
       - name: Share hub (browser)
         run: node tools/sharetest.cjs
