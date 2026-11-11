@@ -73,6 +73,8 @@ jobs:
         run: platform/sim/build/bitsim --link build/device-flash build/device-link --loss 15
       - name: Two linked Bits playing Mind Laps (race or team in lockstep) with packets lost
         run: platform/sim/build/bitsim --link build/device-flash build/device-link-ml --loss 15 --game "Mind Laps"
+      - name: Two Bits share a game and a photo with the Share app, with packets lost
+        run: platform/sim/build/bitsim --share build/device-flash build/device-share --loss 15
       - name: Frame times on the CI machine
         if: always()
         run: cat build/device-report.md >> "$GITHUB_STEP_SUMMARY" || true
@@ -127,3 +129,5 @@ jobs:
         run: node tools/emubrowsertest.cjs
       - name: Share hub (browser)
         run: node tools/sharetest.cjs
+      - name: Share app, Bit to Bit (browser)
+        run: node tools/shareapptest.cjs
