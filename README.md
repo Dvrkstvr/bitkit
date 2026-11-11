@@ -147,10 +147,10 @@ A minesweeper battle royale for up to 20 Bits, with bots filling the empty spots
 
 A tug-of-war crossbow duel. Wren (orange) fights east out of the Sea Gate, Rook (blue) fights west out of the Mill Gate, through seven rooms of a little town.
 
-- **A** shoots, **B** jumps, **up / down** raises or lowers the crossbow (all the way down crouches). A bolt that flies at the height of your crossbow bounces off it, so shoot where they aren't guarding.
-- Walk into your rival with a bolt loaded to stab them. Two loaded crossbows at the same height clash and push both back.
-- You hold one bolt loaded and one spare. Bolts that miss, bounce or fall from the fallen lie on the ground: walk over them to pick them up.
-- Win a fight and you get the way: run for your gate. Your rival comes back in front of you.
+- **X** shoots, **A** jumps, hold **down** to crouch. Bolts drop as they fly and nothing blocks them: jump over low ones, crouch under high ones (from far away, a dropping bolt still hits a crouching rival).
+- Walk into your rival with a bolt loaded to stab them. If you both walk in loaded at the same height, the bolts clash and push you both back.
+- You hold one bolt loaded and one spare. Bolts that miss, or fall from the fallen, lie on the ground: walk over them to pick them up.
+- Win a fight and you get the way: run for your gate. Your rival walks back in from the far side of the screen.
 - One player fights the Rook (CPU, Easy / Normal / Hard in Settings). Two players share one screen or play on linked Bits. With more players, the winner stays on and the loser goes to the back of the queue.
 - **Goal:** get out through your gate before your rival gets out of theirs.
 

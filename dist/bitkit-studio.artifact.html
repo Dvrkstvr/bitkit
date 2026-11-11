@@ -16367,17 +16367,17 @@ end
   const code = `-- Crossgate: a tug-of-war crossbow duel (1-2 players; with more, the winner stays on)
 -- Wren (orange) fights east to the Sea Gate, Rook (blue) fights west to the Mill Gate.
 -- Win a fight and you get the way: run for your gate. Your rival comes back ahead of you.
---   Left / right: walk. Up / down: raise or lower the crossbow (all the way down = crouch).
---   A: shoot. B: jump. Walk into your rival with a bolt loaded to stab.
---   A bolt that flies at the height of your crossbow bounces off it.
+--   Left / right: walk. Hold down: crouch. A: jump. X: shoot.
+--   Bolts drop as they fly and can't be blocked: jump over them or crouch under them.
+--   Walk into your rival with a bolt loaded to stab.
 --   You carry one bolt loaded and one spare in hand. Walk over bolts to pick them up.
 -- One player fights the Rook (CPU). Linked Bits run in lockstep: game logic only uses
 -- rnd() and the frame count, never clock(), and drawing never calls rnd().
 
 GROUND, GRAV, JUMP = 200, 0.25, -4.3
 SPEED, CROUCH_SPEED = 1.7, 0.9
-BOLT_V, BOLT_RANGE, RELOAD = 6, 230, 36
-STANCE_H = { 18, 12, 6 }          -- crossbow height above the feet: high, middle, low (crouched)
+BOLT_V, BOLT_G, RELOAD = 6, 0.03, 36   -- bolt speed, how fast bolts drop, frames to crank the next bolt
+STANCE_H = { 17, 17, 7 }          -- crossbow height above the feet: stance 2 standing, 3 crouched
 BODY_H = { 24, 24, 14 }
 SIDE = { "WREN", "ROOK" }
 COL = { { 10, 9 }, { 21, 20 } }   -- cloak and shade colours of each side
@@ -16402,9 +16402,9 @@ function _init()
     title = "Crossgate",
     goal = "Fight your way through the town and out of your gate before your rival gets out of theirs.",
     help = {
-      "Left / right: walk. Up / down: raise or lower your crossbow (all the way down to crouch). B: jump.",
-      "A: shoot. Walk into your rival with a bolt loaded to stab them.",
-      "A bolt flying at the height of your crossbow bounces off it.",
+      "Left / right: walk. Hold down: crouch. A: jump. X: shoot.",
+      "Bolts drop as they fly and nothing stops them: jump over low ones, crouch under high ones.",
+      "Walk into your rival with a bolt loaded to stab them.",
       "You hold one bolt loaded and one spare. Walk over bolts to pick them up.",
       "Win a fight to get the way, then run for your gate. Wren goes east, Rook goes west.",
     },
@@ -16464,7 +16464,7 @@ function burst(x, y, c, n, sp)
   end
 end
 
--- a bolt falls loose in this room (from a corpse, a wall, a parry or the end of its flight)
+-- a bolt falls loose in this room (from a corpse, a wall or the ground)
 function drop(x, y)
   x = mid(6, x, 314)
   for i = 1, 40 do if solid_at(x, y) then y = y - 1 end end
@@ -16513,37 +16513,41 @@ end
 function play_tune(notes) tune = {} for i, n in ipairs(notes) do tune[#tune + 1] = { n[1], gt + n[2], n[3] or 10 } end end
 
 -- ---------------------------------------------------------------- input
-NOIN = { l = false, r = false, up = false, dn = false, a = false, b = false }
+-- I.shoot / I.jump are presses, I.crouch is held
+NOIN = { l = false, r = false, crouch = false, shoot = false, jump = false }
 function human(p)
-  return { l = btn("left", p), r = btn("right", p), up = btnp("up", p), dn = btnp("down", p), a = btnp("a", p), b = btnp("b", p) }
+  return { l = btn("left", p), r = btn("right", p), crouch = btn("down", p), shoot = btnp("x", p), jump = btnp("a", p) }
 end
 
 -- the Rook, when you play alone
+-- where a flying bolt will be (its height) when it reaches x
+function bolt_y_at(b, x)
+  local n = math.abs(x - b.x) / BOLT_V
+  return b.y + b.vy * n + BOLT_G * n * (n + 1) / 2, n
+end
 function cpu(f, o)
-  local I = { l = false, r = false, up = false, dn = false, a = false, b = false }
+  local I = { l = false, r = false, crouch = false, shoot = false, jump = false }
   local sk = setting("cpu") or 2
-  local want, want_s = 0, f.stance
+  local want = 0
   local dx = o.x - f.x
   local dist = math.abs(dx)
   f.atk_t = math.max(0, f.atk_t - 1)
 
-  -- a bolt coming at me?
-  local threat
+  -- a bolt coming at me? jump over it or crouch under it
+  local threat, ty, tn
   for _, b in ipairs(flying) do
-    if b.owner ~= f and sgn(b.vx) == sgn(f.x - b.x) and math.abs(f.x - b.x) < 30 + sk * 22 then threat = b end
+    if b.owner ~= f and sgn(b.vx) == sgn(f.x - b.x) and math.abs(f.x - b.x) < 40 + sk * 25 then
+      local y, n = bolt_y_at(b, f.x)
+      if y <= f.y and y >= f.y - BODY_H[2] and (not tn or n < tn) then threat, ty, tn = b, y, n end
+    end
   end
-  if threat and threat ~= f.seen then
-    f.seen, f.dodge = threat, rnd(100) <= ({ 30, 60, 85 })[sk]
-  end
+  if threat and threat ~= f.seen then f.seen, f.dodge = threat, rnd(100) <= ({ 30, 60, 85 })[sk] end
   local armed = f.loaded or f.rl > 0 or f.hand
   if threat and f.dodge then
-    want_s = nil
-    for s = 1, 3 do if math.abs(threat.y - (f.y - STANCE_H[s])) <= 3 then want_s = s end end
-    if not want_s then
-      if threat.y > f.y - 9 and f.onground then I.b = true; want_s = f.stance
-      else want_s = 3 end
-    end
-  elseif not armed or (not f.hand and not f.loaded and f.rl == 0) then
+    if ty < f.y - BODY_H[3] - 1 then I.crouch = true              -- high: duck under it
+    elseif tn <= 9 and f.onground then I.jump = true end          -- low: jump it at the last moment
+    if f.loaded and f.rl == 0 and o.alive and ty < f.y - BODY_H[3] - 1 and rnd(100) <= 10 * sk then I.shoot = true end
+  elseif not armed then
     -- no bolts: fetch the nearest one, keeping away from a loaded rival
     local best, bd = nil, 9999
     for _, l in ipairs(loose[room]) do
@@ -16552,7 +16556,6 @@ function cpu(f, o)
     end
     if best then want = sgn(best.x - f.x) elseif runner == f.n then want = f.dir
     elseif o.alive then want = -sgn(dx) end
-    want_s = 2
   elseif o.alive then
     local ahead = sgn(dx) == f.dir
     if runner == f.n and (not ahead or (not o.loaded and o.rl == 0 and dist > 30)) then
@@ -16560,43 +16563,29 @@ function cpu(f, o)
     elseif f.loaded and f.rl == 0 then
       if not o.loaded and o.rl == 0 then
         want = sgn(dx)                                -- rival unarmed: walk in and stab
-        want_s = o.stance == 3 and 3 or 2
       else
-        if dist > 130 then want = sgn(dx) elseif dist < 56 then want = -sgn(dx) end
-        if f.atk_t == 0 and not f.aim and dist < 180 then
-          -- pick a height that hits the rival and isn't covered by their crossbow
-          local ch = o.y - STANCE_H[o.stance]
-          local opts = {}
-          for s = 1, 3 do
-            local h = f.y - STANCE_H[s]
-            if h <= o.y and h >= o.y - BODY_H[o.stance] and math.abs(h - ch) > 3 then opts[#opts + 1] = s end
-          end
-          if #opts > 0 then f.aim = opts[rnd(#opts)] end
-          f.atk_t = 20
+        if dist > 150 then want = sgn(dx) elseif dist < 60 then want = -sgn(dx) end
+        if f.atk_t == 0 and dist < 190 then
+          -- crouched shots fly low (jump them), standing shots fly high (duck them)
+          f.low = rnd(100) <= 35
+          f.aim, f.atk_t = true, 0
         end
         if f.aim then
-          want_s = f.aim
-          if f.stance == f.aim and f.cd == 0 then
-            I.a = true
-            f.aim, f.atk_t = nil, ({ 100, 60, 34 })[sk] + rnd(40)
+          I.crouch = f.low
+          if f.stance == (f.low and 3 or 2) and f.cd == 0 then
+            I.shoot = true
+            f.aim, f.atk_t = false, ({ 100, 60, 34 })[sk] + rnd(40)
           end
-        else
-          want_s = o.stance                            -- guard: match their height so their bolts bounce off
         end
       end
     else
-      want = -sgn(dx)                                 -- reloading: step back and guard
-      want_s = o.stance
+      want = -sgn(dx)                                 -- reloading: step back
     end
   elseif runner == f.n then
     want = f.dir
   end
   if want < 0 then I.l = true elseif want > 0 then I.r = true end
-  f.st_t = (f.st_t or 0) + 1
-  if want_s and f.st_t >= ({ 14, 8, 4 })[sk] then
-    if want_s < f.stance then I.up = true; f.st_t = 0 elseif want_s > f.stance then I.dn = true; f.st_t = 0 end
-  end
-  if f.blocked and f.onground and want ~= 0 then I.b = true end
+  if f.blocked and f.onground and want ~= 0 and not I.crouch then I.jump = true end
   return I
 end
 
@@ -16658,8 +16647,9 @@ end
 function fighter(f, I, o)
   if f.alive then
     if f.stun > 0 then f.stun = f.stun - 1; I = NOIN end
-    if I.up and f.stance > 1 then f.stance = f.stance - 1; sfx("E5", 0, 0.12, 2) end
-    if I.dn and f.stance < 3 then f.stance = f.stance + 1; sfx("C5", 0, 0.12, 2) end
+    local st = I.crouch and f.onground and 3 or 2
+    if st == 2 and f.stance == 3 and box_hit(f.x, f.y, BODY_H[2]) then st = 3 end   -- no room to stand up
+    f.stance = st
     local mv = (I.r and 1 or 0) - (I.l and 1 or 0)
     f.push = mv
     local sp = f.stance == 3 and CROUCH_SPEED or SPEED
@@ -16669,8 +16659,8 @@ function fighter(f, I, o)
     if o.alive and math.abs(o.x - f.x) < 170 then
       if o.x ~= f.x then f.face = sgn(o.x - f.x) end
     elseif mv ~= 0 then f.face = mv end
-    if I.b and f.onground then f.vy = JUMP; sfx("C4", 1, 0.2, 5, nil, pan(f.x), 400) end
-    if I.a and f.loaded and f.rl == 0 and f.cd == 0 then shoot(f) end
+    if I.jump and f.onground then f.vy = JUMP; sfx("C4", 1, 0.2, 5, nil, pan(f.x), 400) end
+    if I.shoot and f.loaded and f.rl == 0 and f.cd == 0 then shoot(f) end
     if not f.loaded and f.rl == 0 and f.hand then f.hand, f.rl = false, RELOAD end
     if f.rl > 0 then
       f.rl = f.rl - 1
@@ -16727,7 +16717,7 @@ end
 
 function shoot(f)
   f.loaded, f.cd = false, 14
-  flying[#flying + 1] = { x = f.x + f.face * 4, y = f.y - STANCE_H[f.stance], vx = f.face * BOLT_V, d = 0, owner = f }
+  flying[#flying + 1] = { x = f.x + f.face * 4, y = f.y - STANCE_H[f.stance], vx = f.face * BOLT_V, vy = -0.2, owner = f }
   f.vx = -f.face
   sfx("A3", 2, 0.45, 6, nil, pan(f.x), -500)
   sfx("E6", 3, 0.15, 2, nil, pan(f.x))
@@ -16763,59 +16753,38 @@ function can_stab(a, o)
   local dx = o.x - a.x
   return math.abs(dx) < 16 and math.abs(o.y - a.y) < 18 and sgn(dx) == a.face and a.push == a.face
 end
-function guards(o, a)        -- o's crossbow covers the height a stabs at
-  return o.loaded and o.face == -a.face and o.rl == 0 and o.stun == 0 and
-    math.abs((o.y - STANCE_H[o.stance]) - (a.y - STANCE_H[a.stance])) <= 3
-end
 function stabs()
   local a, b = F[1], F[2]
   local sa, sb = can_stab(a, b), can_stab(b, a)
   if sa and sb then
-    if guards(a, b) then clash(a, b)
+    -- both walk in with a bolt loaded: at the same height the bolts clash, otherwise both are hit
+    if a.stance == b.stance then clash(a, b)
     else
       kill(a, nil, sgn(a.x - b.x)) kill(b, nil, sgn(b.x - a.x))
       banner("DOUBLE HIT!", 27)
     end
   elseif sa or sb then
     local k, v = sa and a or b, sa and b or a
-    if guards(v, k) then clash(k, v)
-    else kill(v, k, k.face); sfx("G2", 3, 0.5, 10) end
+    kill(v, k, k.face); sfx("G2", 3, 0.5, 10)
   end
 end
 
 function bolts()
   for i = #flying, 1, -1 do
     local b = flying[i]
-    local px = b.x
-    b.x, b.d = b.x + b.vx, b.d + BOLT_V
-    local gone = b.hit or false
+    local px, py = b.x, b.y
+    b.vy = b.vy + BOLT_G
+    b.x, b.y = b.x + b.vx, b.y + b.vy
+    local gone = false
     for _, t in ipairs(F) do
       if not gone and t.alive and t ~= b.owner then
         local lo, hi = math.min(px, b.x) - 5, math.max(px, b.x) + 5
-        if t.x >= lo and t.x <= hi and b.y <= t.y and b.y >= t.y - BODY_H[t.stance] then
-          if t.face == -sgn(b.vx) and t.rl == 0 and t.stun == 0 and math.abs(b.y - (t.y - STANCE_H[t.stance])) <= 3 then
-            drop(t.x + t.face * 10, b.y)               -- it bounces off the crossbow
-            burst(t.x + t.face * 9, b.y, { 27, 13 }, 8, 2)
-            sfx("E6", 5, 0.4, 4, nil, pan(t.x)) sfx("C7", 5, 0.2, 3, nil, pan(t.x))
-            t.vx = -t.face * 1.5
-          else
-            kill(t, b.owner, sgn(b.vx))
-          end
-          gone = true
+        if t.x >= lo and t.x <= hi then
+          -- the bolt's height as it passes the rival's middle
+          local y = py + (b.y - py) * mid(0, (t.x - px) / b.vx, 1)
+          if y <= t.y and y >= t.y - BODY_H[t.stance] then kill(t, b.owner, sgn(b.vx)); gone = true end
         end
       end
-    end
-    if not gone then
-      -- two bolts meeting head on knock each other down
-      for j = #flying, 1, -1 do
-        local c = flying[j]
-        if j ~= i and not c.hit and sgn(c.vx) ~= sgn(b.vx) and math.abs(c.y - b.y) <= 2 and math.abs(c.x - b.x) <= 7 then
-          c.hit, gone = true, true
-          drop(c.x, c.y) burst(c.x, c.y, { 27, 13 }, 6, 1.5)
-          sfx("D6", 5, 0.3, 3, nil, pan(c.x))
-        end
-      end
-      if gone then drop(b.x, b.y) end
     end
     if not gone then
       if b.x < -12 or b.x > 332 then gone = true
@@ -16823,18 +16792,18 @@ function bolts()
         drop(b.x - sgn(b.vx) * 6, b.y - 1)
         sfx("C4", 3, 0.25, 3, nil, pan(b.x))
         gone = true
-      elseif b.d >= BOLT_RANGE then drop(b.x, b.y); gone = true end
+      end
     end
-    if gone then b.hit = true end
+    if gone then table.remove(flying, i) end
   end
-  for i = #flying, 1, -1 do if flying[i].hit then table.remove(flying, i) end end
 end
 
 function spawn(f, x, keep)
-  f.alive, f.ghost, f.x, f.y, f.vx, f.vy = true, false, x, 30, 0, 0
+  -- come back on the ground at the edge of the screen, walking in (never dropped from the sky)
+  f.alive, f.ghost, f.x, f.y, f.vx, f.vy = true, false, x, floor_y(room, x), 0, 0
   f.stance, f.loaded, f.hand, f.rl, f.cd, f.stun = 2, true, keep and keep.hand or false, 0, 0, 0
   f.face, f.aim, f.atk_t, f.keep = f.dir, nil, 50, nil
-  burst(x, 40, { 13, 23 }, 10, 1)
+  burst(x, f.y - 2, { 29, 28 }, 8, 1)
   sfx("G4", 1, 0.25, 8, nil, pan(x), -300)
 end
 
@@ -16845,10 +16814,10 @@ function respawns()
       if f.dead_t == 0 then
         local r = runner ~= 0 and runner ~= f.n and F[runner] or nil
         if r and r.alive then
-          local x = r.dir > 0 and 296 or 24          -- ahead of the runner, in their way
+          local x = r.dir > 0 and 312 or 8           -- the far side of the screen, in the runner's way
           if math.abs(r.x - x) >= 90 then spawn(f, x, f.keep) end
         else
-          spawn(f, f.dir > 0 and 40 or 280, f.keep)
+          spawn(f, f.dir > 0 and 8 or 312, f.keep)
         end
       end
     end
@@ -16865,7 +16834,7 @@ function exits()
   r.y, r.vy = floor_y(room, r.x), 0
   local o = F[3 - runner]
   o.keep = o.alive and { hand = o.hand } or nil
-  o.alive, o.ghost, o.dead_t = false, true, 50
+  o.alive, o.ghost, o.dead_t = false, true, 20
   flying, fx = {}, {}
   wipe = 14
   banner(ROOMS[room].name, 13)
@@ -16919,9 +16888,10 @@ function _draw()
   for _, f in ipairs(F) do if f.alive then draw_fighter(f) end end
   for _, b in ipairs(flying) do
     local s, x, y = sgn(b.vx), math.floor(b.x), math.floor(b.y)
-    line(x - s * 9, y, x, y, 29)
+    local ty = math.floor(b.y - b.vy * 1.5 + 0.5)
+    line(x - s * 9, ty, x, y, 29)
     pset(x, y, 13)
-    pset(x - s * 9, y - 1, COL[b.owner.n][1]) pset(x - s * 8, y + 1, COL[b.owner.n][1])
+    pset(x - s * 9, ty - 1, COL[b.owner.n][1]) pset(x - s * 8, ty + 1, COL[b.owner.n][1])
   end
   for _, p in ipairs(fx) do pset(p.x, p.y, p.c) end
   hud()
