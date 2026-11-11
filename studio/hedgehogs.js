@@ -609,7 +609,7 @@ texts{
     ["PICK A GAME"] = "WÄHL EIN SPIEL",
     ["1 player"] = "1 Spieler",
     ["# players"] = "# Spieler",
-    ["left / right: pick    A: play"] = "links / rechts: wählen    A: spielen",
+    ["left / right: pick    A: play"] = "Wahl: links/rechts  A: spielen",
     ["Fence off #%. Mind the moles!"] = "Umzäun #%. Pass auf die Maulwürfe auf!",
     ["Most land wins!"] = "Das meiste Land gewinnt!",
     ["GARDEN # DONE!"] = "GARTEN # FERTIG!",

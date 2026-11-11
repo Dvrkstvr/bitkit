@@ -166,7 +166,7 @@ Say how many players your game takes in `game{}`, as a plain number or `{min, ma
 
 ```lua
 game{ title = "Kart Lab", players = {1, 8}, ... }
-game{ title = "Windrow", players = 1, ... }
+game{ title = "Tinwing", players = 1, ... }
 ```
 
 The home screen and the studio's Games menu show it on every game (`1 player`, `1-4 players`), and linked Bits use it: a game started on a Bit while other Bits are on their home screens starts on as many of them as it takes (Sprout Hop, 1-2 players, on 3 Bits: 2 play, the third stays home), and a one-player game plays on that Bit alone. Without `players = ...` a game is one-player, unless its code uses `PLAYERS` (then 1-8). The host reads the field from your code before the game runs, so write plain numbers there, not expressions.

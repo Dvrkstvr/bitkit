@@ -16,7 +16,7 @@ The game runtime and browser studio for **PocketBit**, a DIY ESP32-S3 handheld.
 ![ESP32-S3](https://img.shields.io/badge/ESP32--S3-target-E7352C?logo=espressif&logoColor=white)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-4aa3df.svg)](CONTRIBUTING.md)
 
-### [▶ Open the studio](https://dvrkstvr.github.io/bitkit/) · [Offline version](dist/bitkit-studio.html) · [Hardware repo](https://github.com/Dvrkstvr/pocketbit)
+### [▶ Open the studio](https://dvrkstvr.github.io/bitkit/) · [🎮 Share website](https://dvrkstvr.github.io/bitkit/hub.html) · [Offline version](dist/bitkit-studio.html) · [Hardware repo](https://github.com/Dvrkstvr/pocketbit)
 
 <img src="docs/media/sprout-hop.gif" width="560" alt="Sprout Hop, the demo game, running in BitKit">
 
@@ -135,7 +135,15 @@ BitKit's flagship game, and it is growing. You arrive in the valley of Windrow w
   the day's prices and tops up an empty trough.
 
   ![The tractor on its route beside the silo](docs/media/windrow-route.png)
-- Coming next: visits and trades between linked Bits.
+- **Neighbours.** Every Bit keeps its own farm, and Bits in reach are neighbours (in the studio: open
+  Windrow in two windows). The north road lists them; pick one and you walk over to their farm as it
+  really is, in their season and weather. There you can water their crops, see each other walk about,
+  and leave gifts at their crate. Every farm has a wish a day: bring that crop and the valley pays you
+  well. Everything the farms in reach reap fills one fair basket, and when it is full every farm gets
+  150 coins and watered fields. It all runs on network events, so it works between PocketBits over
+  ESP-NOW and survives lost packets.
+
+  ![Visiting a neighbour's farm](docs/media/windrow-visit.png)
 
 ### Beacon Keeper
 
@@ -182,12 +190,12 @@ A tug-of-war crossbow duel. Wren (orange) fights east out of the Sea Gate, Rook 
 ### Tinwing (2.5D)
 
 <img src="docs/media/tinwing.png" width="480" alt="Tinwing: an orange RC plane banking towards the Drowned Belltower over a flooded sea">
-<img src="docs/media/tinwing-hangar.png" width="480" alt="Tinwing: the hangar blueprint, where you drag the corners of the plane so the motor and battery fit">
+<img src="docs/media/tinwing-hangar.png" width="480" alt="Tinwing: the hangar blueprint from above, with the motor and battery boxes inside the body and toy cannons on the wings">
 
 A story game drawn in 2.5D like Kart Lab. Perch is a town on stilts, on a planet that is nearly all sea: letters go by pigeon and people go by boat. You play Pip, who builds radio-controlled planes. You're either in the hangar building, or in the air.
 
-- **Build the plane yourself.** The hangar shows the plane as a blueprint, from the side and from above. Pick a corner with the D-pad, grab it with **A**, move it, and drop it with **A**. The motor and battery are boxes that have to fit inside the body: a bigger motor needs a fatter nose, and the Twin Cell needs a wider body. You also shape the wings, which work out how the plane flies: more wing glides further, a short span turns quicker, and a bigger motor is faster but uses more battery. **L / R** (or **X**) switch between the Side, Top, Parts and Fly pages. Parts shows your inventory of motors, batteries and paints, and scrap from crates buys new ones.
-- **Fly.** A chase camera follows you over the sea and the islands (`floorh()`). The plane is the 3D model built from your blueprint and drawn with triangles. Left and right bank, and up and down climb and dive (swap these in Settings). The controls ease in and out on springs, the camera swings round a little late, and there are wingtip trails and speed lines. Hold **A** or squeeze **R** for the motor. Let go and you glide, which costs no battery. Warm air rings give a Tailwind, which is an effect on the Entities tab. To land, fly low over the yellow pad at Perch. If the battery goes flat you splash down, and Tobin fishes you out.
+- **Build the plane yourself.** The hangar shows the plane as a blueprint, from the side and from above. Pick a corner with the D-pad, grab it with **A**, move it, and drop it with **A**. The motor (**M**) and battery (**B**) are boxes that have to fit inside the body, and you can grab them too and slide them along it. The motor has to stay in the front half. A bigger motor needs a fatter nose or a spot further back, and the Twin Cell needs a wider body. What you see is what fits: if a box sits inside the outline in both views, it fits. You also shape the wings, which work out how the plane flies: more wing glides further, a short span turns quicker, and a bigger motor is faster but uses more battery. **L / R** (or **X**) switch between the Side, Top, Parts and Fly pages. Parts shows your inventory of motors, batteries, wing cannons and paints, and scrap from crates buys new ones. Cannons sit on the wings, one on each side: slide them along the wing on the Top page. Further out they make the plane roll a little slower.
+- **Fly.** A chase camera follows you over the sea and the islands (`floorh()`). The plane is the 3D model built from your blueprint and drawn with triangles. Left and right bank, and up and down climb and dive (swap these in Settings). The controls ease in and out on springs, the camera swings round a little late, and there are wingtip trails and speed lines. Hold **A** or squeeze **R** for the motor. Let go and you glide, which costs no battery. Warm air rings give a Tailwind, which is an effect on the Entities tab. With cannons fitted, **B** fires them: pop the balloons for scrap. To land, fly low over the yellow pad at Perch. If the battery goes flat you splash down, and Tobin fishes you out.
 - **The story:** a squall knocked the mail satchel out of the sky past the Drowned Belltower. Your first battery can't get you there and back, but there's a Twin Cell on top of the Belltower. Widen the body to fit it, then fly out to the reef.
 - **Goal:** find the mail satchel and fly it home to Perch. Continue takes you back to the hangar with your plane and everything you found.
 
@@ -208,6 +216,8 @@ Three games for 1 to 8 players, on one screen or on linked Bits. Each one opens 
 Beach volleyball with a pufferfish. Every touch puffs it up: it gets bigger and faster until somebody misses.
 
 - **Left / right** run, **A** jumps, **B** dives along the sand.
+- **Serving:** nobody is frozen after a point. The side that lost it serves: the server carries the puffer above their head, walks to where they want to serve from, and jumps. A moment later the puffer lets go, flying on the way the server was moving. A server who waits 5 seconds serves by itself.
+- **Setup and New match:** after picking Match or Rally, everyone picks their own colour (left / right) and the net height (low, normal, high), the puffer (floaty, normal, heavy), its size and the points to win can be set. New match in the pause menu, or A after a match, starts over with the same setup; B after a match goes back to the setup.
 - **Match** (against each other): odd players on the left, even players on the right, and crabs fill the empty spots. If the puffer lands on your sand, the other side scores. A side may touch it 3 times in a row. Alone you play a crab (Easy, Normal or Hard in Settings).
 - **Rally** (together): everyone keeps the puffer flying, and every pass over the net counts. Three drops end the run.
 - **Goal:** win a Match, or pass the puffer 30 times in a row in a Rally.

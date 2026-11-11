@@ -452,6 +452,8 @@ button.primary { background: #2f6b3a; border-color: #4fa04a; }
 button.primary:hover { background: #3a7f46; }
 button.active { background: #3a2e5c; border-color: #8e4fb0; }
 button.tiny { padding: 0 6px; font-size: 11px; }
+a.btnlink { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; color: inherit; text-decoration: none; white-space: nowrap; }
+a.btnlink:hover { border-color: var(--dim); }
 select { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; }
 .dim { color: var(--dim); }
 .small { font-size: 11px; }
@@ -14160,7 +14162,7 @@ PASTURE = { x = 4, y = 22, w = 14, h = 4 }
 
 -- ---------------------------------------------------------------- the world
 -- . grass  : path  ~ water  T tree  B brambles  1-3 plots  h hut  c crate  W wagon  N Marrow  m mill
--- X washed-out road  t tin box  M old mine  o standing stone  S fallen pine
+-- X the north road to the neighbours  t tin box  M old mine  o standing stone  S fallen pine
 -- V the rusted tractor  Z the silo
 -- p pasture  k hen house  g goat shed  r feeding trough
 FARM = {
@@ -14736,6 +14738,390 @@ function silo_sell()
   persist()
 end
 
+-- ---------------------------------------------------------------- neighbours: other Bits in reach
+-- Every Bit keeps its own farm. Linked Bits talk with network events (net_send / net_recv): the north road
+-- leads to a neighbour's farm, where you can walk about, water their crops and leave gifts at their crate.
+-- Each farm has a wish a day (a gift of it is paid back), and everything the valley reaps fills one fair basket.
+EV_HI, EV_GET, EV_INFO, EV_ROW, EV_POS, EV_WATER, EV_GIFT, EV_THANK, EV_FAIR = 4101, 4102, 4103, 4104, 4105, 4106, 4107, 4108, 4109
+WIRE, WIRE_BY = {}, {}
+for i, c in ipairs(CROPS) do WIRE[#WIRE + 1] = c.key end
+for i, f in ipairs(FOUND) do WIRE[#WIRE + 1] = f.key end
+for i, k in ipairs(WIRE) do WIRE_BY[k] = i end
+CELLS = {}
+for p = 1, #PLOTS do for i = 1, PLOTS[p].w * PLOTS[p].h do CELLS[#CELLS + 1] = { p, i } end end
+NCH = (#CELLS + 9) // 10            -- the fields travel ten cells to an event
+FAIR_EACH = 25                      -- crops per farm that fill the fair basket
+function item_name(k) return CROP_BY[k] and CROPS[CROP_BY[k]].name or FOUND_BY[k].name end
+function net_reset()
+  NEAR, GUESTS, visiting, HOME, fetch, outbox, seen_gift, VG, VF = {}, {}, nil, nil, nil, {}, {}, nil, nil
+  fair_cool, fair_echo, net_t, water_note, refresh_i = 0, 0, 0, 0, 0
+  nonce = (clock() * 31 + (NET_ID or 0)) % 100000
+end
+function who(id) return net_name(id, 8) or ("Bit " .. id % 1000) end
+function mine() return HOME and HOME.G or G end                -- my own farm, also while I am away visiting
+function my_field() return HOME and HOME.FIELD or FIELD end
+function near_ids()
+  local L = {}
+  for id in pairs(NEAR) do L[#L + 1] = id end
+  table.sort(L)
+  return L
+end
+function my_wish()
+  local me = mine()
+  if me.wishday == me.day then return 0 end
+  return ((NET_ID or 0) + me.day * 7) % #CROPS + 1
+end
+function fair_count() local me = mine() return clamp(me.grown - me.fair0, 0, 999) end
+function fair_total()
+  local n, sum = 1, fair_count()
+  for id, o in pairs(NEAR) do n, sum = n + 1, sum + o.fair end
+  return sum, n * FAIR_EACH, n
+end
+function has_guest()
+  for id, o in pairs(NEAR) do if o.at == NET_ID then return true end end
+  return false
+end
+
+-- one piece of my farm for a visitor: piece 0 is the yard, the others ten field cells each
+function send_chunk(to, ch)
+  local me, F = mine(), my_field()
+  if ch == 0 then
+    local flags, hens, goats = 0, 0, 0
+    for p = 1, 3 do if me.plots[p] then flags = flags | (1 << (p - 1)) end end
+    flags = flags | me.coop * 8 | me.shed * 16 | me.silo_b * 32 | me.trac * 64 | (me.rain and 128 or 0) | me.mill * 256
+    for _, a in ipairs(me.an) do if a.k == "h" then hens = hens + 1 else goats = goats + 1 end end
+    net_send(EV_INFO, to, me.day, me.clk, flags, hens * 16 + goats, fl(me.tx / C) + fl(me.ty / C) * 64, me.feed)
+    return
+  end
+  local v = {}
+  for j = 0, 4 do
+    local w = 0
+    for h = 0, 1 do
+      local cm = CELLS[(ch - 1) * 10 + j * 2 + h + 1]
+      if cm then
+        local f = F[cm[1]][cm[2]]
+        w = w | (f.k | f.c << 3 | math.min(f.age, 15) << 7 | (f.wet and 1 or 0) << 11) << (h * 12)
+      end
+    end
+    v[j + 1] = w
+  end
+  net_send(EV_ROW, to, ch, v[1], v[2], v[3], v[4], v[5])
+end
+function apply_info(day, clk, flags, herd_n, tr, feed)
+  local g = VG
+  g.day, g.clk, g.feed = day, clamp(clk, 0, DAY_FRAMES - 1), feed
+  for p = 1, 3 do g.plots[p] = flags & (1 << (p - 1)) ~= 0 end
+  g.coop, g.shed, g.silo_b, g.trac = flags >> 3 & 1, flags >> 4 & 1, flags >> 5 & 1, flags >> 6 & 1
+  g.rain, g.mill = flags & 128 ~= 0, flags >> 8 & 3
+  g.tx, g.ty = tr % 64 * C + 8, tr // 64 * C + 12
+  local hens, goats = clamp(herd_n >> 4, 0, 4), clamp(herd_n & 15, 0, 2)
+  if #g.an ~= hens + goats then
+    g.an = {}
+    for i = 1, hens do g.an[#g.an + 1] = { k = "h", n = i, love = 10, p = 0, m = 0 } end
+    for i = 1, goats do g.an[#g.an + 1] = { k = "g", n = i, love = 10, p = 0, m = 0 } end
+    if G == g then place_animals() end
+  end
+end
+function apply_row(ch, ...)
+  local v = { ... }
+  for j = 0, 4 do
+    for h = 0, 1 do
+      local cm = CELLS[(ch - 1) * 10 + j * 2 + h + 1]
+      if cm and v[j + 1] then
+        local w = v[j + 1] >> (h * 12) & 4095
+        local f = VF[cm[1]][cm[2]]
+        f.k, f.c, f.age, f.wet = clamp(w & 7, 0, 4), clamp(w >> 3 & 15, 0, #CROPS), w >> 7 & 15, w >> 11 & 1 == 1
+        if f.c > 0 and f.age == 15 then f.age = 99 end
+      end
+    end
+  end
+end
+
+function start_visit(id)
+  VG, VF = fresh(), {}
+  for p = 1, #PLOTS do
+    VF[p] = {}
+    for i = 1, PLOTS[p].w * PLOTS[p].h do VF[p][i] = { k = 0, c = 0, age = 0, wet = false, hits = 0 } end
+  end
+  fetch = { id = id, got = {}, t = 0, at = 0 }
+  ui = "fetch"
+end
+function enter_visit()
+  local id = fetch.id
+  fetch, ui = nil, nil
+  if riding then dismount() end
+  persist()
+  HOME = { G = G, FIELD = FIELD, FORAGE = FORAGE, ANIM = ANIM, px = px, py = py, auto_i = auto_i }
+  local H = G
+  VG.inv, VG.seeds, VG.sel, VG.bag, VG.can, VG.water, VG.hoe, VG.coins, VG.pick, VG.axe = H.inv, H.seeds, H.sel, H.bag, H.can, H.water, H.hoe, H.coins, H.pick, H.axe
+  G, FIELD, FORAGE, visiting, auto_i, GUESTS = VG, VF, {}, id, nil, {}
+  ANIM = nil
+  place_animals()
+  px, py, dx, dy, fade, refresh_i = 14 * C + 8, 1 * C + 14, 0, 1, 31, 0
+  say(tr("This is %s's farm. B waters their crops, the crate takes gifts, the north road leads home.", who(id)))
+  sfx("C5", 1, 0.25, 6) sfx("G5", 1, 0.25, 10)
+end
+function leave_visit(msg)
+  local H = HOME
+  H.G.water, H.G.sel, H.G.coins = G.water, G.sel, G.coins
+  G, FIELD, FORAGE, ANIM, px, py, auto_i = H.G, H.FIELD, H.FORAGE, H.ANIM, H.px, H.py, H.auto_i
+  HOME, visiting, VG, VF, GUESTS = nil, nil, nil, nil, {}
+  dx, dy, fade, ui = 0, 1, 31, nil
+  say(msg or "Home again.")
+  persist()
+end
+function visit_hands()
+  local x, y = facing()
+  local ch = tile(1, x, y)
+  if ch == "X" then leave_visit()
+  elseif ch == "c" then ui, ui_sel = "gift", 1
+  else say(tr("%s's farm. B waters their crops, the crate takes gifts, the north road leads home.", who(visiting))) end
+end
+function visit_water()
+  local x, y = facing()
+  local f = cell(x, y)
+  local was = f and f.wet
+  use_water()
+  if f and f.wet and not was then net_send(EV_WATER, visiting, x, y) net_send(EV_WATER, visiting, x, y) end
+end
+function gift_items()
+  local L = {}
+  for i, k in ipairs(WIRE) do if have(k) > 0 then L[#L + 1] = k end end
+  return L
+end
+function update_gift()
+  local L = gift_items()
+  if btnp("b") or #L == 0 and btnp("a") then ui = nil return end
+  if #L == 0 then return end
+  if btnp("up") then ui_sel = (ui_sel - 2) % #L + 1 end
+  if btnp("down") then ui_sel = ui_sel % #L + 1 end
+  ui_sel = clamp(ui_sel, 1, #L)
+  if btnp("a") and #outbox < 8 then
+    local k = L[ui_sel]
+    G.inv[k] = have(k) > 1 and have(k) - 1 or nil
+    nonce = nonce + 1
+    outbox[#outbox + 1] = { to = visiting, nonce = nonce, k = k, t = 0, tries = 0 }
+    sfx("E5", 1, 0.2, 4)
+  end
+end
+-- what the neighbours left for me goes in the bag when there is room
+function deliver_post()
+  local me, got = mine(), 0
+  for k, n in pairs(me.post) do
+    local mat = FOUND_BY[k] and FOUND_BY[k].mat
+    local room = mat and n or math.min(n, BAG[me.bag] - count_bag())
+    if room > 0 then
+      me.inv[k] = (me.inv[k] or 0) + room
+      me.post[k] = n > room and n - room or nil
+      got = got + room
+    end
+  end
+  return got
+end
+function fair_prize()
+  local me = mine()
+  me.fair0 = me.grown
+  G.coins = G.coins + 150
+  for p, F in ipairs(my_field()) do for i, f in ipairs(F) do if f.k == 4 then f.wet = true end end end
+  for id, o in pairs(NEAR) do o.fair = 0 end
+  fair_cool = 900
+  say("The valley fair! The farms filled the basket together: 150 coins each, and every field is watered.")
+  float("+150", 27)
+  sfx("C5", 1, 0.3, 8) sfx("E5", 1, 0.3, 14) sfx("G5", 1, 0.3, 20) sfx("C6", 1, 0.3, 30)
+end
+
+function net_event(from, ev, a, b, c, d, e, f)
+  if ev == EV_HI then
+    local o = NEAR[from] or { fair = 0 }
+    if e == NET_ID and o.at ~= NET_ID and not visiting then say(tr("%s has come to visit your farm.", who(from))) sfx("G5", 1, 0.2, 6) end
+    o.t, o.day, o.mill, o.wish, o.at = 0, a or 1, b or 0, c or 0, e or 0
+    if fair_cool == 0 then o.fair = d or 0 end
+    NEAR[from] = o
+  elseif ev == EV_POS then
+    if a == (visiting or NET_ID) and (visiting or G.area == 1) then
+      local g = GUESTS[from] or { x = b, y = c }
+      g.tx, g.ty, g.d, g.t = b, c, d, 0
+      GUESTS[from] = g
+    end
+  elseif ev == EV_FAIR then
+    if fair_cool == 0 then fair_prize() end
+  elseif a ~= NET_ID then
+    return                                -- the rest is addressed to one Bit
+  elseif ev == EV_GET then
+    send_chunk(from, b)
+  elseif ev == EV_INFO then
+    if VG and from == (fetch and fetch.id or visiting) then
+      apply_info(b, c, d, e, f, net_row5 or 0)
+      if fetch then fetch.got[0] = true end
+    end
+  elseif ev == EV_ROW then
+    if VF and from == (fetch and fetch.id or visiting) and b >= 1 and b <= NCH then
+      apply_row(b, c, d, e, f, net_row5)
+      if fetch then fetch.got[b] = true end
+    end
+  elseif ev == EV_WATER then
+    local F = my_field()
+    for p, P in ipairs(PLOTS) do
+      if b >= P.x and c >= P.y and b < P.x + P.w and c < P.y + P.h then
+        local fc = F[p][(c - P.y) * P.w + (b - P.x) + 1]
+        if fc.k == 4 then fc.wet = true end
+      end
+    end
+    if water_note == 0 then water_note = 900 say(tr("%s is watering your crops.", who(from))) end
+  elseif ev == EV_GIFT then
+    local key, k = from .. ":" .. b, WIRE[c]
+    if k and seen_gift[key] == nil then
+      local me, coins = mine(), 0
+      if c == my_wish() then coins, me.wishday = 40 + price(k) * 4, me.day end
+      me.post[k] = (me.post[k] or 0) + 1
+      deliver_post()
+      seen_gift[key] = coins
+      say(tr("%s left you a gift: %s.", who(from), tr(item_name(k))) .. (coins > 0 and tr(" Just what you wished for!") or ""))
+      sfx("E5", 1, 0.25, 6) sfx("A5", 1, 0.25, 10)
+    end
+    if seen_gift[key] then net_send(EV_THANK, from, b, seen_gift[key]) end
+  elseif ev == EV_THANK then
+    for i, o in ipairs(outbox) do
+      if o.nonce == b and o.to == from then
+        table.remove(outbox, i)
+        if c > 0 then
+          G.coins = G.coins + c
+          float("+" .. c, 27)
+          say(tr("It was %s's wish for today! The valley pays you %d coins.", who(from), c))
+          sfx("E5", 1, 0.3, 6) sfx("A5", 1, 0.3, 10)
+        end
+        break
+      end
+    end
+  end
+end
+
+function update_net()
+  if not NET_ID or NET_ID == 0 then return end
+  net_t = net_t + 1
+  if fair_cool > 0 then fair_cool = fair_cool - 1 end
+  if water_note > 0 then water_note = water_note - 1 end
+  local me = mine()
+  if net_t % 60 == 1 then net_send(EV_HI, me.day, me.mill, my_wish(), fair_count(), visiting or 0) end
+  for id, o in pairs(NEAR) do o.t = o.t + 1 if o.t > 400 then NEAR[id] = nil end end
+  for id, g in pairs(GUESTS) do
+    g.t, g.x, g.y = g.t + 1, g.x + (g.tx - g.x) * 0.3, g.y + (g.ty - g.y) * 0.3
+    if g.t > 90 then GUESTS[id] = nil end
+  end
+  while true do
+    local from, ev, a, b, c, d, e, f, g = net_recv()
+    if not from then break end
+    net_row5 = g
+    net_event(from, ev, a, b, c, d, e, f)
+  end
+  -- where I stand, for those on the same farm
+  local farm = visiting or (G.area == 1 and has_guest() and NET_ID) or nil
+  if farm and net_t % 8 == 0 then
+    net_send(EV_POS, farm, fl(px), fl(py), (dx < 0 and 1 or dx > 0 and 2 or dy < 0 and 3 or 0) + (walk > 0 and 4 or 0) + (riding and 8 or 0))
+  end
+  -- on the way over: ask for the pieces of the farm until all have arrived
+  if fetch then
+    fetch.t = fetch.t + 1
+    local left = 0
+    for ch = 0, NCH do if not fetch.got[ch] then left = left + 1 end end
+    if left == 0 then enter_visit()
+    elseif fetch.t > 600 or not NEAR[fetch.id] then
+      fetch, ui, VG, VF = nil, nil, nil, nil
+      say("You lost the way. The neighbour's farm is out of reach.")
+    elseif fetch.t % 3 == 0 then
+      for i = 1, NCH + 1 do
+        fetch.at = (fetch.at + 1) % (NCH + 1)
+        if not fetch.got[fetch.at] then net_send(EV_GET, fetch.id, fetch.at) break end
+      end
+    end
+  elseif visiting then
+    G.clk = math.min(G.clk + 1, DAY_FRAMES - 1)
+    if not NEAR[visiting] then leave_visit("You lost sight of the neighbour's farm and walked home.")
+    elseif net_t % 12 == 0 then
+      refresh_i = (refresh_i + 1) % (NCH + 1)
+      net_send(EV_GET, visiting, refresh_i)       -- the farm you stand on keeps changing
+    end
+  end
+  -- gifts on their way are sent again until the neighbour thanks you
+  for i = #outbox, 1, -1 do
+    local o = outbox[i]
+    if o.t % 20 == 0 then
+      o.tries = o.tries + 1
+      if o.tries > 15 then
+        table.remove(outbox, i)
+        me.inv[o.k] = (me.inv[o.k] or 0) + 1
+        say("Your gift did not arrive. It is back in your bag.")
+      else net_send(EV_GIFT, o.to, o.nonce, WIRE_BY[o.k], 1) end
+    end
+    o.t = o.t + 1
+  end
+  -- the fair: when the valley's basket is full, everyone in reach wins
+  if fair_echo > 0 then
+    fair_echo = fair_echo - 1
+    if fair_echo % 10 == 0 then net_send(EV_FAIR) end
+  elseif fair_cool == 0 and net_t % 30 == 0 and fair_count() > 0 then
+    local sum, want, n = fair_total()
+    if n > 1 and sum >= want then fair_echo = 30 net_send(EV_FAIR) fair_prize() end
+  end
+end
+function update_near()
+  local L = near_ids()
+  if btnp("b") or #L == 0 then ui = nil return end
+  if btnp("up") then ui_sel = (ui_sel - 2) % #L + 1 end
+  if btnp("down") then ui_sel = ui_sel % #L + 1 end
+  ui_sel = clamp(ui_sel, 1, #L)
+  if btnp("a") then start_visit(L[ui_sel]) sfx("E5", 1, 0.2, 4) end
+end
+function draw_guest(g, id)
+  local x, y, d = fl(g.x), fl(g.y), g.d
+  local dir = d & 3
+  if d & 8 ~= 0 then
+    draw_tractor(x, y, dir == 1 and -1 or dir == 2 and 1 or 0, dir == 3 and -1 or dir == 0 and 1 or 0, false, false)
+  else
+    circfill(x, y, 4, 15)
+  end
+  local n = dir == 3 and 132 or (dir == 1 or dir == 2) and 136 or 128
+  if d & 4 ~= 0 and t() % 20 >= 10 then n = n + 2 end
+  local lift = d & 8 ~= 0 and 9 or 0
+  pal(26, 21) pal(24, 20)
+  spr(n, x - 8, y - 15 - lift, 2, 2, dir == 1)
+  pal()
+  local nm = who(id)
+  text(nm, x - #nm * 4 + 1, y - 25 - lift, 1) text(nm, x - #nm * 4, y - 26 - lift, 13)
+end
+function draw_near()
+  local L = near_ids()
+  panel(20, 30, 280, 180, "The north road")
+  local sum, want = fair_total()
+  text("Fair basket: " .. math.min(sum, want) .. " of " .. want .. " crops reaped", 28, 48, 12)
+  for i, id in ipairs(L) do
+    local o, y = NEAR[id], 46 + i * 22
+    if i <= 5 then
+      if i == ui_sel then rectfill(24, y - 2, 272, 21, 8) end
+      text(tr("%s's farm", who(id)), 30, y, i == ui_sel and 27 or 13)
+      text(SEASON[season(o.day)] .. " " .. day_of(o.day), 220, y, 12)
+      text(o.wish > 0 and CROPS[o.wish] and tr("Wishes for: %s", tr(CROPS[o.wish].name)) or "Wish granted today", 30, y + 10, 17)
+      text("mill " .. o.mill .. "/" .. #MILL, 220, y + 10, 11)
+    end
+  end
+  text("A: walk over   B: back", 28, 196, 11)
+end
+function draw_gift()
+  local L = gift_items()
+  local o = NEAR[visiting]
+  panel(40, 30, 240, 180, tr("A gift for %s", who(visiting)))
+  text(o and o.wish > 0 and CROPS[o.wish] and tr("Their wish today: %s", tr(CROPS[o.wish].name)) or "No wish left today.", 48, 48, 17)
+  if #L == 0 then text("Your bag is empty.", 48, 70, 28) end
+  local first = math.max(1, clamp(ui_sel, 1, math.max(#L, 1)) - 7)
+  for i = first, math.min(#L, first + 7) do
+    local y = 50 + (i - first + 1) * 15
+    if i == ui_sel then rectfill(44, y - 3, 232, 14, 8) end
+    draw_icon(L[i], 48, y - 5)
+    text(tr(item_name(L[i])), 68, y, i == ui_sel and 27 or 13) text("x" .. have(L[i]), 236, y, 27)
+  end
+  text(#outbox > 0 and "On its way..." or "A: give one   B: back", 48, 196, 11)
+end
+
 -- hold A while driving: the implement works the cell under the tractor and the one on either side
 function tractor_work()
   local imp = IMPL[G.impsel]
@@ -14917,12 +15303,12 @@ function fresh()
     seeds = { 4, 0, 0, 0, 0, 0, 0, 0, 0 }, inv = {}, bag = 1, hoe = 1, can = 1, water = 5, pick = 0, axe = 0,
     plots = { true, false, false }, mill = 0, millc = 0, rain = false, demand = 1, tins = "00",
     sold = 0, picked = 0, grown = 0, mine = 0, deep = 0, lamp = 0, gotms = 0,
-    silo_b = 0, silo = {}, hop = {}, auto = 0, route = "", daily = 0,
+    silo_b = 0, silo = {}, hop = {}, auto = 0, route = "", daily = 0, post = {}, wishday = 0, fair0 = 0,
     trac = 0, tx = 27 * C + 8, ty = 14 * C + 14, imp = { 0, 0, 0, 0 }, impsel = 0, tank = 0, coop = 0, shed = 0, pail = 0, feed = 0, an = {} }
 end
 
 function persist()
-  if PLAYERS > 1 then return end
+  if PLAYERS > 1 or visiting then return end
   G.px, G.py = fl(px), fl(py)
   if riding then G.tx, G.ty = G.px, G.py end
   local in_mine = G.area == 3
@@ -14938,6 +15324,7 @@ function persist()
 end
 
 function load_farm()
+  net_reset()
   G = fresh()
   local d = PLAYERS == 1 and saved() or nil
   if type(d) == "table" and d.v == 1 then
@@ -14987,7 +15374,7 @@ function _init()
   build_world()
   game{
     title = "Windrow",
-    players = 1,                      -- your own farm (visits between farms come later)
+    players = {1, 8},                 -- your own farm on every Bit; linked Bits visit each other (net_send)
     goal = "Rebuild the old windmill of Windrow.",
     title_draw = draw_title,
     look = { title = 27, shadow = 7, panel = 6, edge = 10, hi = 8, text = 12, pick = 27, goal = 12, footer = 11, menu = "left" },
@@ -14997,6 +15384,7 @@ function _init()
       "Watered crops grow overnight. Sleep in the hut, sell at the crate, shop at the wagon.",
       "Bramble Woods lies west along the road. Bring what the mill needs to the ruin.",
       "The mine in the woods opens with a pickaxe. Break rocks for ore, find the ladder down. A also hits.",
+      "Other Bits in reach are neighbours: the north road leads to their farms. Water for them, leave gifts.",
       "After the mill: build the silo, buy the clockwork driver, press Y by the tractor and teach it a route.",
       "The rusted tractor by the Long acre can be mended. On it: hold A to work, L changes implement, Y hops off.",
       "The pasture is south of the fields. Fill the trough from your bag, pet your animals every day.",
@@ -15093,6 +15481,7 @@ end
 function swing(kind) act, act_kind = 14, kind end
 
 function use_hands()
+  if visiting then visit_hands() return end
   local x, y = facing()
   local a = G.area
   if a == 3 then mine_hands(x, y) return end
@@ -15131,10 +15520,20 @@ function use_hands()
   end
   if ch == "r" then fill_trough() return end
   if ch == "h" then ui, ui_sel = "sleep", 1 return end
-  if ch == "c" then sell_all() return end
+  if ch == "c" then
+    if next(G.post) then
+      local got = deliver_post()
+      say(got > 0 and "You take the neighbours' gifts out of the crate." or "Gifts from the neighbours wait here. Your bag is full.")
+    else sell_all() end
+    return
+  end
   if ch == "W" or ch == "N" then ui, ui_sel, ui_scroll = "shop", 1, 0 return end
   if ch == "m" then ui, ui_sel = "mill", 1 return end
-  if ch == "X" then say("The road to Tallow Bridge is washed out. Maybe one day.") return end
+  if ch == "X" then
+    if next(NEAR) then ui, ui_sel = "near", 1
+    else say("The north road leads to the neighbours' farms. No other farm is in reach just now.") end
+    return
+  end
   if ch == "M" then mine_door() return end
   if ch == "S" then say("A fallen pine blocks the path down to the shore.") return end
   if ch == "o" then say("A standing stone, older than the valley. It hums a little.") return end
@@ -15370,6 +15769,7 @@ end
 
 function _update()
   play_tune()
+  update_net()
   if toast_t > 0 then toast_t = toast_t - 1 end
   for i = #floats, 1, -1 do
     local f = floats[i]
@@ -15386,6 +15786,9 @@ function _update()
   if ui == "mill" then update_mill() return end
   if ui == "build" then update_build() return end
   if ui == "auto" then update_auto() return end
+  if ui == "near" then update_near() return end
+  if ui == "gift" then update_gift() return end
+  if ui == "fetch" then if btnp("b") then fetch, ui, VG, VF = nil, nil, nil, nil end return end
   if ui == "silo" then
     if btnp("a") then silo_sell() elseif btnp("b") then ui = nil end
     return
@@ -15405,14 +15808,16 @@ function _update()
   end
 
   -- the day goes by; at ten at night you nod off
-  G.clk = G.clk + 1
-  if G.clk >= DAY_FRAMES then
-    sleep()
-    say("You fell asleep on your feet.")
-    return
+  if not visiting then
+    G.clk = G.clk + 1
+    if G.clk >= DAY_FRAMES then
+      sleep()
+      say("You fell asleep on your feet.")
+      return
+    end
+    update_route()
   end
   if G.area == 1 then update_animals() end
-  update_route()
   if G.area == 3 then
     update_mobs()
     if fade > 0 then return end
@@ -15444,7 +15849,8 @@ function _update()
   -- the road west leads to the woods, and back
   local A = AREAS[G.area]
   if riding and px < 12 then px = 12; if toast_t == 0 then say("The tractor stays on the farm. Hop off with Y.") end end
-  if G.area == 1 and px < 3 then G.area, px, py = 2, AREAS[2].w * C - 8, 10 * C + 12; fade = 31; persist()
+  if visiting and px < 3 then px = 3; if toast_t == 0 then say("The north road leads home.") end
+  elseif G.area == 1 and px < 3 then G.area, px, py = 2, AREAS[2].w * C - 8, 10 * C + 12; fade = 31; persist()
   elseif G.area == 2 and px > A.w * C - 3 then G.area, px, py = 1, 8, 5 * C + 12; fade = 31; persist() end
   px, py = clamp(px, 2, AREAS[G.area].w * C - 2), clamp(py, 8, AREAS[G.area].h * C - 1)
 
@@ -15452,7 +15858,7 @@ function _update()
   if btn("a") or btn("b") then hold = hold + 1 else hold = 0 end
   local again = hold > 0 and hold % 16 == 0
   if btnp("a") or (btn("a") and again) then use_hands()
-  elseif btnp("b") or (btn("b") and again) then use_water()
+  elseif btnp("b") or (btn("b") and again) then if visiting then visit_water() else use_water() end
   elseif btnp("y") then
     if G.auto == 1 and near_tractor() then ui, ui_sel = "auto", 1 else look() end
   elseif btnp("x") then ui = "bag"
@@ -15817,6 +16223,9 @@ function draw_world()
       if auto_i then draw_tractor(fl(G.tx), fl(G.ty), auto_hx, auto_hy, true, false, true, auto_imp)
       else draw_tractor(fl(G.tx), fl(G.ty), 1, 0, false, false) end
     end
+    if a == 1 and next(GUESTS) then
+      for id, g in pairs(GUESTS) do if fl((g.y - 1) / C) == y then draw_guest(g, id) end end
+    end
     if y == prow then
       if riding then draw_tractor(fl(px), fl(py), dx, dy, true, false) else draw_farmer(fl(px), fl(py)) end
     end
@@ -15904,6 +16313,11 @@ function draw_hud()
   text(string.format("%02d:%02d", fl(h), fl(h % 1 * 6) * 10), 92, 2, h > 20 and 26 or 13)
   if G.rain then text(season() == 4 and "snow" or "rain", 144, 2, 22) end
   if G.area == 2 then text("Woods", 190, 2, 17) end
+  if visiting then text(tr("at %s", who(visiting)), 152, 2, 21)
+  elseif G.area == 1 and next(NEAR) and G.coins < 100000 and not G.rain then
+    local sum, want = fair_total()
+    text("Fair " .. math.min(sum, want) .. "/" .. want, 152, 2, 17)
+  end
   if G.area == 3 then
     text("Mine " .. mine_n, 152, 2, 29)
     for i = 1, 3 do spr(292, 204 + i * 12, -2, 2, 2) if i > mine_hp then rectfill(208 + i * 12, 2, 8, 8, 6) rect(209 + i * 12, 3, 6, 6, 30) end end
@@ -16036,6 +16450,14 @@ function _draw()
   elseif ui == "bag" then draw_bag()
   elseif ui == "mill" then draw_mill_ui()
   elseif ui == "build" then draw_build()
+  elseif ui == "near" then draw_near()
+  elseif ui == "gift" then draw_gift()
+  elseif ui == "fetch" then
+    panel(60, 96, 200, 48, "The north road")
+    local got = 0
+    for ch = 0, NCH do if fetch and fetch.got[ch] then got = got + 1 end end
+    text(tr("Walking over to %s", who(fetch and fetch.id or 0)), 68, 114, 13)
+    rectfill(68, 128, 184, 6, 7) rectfill(68, 128, 184 * got // (NCH + 1), 6, 27)
   elseif ui == "auto" then
     local L = auto_items()
     panel(50, 60, 220, 120, "The clockwork driver")
@@ -16369,6 +16791,40 @@ texts{
     ["axe"] = "Axt",
     ["snow"] = "Schnee",
     ["rain"] = "Regen",
+    ["Bit #"] = "Bit #",
+    ["This is %s's farm. B waters their crops, the crate takes gifts, the north road leads home."] = "Das ist die Farm von %s. B gießt ihre Ernte, die Kiste nimmt Geschenke, die Nordstraße führt heim.",
+    ["%s's farm. B waters their crops, the crate takes gifts, the north road leads home."] = "Farm von %s. B gießt ihre Ernte, die Kiste nimmt Geschenke, die Nordstraße führt heim.",
+    ["Home again."] = "Wieder daheim.",
+    ["The valley fair! The farms filled the basket together: # coins each, and every field is watered."] = "Das Talfest! Die Farmen haben den Korb zusammen gefüllt: # Münzen für jeden, und jedes Feld ist gegossen.",
+    ["%s has come to visit your farm."] = "%s besucht deine Farm.",
+    ["%s is watering your crops."] = "%s gießt deine Ernte.",
+    ["%s left you a gift: %s."] = "%s hat dir ein Geschenk dagelassen: %s.",
+    [" Just what you wished for!"] = " Genau, was du dir gewünscht hast!",
+    ["It was %s's wish for today! The valley pays you %d coins."] = "Das war heute der Wunsch von %s! Das Tal zahlt dir %d Münzen.",
+    ["You lost the way. The neighbour's farm is out of reach."] = "Du hast dich verlaufen. Die Farm nebenan ist außer Reichweite.",
+    ["You lost sight of the neighbour's farm and walked home."] = "Du hast die Farm nebenan aus den Augen verloren und bist heimgelaufen.",
+    ["Your gift did not arrive. It is back in your bag."] = "Dein Geschenk kam nicht an. Es ist wieder in deiner Tasche.",
+    ["The north road"] = "Die Nordstraße",
+    ["Fair basket: # of # crops reaped"] = "Festkorb: # von # Ernten eingebracht",
+    ["%s's farm"] = "Farm von %s",
+    ["Wishes for: %s"] = "Wünscht sich: %s",
+    ["Wish granted today"] = "Wunsch heute erfüllt",
+    ["mill #/#"] = "Mühle #/#",
+    ["A: walk over   B: back"] = "A: hinlaufen   B: zurück",
+    ["A gift for %s"] = "Ein Geschenk für %s",
+    ["Their wish today: %s"] = "Heutiger Wunsch: %s",
+    ["No wish left today."] = "Heute kein Wunsch mehr.",
+    ["Your bag is empty."] = "Deine Tasche ist leer.",
+    ["On its way..."] = "Unterwegs...",
+    ["A: give one   B: back"] = "A: eins geben   B: zurück",
+    ["Other Bits in reach are neighbours: the north road leads to their farms. Water for them, leave gifts."] = "Andere Bits in Reichweite sind Nachbarn: Die Nordstraße führt zu ihren Farmen. Gieß für sie, lass Geschenke da.",
+    ["You take the neighbours' gifts out of the crate."] = "Du nimmst die Geschenke der Nachbarn aus der Kiste.",
+    ["Gifts from the neighbours wait here. Your bag is full."] = "Hier warten Geschenke der Nachbarn. Deine Tasche ist voll.",
+    ["The north road leads to the neighbours' farms. No other farm is in reach just now."] = "Die Nordstraße führt zu den Farmen der Nachbarn. Gerade ist keine andere Farm in Reichweite.",
+    ["The north road leads home."] = "Die Nordstraße führt heim.",
+    ["at %s"] = "bei %s",
+    ["Fair #/#"] = "Fest #/#",
+    ["Walking over to %s"] = "Unterwegs zu %s",
   },
 }
 `;
@@ -23069,6 +23525,12 @@ CELLS = {
   {name = "Twin Cell", len = 4, h = 1.8, w = 4.0, cap = 2.2, weight = 0.8, cost = -1, about = "Twice the range, twice as wide."},
   {name = "Brick Cell", len = 6, h = 2.8, w = 2.8, cap = 1.6, weight = 1.0, cost = 10, about = "Long and tall. A bit more range."},
 }
+-- toy cannons, one on each wing: B fires them. weight is for the pair; rate = frames between shots
+CANNONS = {
+  {name = "No cannons", weight = 0, cost = 0, about = "Clean wings, nothing to carry."},
+  {name = "Cork Popper", weight = 0.25, cost = 4, rate = 12, speed = 4.5, r = 10, about = "Toy cannons for the wings. B: pop balloons!"},
+  {name = "Puff Mortar", weight = 0.55, cost = 9, rate = 28, speed = 3.5, r = 20, about = "Heavy, slow, and pops anything near it."},
+}
 PAINTS = {   -- main colour, shade, trim
   {name = "Tin", cost = 0, c = {29, 28, 25}},
   {name = "Sunrise", cost = 0, c = {10, 9, 13}},
@@ -23077,7 +23539,7 @@ PAINTS = {   -- main colour, shade, trim
   {name = "Cherry", cost = 3, c = {26, 25, 13}},
   {name = "Plum", cost = 4, c = {5, 4, 27}},
 }
-PARTS = {{"Motor", MOTORS, "m"}, {"Battery", CELLS, "c"}, {"Paint", PAINTS, "p"}}
+PARTS = {{"Motor", MOTORS, "m"}, {"Battery", CELLS, "c"}, {"Cannons", CANNONS, "g"}, {"Paint", PAINTS, "p"}}
 TABS = {"SIDE", "TOP", "PARTS", "FLY"}
 SNAME = {"Front", "Middle", "Back"}
 
@@ -23087,8 +23549,10 @@ DRAW = {
   tower = {t = 240, w = 3, h = 8}, wreck = {t = 243, w = 3, h = 5}, palm = {t = 246, w = 2, h = 3},
   boat = {t = 248, w = 4, h = 2}, buoy = {t = 252, w = 1, h = 2},
   crate = {t = 120, w = 2, h = 2}, coil = {t = 122, w = 2, h = 2}, satchel = {t = 124, w = 2, h = 2},
+  balloon = {t = 70, w = 2, h = 3},
 }
 PICK = {crate = true, coil = true, satchel = true, ring = true}
+FLOAT = {balloon = true}   -- drawn up in the air like the pickups, but you pop them with the cannons
 
 -- ------------------------------------------------------------------ the save
 -- the blueprint: body stations from front to back {x, top, bottom, half width}, the nose and tail points,
@@ -23097,10 +23561,20 @@ function default_shape()
   return {nose = 11, tail = -13, st = {{6, 1.5, -1.3, 1.5}, {1, 1.6, -1.4, 1.6}, {-5, 1.0, -0.6, 0.9}},
     rf = 3, rb = -1.5, tf = 1.8, tb = -0.6, span = 12}
 end
+-- where the parts sit: the middle of the motor and of the battery along the body, and how far out on each
+-- wing the cannons are
+function default_place() return {m = 5.7, c = 1, g = 6} end
 function new_state()
-  return {scrap = 0, own = {m1 = true, c1 = true, p1 = true, p2 = true, p3 = true}, sel = {m = 1, c = 1, p = 2},
-    shape = default_shape(), coil = false, coil_told = false, satchel = false, done = false,
+  return {scrap = 0, own = {m1 = true, c1 = true, g1 = true, p1 = true, p2 = true, p3 = true}, sel = {m = 1, c = 1, g = 1, p = 2},
+    shape = default_shape(), place = default_place(), coil = false, coil_told = false, satchel = false, done = false,
     got = {}, flights = 0, swims = 0}
+end
+-- saves from before parts could move or cannons existed
+function upgrade_save(s)
+  s.place = s.place or default_place()
+  s.sel.g = s.sel.g or 1
+  s.own.g1 = true
+  return s
 end
 function copy(t)
   if type(t) ~= "table" then return t end
@@ -23156,17 +23630,18 @@ function _init()
     goal = "Build an RC plane, find the mail satchel lost past the Drowned Belltower and fly it home to Perch.",
     help = {
       "Hangar: pick a corner with the D-pad, A grabs it, move it, A drops it. L / R or X: next page.",
-      "Make the body big enough for your motor and battery. More wing glides, short wings turn quick.",
+      "Make the body big enough for your motor and battery, and grab M or B to move them. The motor stays in the front.",
+      "More wing glides, short wings turn quick. Cannons go on the wings: B fires them at balloons.",
       "Flying: left / right turn, up / down climb and dive (Settings: Invert up/down). Hold A or squeeze R for the motor.",
       "Let go of the motor to glide for free. Fly low over the yellow pad at Perch to land.",
     },
     continue = function(cp)
-      if cp then S = copy(cp) end
+      if cp then S = upgrade_save(copy(cp)) end
       INTRO = false
       hangar_enter(nil)
     end,
     pause = {{"Back to the hangar", function() if MODE == "fly" then hangar_enter("menu") end end},
-      {"Reset the blueprint", function() if MODE == "hangar" then S.shape = default_shape(); H.hold = nil end end}},
+      {"Reset the blueprint", function() if MODE == "hangar" then S.shape, S.place = default_shape(), default_place(); H.hold = nil end end}},
     settings = {{key = "pitch", name = "Invert up/down", values = {"Off", "On"}, value = 1}},
   }
   S = new_state()
@@ -23216,22 +23691,45 @@ function section(s, x)
   end
   return 0, 0, 0
 end
--- where a part sits: the motor just behind the nose, the battery in the middle of the body
-function slot(s, key, part)
-  if key == "m" then local f = s.st[1][1] + 1.2 return f, f - part.len end
-  local m = s.st[2][1]
-  return m + part.len / 2, m - part.len / 2
+-- where a part's box is along the body: front and back x
+function slot(key, part, pl)
+  local c = (pl or S.place)[key]
+  return c + part.len / 2, c - part.len / 2
 end
--- does the part's box fit inside the body? returns ok, and the box's centre height
-function fits(s, key, part)
-  local x0, x1 = slot(s, key, part)
-  local mid = 0
-  for i = 0, 4 do local t, b = section(s, x0 + (x1 - x0) * i / 4) mid = mid + (t + b) / 10 end
-  for i = 0, 4 do
-    local t, b, w = section(s, x0 + (x1 - x0) * i / 4)
-    if t < mid + part.h / 2 or b > mid - part.h / 2 or w * 2 < part.w then return false, mid end
+-- does the part's box fit inside the body? returns ok, the box's centre height and, when it doesn't, why:
+-- "out" (past the nose or tail), "tall", "wide", "front" (a motor behind the middle) or "overlap".
+-- The body is straight lines between its corners, so checking both ends of the box and every corner in
+-- between is exact: what you see on the blueprint is what fits. The box sits as high or low as it needs to.
+function fits(s, key, part, pl)
+  pl = pl or S.place
+  local x0, x1 = slot(key, part, pl)
+  if x0 > s.nose - 0.01 or x1 < s.tail + 0.01 then return false, 0, "out" end
+  local lo, hi, wmin = -99, 99, 99
+  local function at(x)
+    local t, b, w = section(s, x)
+    lo, hi, wmin = math.max(lo, b), math.min(hi, t), math.min(wmin, w)
   end
+  at(x0); at(x1)
+  for _, p in ipairs(body_points(s)) do if p[1] < x0 and p[1] > x1 then at(p[1]) end end
+  local mid = (lo + hi) / 2
+  if hi - lo < part.h - 0.001 then return false, mid, "tall" end
+  if wmin * 2 < part.w - 0.001 then return false, mid, "wide" end
+  if key == "m" and x1 < s.st[2][1] - 0.001 then return false, mid, "front" end
+  local other = key == "m" and "c" or "m"
+  local o0, o1 = slot(other, other == "m" and MOTORS[S.sel.m] or CELLS[S.sel.c], pl)
+  if x1 < o0 - 0.001 and o1 < x0 - 0.001 then return false, mid, "overlap" end
   return true, mid
+end
+-- the cannons: on the wing, at u out from the middle. Returns the wing's front and back x there
+function wing_chord(s, u)
+  local r = wing_root(s)
+  local t = clamp((u - r) / math.max(0.1, s.span - r), 0, 1)
+  return s.rf + (s.tf - s.rf) * t, s.rb + (s.tb - s.rb) * t, 0.3 + s.span * 0.05 * t
+end
+function guns_fit(s, pl)
+  if S.sel.g == 1 then return true end
+  local u = (pl or S.place).g
+  return u >= wing_root(s) + 0.5 and u <= s.span - 0.5
 end
 function wing_root(s) local _, _, w = section(s, (s.rf + s.rb) / 2) return math.max(w, 0.5) end
 function wing_area(s)
@@ -23249,14 +23747,16 @@ end
 
 -- the numbers that make it fly
 function plane_stats(s, sel)
-  local m, c = MOTORS[sel.m], CELLS[sel.c]
+  local m, c, g = MOTORS[sel.m], CELLS[sel.c], CANNONS[sel.g or 1]
   local area = wing_area(s)
-  local weight = 1 + m.weight + c.weight + body_volume(s) * 0.004 + area * 0.004
+  local weight = 1 + m.weight + c.weight + g.weight + body_volume(s) * 0.004 + area * 0.004
+  -- cannons far out on the wings make her roll (and so turn) a little slower
+  local swing = 1 - g.weight * clamp((S.place.g or 0) / math.max(1, s.span), 0, 1) * 0.35
   local lift = area / weight / 25.6                   -- 1 is a plain, nice wing
   local sweep = ((s.rf + s.rb) - (s.tf + s.tb)) / 2  -- how far back the tips sit
   return {
     speed = (m.power / weight * 2.85) ^ 0.6,
-    turn = clamp((1.3 - (s.span - 12) * 0.045) * clamp(lift, 0.7, 1.15) * (1 + clamp(sweep, 0, 6) * 0.03), 0.5, 1.8),
+    turn = clamp((1.3 - (s.span - 12) * 0.045) * clamp(lift, 0.7, 1.15) * (1 + clamp(sweep, 0, 6) * 0.03) * swing, 0.5, 1.8),
     glide = clamp(lift, 0.3, 2.2),
     drain = m.power ^ 0.8 * weight / 2.85 / c.cap,
     cap = c.cap, lift = lift, weight = weight, prop = m.prop,
@@ -23265,8 +23765,16 @@ end
 -- what still stops the plane from flying
 function problems()
   local s, l = S.shape, {}
-  if not fits(s, "m", MOTORS[S.sel.m]) then l[#l + 1] = tr("The %s doesn't fit in the nose.", tr(MOTORS[S.sel.m].name)) end
-  if not fits(s, "c", CELLS[S.sel.c]) then l[#l + 1] = tr("The %s doesn't fit in the body.", tr(CELLS[S.sel.c].name)) end
+  local said = {}
+  for _, it in ipairs({{"m", MOTORS[S.sel.m]}, {"c", CELLS[S.sel.c]}}) do
+    local ok, _, why = fits(s, it[1], it[2])
+    local n = it[2].name
+    local t = ok and nil or ({out = tr("%s sticks out of the body.", tr(n)), tall = tr("%s: too tall. Raise it on SIDE.", tr(n)),
+      wide = tr("%s: too wide. Widen it on TOP.", tr(n)), front = "The motor must sit in the front half.",
+      overlap = "Motor and battery overlap. Move one."})[why]
+    if t and not said[t] then said[t] = true; l[#l + 1] = t end
+  end
+  if not guns_fit(s) then l[#l + 1] = "Cannons must sit on the wings (TOP)." end
   if plane_stats(s, S.sel).lift < 0.55 then l[#l + 1] = "The wings are too small to lift her." end
   return l
 end
@@ -23334,6 +23842,18 @@ function plane_model(s)
     quad(v(s.tail + 3.5, 0.5 * side, 0.8), v(s.tail + 0.6, 0.5 * side, 0.8), v(s.tail + 0.2, 4.6 * side, 1), v(s.tail + 1.8, 4.6 * side, 1), 2)
   end
   F[#F + 1] = {v(s.tail + 4.5, 0, 1.0), v(s.tail + 0.5, 0, 0.8), v(s.tail - 0.1, 0, 5), 2}
+  local g = S and S.sel.g or 1
+  if g > 1 then
+    -- a barrel under each wing: a cross of two plates, so it shows from the side and from above
+    local u = S.place.g
+    local f, b, wz = wing_chord(s, u)
+    local len, fat = g == 2 and 1.0 or 1.6, g == 2 and 0.35 or 0.6
+    for side = -1, 1, 2 do
+      local y, z = u * side, wz - fat - 0.1
+      quad(v(f + len, y, z + fat), v(b, y, z + fat), v(b, y, z - fat), v(f + len, y, z - fat), 2)
+      quad(v(f + len, y - fat, z), v(b, y - fat, z), v(b, y + fat, z), v(f + len, y + fat, z), 2)
+    end
+  end
   return {v = V, f = F, nose = s.nose}
 end
 
@@ -23375,16 +23895,21 @@ function draw_model(M, P, p, spin, fast, prop)
       list[#list + 1] = {d = a[3] + b[3] + c[3], a = a, b = b, c = c, col = col}
     end
   end
+  -- the propeller on the nose goes into the same depth order as the triangles, so from the chase camera
+  -- (behind the plane) it is drawn first and the body covers it; seen from the front it is drawn on top
+  local px, py, k, pd = proj(body_to_world(P, M.nose + 0.6, 0, 0.2))
+  if px then list[#list + 1] = {d = pd * 3, prop = true} end
   table.sort(list, function(u, v) return u.d > v.d end)
-  for _, t in ipairs(list) do tri(t.a[1], t.a[2], t.b[1], t.b[2], t.c[1], t.c[2], t.col) end
-  -- the propeller on the nose: a bigger motor turns a bigger prop
-  local px, py, k = proj(body_to_world(P, M.nose + 0.6, 0, 0.2))
-  if px then
-    local r = (prop or 4.6) * k
-    if fast then circ(px, py, r, 29) end
-    local bx, by = math.cos(spin) * r, math.sin(spin) * r * 0.9
-    line(px - bx, py - by, px + bx, py + by, 30)
-    circfill(px, py, math.max(1, 0.8 * k), 31)
+  for _, t in ipairs(list) do
+    if t.prop then
+      -- a bigger motor turns a bigger prop; the blur ring only shows when it faces you
+      local r = (prop or 4.6) * k
+      local _, _, _, td = proj(body_to_world(P, M.nose - 6, 0, 0.2))
+      if fast and td and td > pd then circ(px, py, r, 29) end
+      local bx, by = math.cos(spin) * r, math.sin(spin) * r * 0.9
+      line(px - bx, py - by, px + bx, py + by, 30)
+      circfill(px, py, math.max(1, 0.8 * k), 31)
+    else tri(t.a[1], t.a[2], t.b[1], t.b[2], t.c[1], t.c[2], t.col) end
   end
 end
 
@@ -23457,8 +23982,8 @@ end
 function hangar_enter(reason)
   MODE = "hangar"
   stop(7)
-  H = H or {tab = 1, sel = {1, 1}, hold = nil, rep = 0, view = {m = S.sel.m, c = S.sel.c, p = S.sel.p}, spin = 0.6, note = nil, note_t = 0}
-  H.view = {m = S.sel.m, c = S.sel.c, p = S.sel.p}
+  H = H or {tab = 1, sel = {1, 1}, hold = nil, rep = 0, view = {m = S.sel.m, c = S.sel.c, g = S.sel.g, p = S.sel.p}, spin = 0.6, note = nil, note_t = 0}
+  H.view = {m = S.sel.m, c = S.sel.c, g = S.sel.g, p = S.sel.p}
   H.hold = nil
   H.row = H.row or 1
   if reason == "land" then
@@ -23509,6 +24034,7 @@ function handles(view)
         function(du, dv) local lo, hi = limits(i) st[1] = clamp(st[1] + du, lo, hi); st[3] = clamp(st[3] + dv, -4.5, st[2] - 0.6) end)
     end
     add("Tail", function() return s.tail, 0.8 end, function(du) s.tail = clamp(s.tail + du, -18, s.st[3][1] - 2) end)
+    part_handles(add, function(du, dv) return du end, false)
   else
     for i, st in ipairs(s.st) do
       add(SNAME[i] .. " width", function() return st[4], st[1] end,
@@ -23520,8 +24046,31 @@ function handles(view)
       function(du, dv) s.span = clamp(s.span + du, 5, 20); s.tf = clamp(s.tf + dv, s.tb + 0.6, s.rf + 6) end)
     add("Wing tip, back", function() return s.span, s.tb end,
       function(du, dv) s.span = clamp(s.span + du, 5, 20); s.tb = clamp(s.tb + dv, s.rb - 9, s.tf - 0.6) end)
+    part_handles(add, function(du, dv) return dv end, true)
+    if S.sel.g > 1 then
+      add("Cannons", function() local f, b = wing_chord(s, S.place.g) return S.place.g, (f + b) / 2 end,
+        function(du) S.place.g = clamp(S.place.g + du, 0.5, s.span) end)
+    end
   end
   return L
+end
+-- the motor (M) and battery (B) slide along the body; along() picks the move along it from (du, dv).
+-- The motor can't go behind the middle of the plane: its back end stays ahead of the Middle corners.
+function part_handles(add, along, top)
+  local s = S.shape
+  for _, it in ipairs({{"m", "Motor", MOTORS[S.sel.m]}, {"c", "Battery", CELLS[S.sel.c]}}) do
+    local key, part = it[1], it[3]
+    add(it[2], function()
+      if top then return 0, S.place[key] end
+      local _, mid = fits(s, key, part) return S.place[key], mid end,
+      function(du, dv)
+        local hi = s.nose - part.len / 2
+        local lo = key == "m" and s.st[2][1] + part.len / 2 or s.tail + part.len / 2
+        local want = S.place[key] + along(du, dv)
+        S.place[key] = clamp(want, math.min(lo, hi), hi)
+        if key == "m" and want < lo - 0.01 then note("The motor has to stay in the front.", 90) end
+      end)
+  end
 end
 
 -- move the selection to the nearest corner in a direction on screen
@@ -23561,7 +24110,7 @@ function hangar_update()
   local next_tab = (btnp("r") or btnp("x")) and 1 or (btnp("l") and -1 or 0)
   if next_tab ~= 0 then
     H.tab, H.hold, H.note_t = (tab - 1 + next_tab) % #TABS + 1, nil, 0
-    H.view = {m = S.sel.m, c = S.sel.c, p = S.sel.p}
+    H.view = {m = S.sel.m, c = S.sel.c, g = S.sel.g, p = S.sel.p}
     sfx("E5", 4, 0.2, 4)
     return
   end
@@ -23664,25 +24213,46 @@ function draw_blueprint(view)
       line(arx, ay, brx, by, 13); line(alx, ay, blx, by, 13)
     end
   end
-  -- the parts' boxes: green when they fit, red when the body is too small
-  for _, it in ipairs({{"m", MOTORS[S.sel.m], "M"}, {"c", CELLS[S.sel.c], "B"}}) do
+  -- the parts' boxes: green when they fit, red when the body is too small (BOX: where each was drawn, by handle name)
+  BOX = {}
+  for _, it in ipairs({{"m", MOTORS[S.sel.m], "M", "Motor"}, {"c", CELLS[S.sel.c], "B", "Battery"}}) do
     local part = it[2]
     local ok, mid = fits(s, it[1], part)
-    local x0, x1 = slot(s, it[1], part)
+    local x0, x1 = slot(it[1], part)
     local col = ok and 17 or (gt % 20 < 12 and 26 or 25)
     local ax, ay, bx, by
     if view == 1 then ax, ay = bp_xy(1, x1, mid + part.h / 2) bx, by = bp_xy(1, x0, mid - part.h / 2)
     else ax, ay = bp_xy(2, -part.w / 2, x0) bx, by = bp_xy(2, part.w / 2, x1) end
     rect(ax, ay, bx - ax + 1, by - ay + 1, col)
     text(it[3], (ax + bx) / 2 - 3, (ay + by) / 2 - 3, col)
+    BOX[it[4]] = {ax, ay, bx, by}
+  end
+  if S.sel.g > 1 then
+    local u = S.place.g
+    local f, b, wz = wing_chord(s, u)
+    local col = guns_fit(s) and 13 or (gt % 20 < 12 and 26 or 25)
+    if view == 1 then
+      local ax, ay = bp_xy(1, b, wz - 0.2) local bx, by = bp_xy(1, f + 1, wz - 1)
+      rectfill(ax, ay, bx - ax + 1, by - ay + 1, col)
+    else
+      for side = -1, 1, 2 do
+        local ax, ay = bp_xy(2, u * side - 0.4, f + 1) local bx, by = bp_xy(2, u * side + 0.4, b)
+        rectfill(ax, ay, bx - ax + 1, by - ay + 1, col)
+        if side == 1 then BOX.Cannons = {ax, ay, bx, by} end
+      end
+    end
   end
   -- the corners
   local L = handles(view)
   for i, h in ipairs(L) do
     local x, y = bp_xy(view, h.get())
     local on = H.sel[view] == i
+    local box = BOX[h.name]
     if view == 2 and h.name:find("width") then local mx = bp_xy(2, -h.get(), 0) rect(mx - 1, y - 1, 3, 3, 29) end
-    if on then
+    if box then
+      -- a part: picked, its whole box gets a frame (blinking while you move it)
+      if on and not (H.hold and gt % 20 >= 10) then rect(box[1] - 2, box[2] - 2, box[3] - box[1] + 5, box[4] - box[2] + 5, H.hold and 27 or 13) end
+    elseif on then
       local c = H.hold and 27 or 13
       rect(x - 3, y - 3, 7, 7, c)
       if H.hold and gt % 20 < 10 then rect(x - 4, y - 4, 9, 9, 10) end
@@ -23729,7 +24299,7 @@ function hangar_draw()
     clip(BP.x, BP.y, BP.w, BP.h)
     setview(-48, 0, 0, 9, 44, 190, BP.cx)
     local P = {x = 0, y = 0, z = 0, h = H.spin, pitch = 0.1, bank = math.sin(H.spin * 2) * 0.12}
-    draw_model(plane_model(S.shape), P, PAINTS[(H.tab == 3 and H.row == 3) and H.view.p or S.sel.p].c, gt * 0.6, true, MOTORS[S.sel.m].prop)
+    draw_model(plane_model(S.shape), P, PAINTS[(H.tab == 3 and H.row == 4) and H.view.p or S.sel.p].c, gt * 0.6, true, MOTORS[S.sel.m].prop)
     clip()
     if H.tab == 3 then draw_parts() else draw_fly() end
   end
@@ -23746,7 +24316,7 @@ function hangar_draw()
     stat_bars(216, 128)
   end
   rectfill(0, 174, 320, 66, 1)
-  local hint = ({"Pick a corner: D-pad. A: grab / drop.", "Pick a corner: D-pad. A: grab / drop.",
+  local hint = ({"D-pad: pick a corner or part. A: grab.", "D-pad: pick a corner or part. A: grab.",
     "Up / down: part. Left / right: browse. A: fit.", "A: launch from the ramp!"})[H.tab]
   text(objective(), 6, 178, 27)
   if H.note and H.note_t > 0 then text(H.note, 6, 190, 13) else text(hint, 6, 190, 29) end
@@ -23759,52 +24329,55 @@ function hangar_draw()
 end
 
 function draw_parts()
-  local y = 34
+  local y = 32
   for i, r in ipairs(PARTS) do
     local key, list = r[3], r[2]
     local v = H.view[key]
     local part = list[v]
     local on = H.row == i
-    rectfill(214, y, 102, 34, on and 1 or 31)
-    if on then rect(214, y, 102, 34, 27) end
-    text(r[1], 218, y + 3, 29)
+    rectfill(214, y, 102, 28, on and 1 or 31)
+    if on then rect(214, y, 102, 28, 27) end
+    text(r[1], 218, y + 2, 29)
     local col = owned(key, v) and 13 or 28
-    text(part.name, 218, y + 13, S.sel[key] == v and 27 or col)
-    if key == "p" then rectfill(298, y + 3, 12, 7, part.c[1])
+    text(part.name, 218, y + 10, S.sel[key] == v and 27 or col)
+    if key == "p" then rectfill(298, y + 2, 12, 7, part.c[1])
+    elseif key == "g" then
+      if v > 1 then local ok = guns_fit(S.shape) text(ok and "fits" or "off!", 280, y + 2, ok and 17 or 26) end
     else
-      local ok = fits(S.shape, key, part)
-      text(ok and "fits" or "big!", 280, y + 3, ok and 17 or 26)
+      local ok, _, why = fits(S.shape, key, part)
+      text(ok and "fits" or ((why == "tall" or why == "wide" or why == "out") and "big!" or "move"), 280, y + 2, ok and 17 or 26)
     end
     local tag
     if S.sel[key] == v then tag = "fitted"
     elseif owned(key, v) then tag = "A: fit"
     elseif part.cost < 0 then tag = "find it"
     else tag = part.cost .. " scrap" end
-    text(tag, 218, y + 23, tag == "fitted" and 17 or (part.cost and part.cost > S.scrap and not owned(key, v) and 26 or 29))
-    y = y + 38
+    text(tag, 218, y + 18, tag == "fitted" and 17 or (part.cost and part.cost > S.scrap and not owned(key, v) and 26 or 29))
+    y = y + 31
   end
   local r = PARTS[H.row]
   local part = r[2][H.view[r[3]]]
-  if part.about then text(part.about, 10, 150, 13) end
-  if part.len then text(string.format("needs %.1f long, %.1f tall, %.1f wide", part.len, part.h, part.w), 10, 160, 29) end
+  if part.about then text(part.about, 10, 156, 13) end
+  if part.len then text(string.format("needs %.1f long, %.1f tall, %.1f wide", part.len, part.h, part.w), 10, 164, 29) end
 end
 
 function draw_fly()
   local p = problems()
   local y = 40
-  text("PRE-FLIGHT CHECK", 218, y, 27)
+  text("PRE-FLIGHT", 218, y, 27)
   local checks = {
-    {"Motor fits", fits(S.shape, "m", MOTORS[S.sel.m])}, {"Battery fits", fits(S.shape, "c", CELLS[S.sel.c])},
-    {"Wings lift", plane_stats(S.shape, S.sel).lift >= 0.55},
+    {"Motor", fits(S.shape, "m", MOTORS[S.sel.m])}, {"Battery", fits(S.shape, "c", CELLS[S.sel.c])},
+    {"Wings", plane_stats(S.shape, S.sel).lift >= 0.55},
   }
+  if S.sel.g > 1 then checks[#checks + 1] = {"Cannons", guns_fit(S.shape)} end
   for i, c in ipairs(checks) do
     text((c[2] and "+ " or "x ") .. tr(c[1]), 218, y + 6 + i * 12, c[2] and 17 or 26)
   end
   if #p == 0 then
-    rectfill(218, 110, 92, 16, gt % 30 < 20 and 27 or 10)
-    text("A: FLY!", 236, 114, 1)
+    rectfill(218, 106, 92, 16, gt % 30 < 20 and 27 or 10)
+    text("A: FLY!", 236, 110, 1)
   end
-  stat_bars(214, 136)
+  stat_bars(214, 128)
 end
 
 -- ------------------------------------------------------------------ flying
@@ -23813,6 +24386,7 @@ function pick_z(e)
   if e.name == "coil" then return 64 * K_FLY + 10 end           -- on top of the Belltower
   if e.name == "satchel" then return 40 * K_FLY + 4 end         -- snagged on the wreck's mast
   if e.name == "ring" then return 34 + (gx * 7 + gy * 3) % 46 end
+  if e.name == "balloon" then return 40 + (gx * 5 + gy * 3) % 50 + math.sin((gt + gx) * 0.03) * 3 end
   return hget(gx, gy) + 4 + math.sin((gt + gx) * 0.06) * 1.5
 end
 function key_of(e) return e.name .. math.floor(e.x) .. "," .. math.floor(e.y) end
@@ -23833,12 +24407,16 @@ function fly_start()
     st = st, armed = false, launch = 50, t = 0, flat = false, out = 0, spin = 0, swim = 0, camp = 0.3}
   P.cam, P.cz, P.foc = P.h, P.z + F_UP, F_FOC
   for _, e in ipairs(ents_all()) do
-    if PICK[e.name] and e.name ~= "ring" and S.got[key_of(e)] then e.alive = false end
+    if (PICK[e.name] or FLOAT[e.name]) and e.name ~= "ring" and S.got[key_of(e)] then e.alive = false end
     if e.name == "coil" and S.coil then e.alive = false end
     if e.name == "satchel" and S.satchel then e.alive = false end
   end
-  SPRAY, TRAIL = {}, {}
-  if S.flights == 0 and S.swims == 0 then msg("Hold A for the motor, let go to glide.", 240) else msg(objective(), 200) end
+  SPRAY, TRAIL, SHOTS, POPS = {}, {}, {}, {}
+  GUN = S.sel.g > 1 and CANNONS[S.sel.g] or nil
+  P.gun_cd = 0
+  if S.flights == 0 and S.swims == 0 then msg("Hold A for the motor, let go to glide.", 240)
+  elseif GUN and not S.shot_told then S.shot_told = true; msg("B fires the cannons. Pop the balloons!", 240)
+  else msg(objective(), 200) end
 end
 
 function spray(n)
@@ -23941,6 +24519,7 @@ function fly_update()
   end
   -- wingtip trails: a short ribbon of puffs that shows off every turn
   orient(P)
+  shoot_update()
   if P.t % 2 == 0 then
     local span = S.shape.span
     for side = -1, 1, 2 do
@@ -23957,6 +24536,53 @@ function fly_update()
     sfx("C5", 1, 0.3, 8); sfx("G5", 1, 0.3, 12)
     hangar_enter("land")
   end
+end
+
+-- the wing cannons: B fires a ball from each wing, straight ahead; balloons pop when one comes close
+function shoot_update()
+  if P.gun_cd > 0 then P.gun_cd = P.gun_cd - 1 end
+  if GUN and btn("b") and P.gun_cd == 0 and P.launch == 0 then
+    P.gun_cd = GUN.rate
+    local u = S.place.g
+    local f, _, wz = wing_chord(S.shape, u)
+    local fx, fy, fz = math.cos(P.h) * P.cp, math.sin(P.h) * P.cp, P.sp
+    local v = P.spd + GUN.speed
+    for side = -1, 1, 2 do
+      local x, y, z = body_to_world(P, f + 1, u * side, wz - 0.6)
+      SHOTS[#SHOTS + 1] = {x = x, y = y, z = z, vx = fx * v, vy = fy * v, vz = fz * v, t = 0}
+    end
+    sfx(S.sel.g == 2 and "C6" or "G3", 3, 0.25, 3, nil, 0, -200)
+  end
+  for i = #SHOTS, 1, -1 do
+    local b = SHOTS[i]
+    b.x, b.y, b.z, b.vz, b.t = b.x + b.vx, b.y + b.vy, b.z + b.vz, b.vz - 0.03, b.t + 1
+    local gone = b.t > 45 or b.z < hget(b.x, b.y)
+    for _, e in ipairs(ents_all("balloon")) do
+      local gx, gy = ground(e)
+      local dx, dy, dz = b.x - gx, b.y - gy, b.z - pick_z(e) - 20
+      if dx * dx + dy * dy + dz * dz < GUN.r * GUN.r + 100 then pop(e) gone = true end
+    end
+    if gone then table.remove(SHOTS, i) end
+  end
+  for i = #POPS, 1, -1 do
+    local p = POPS[i]
+    p.x, p.y, p.z, p.vz, p.t = p.x + p.vx, p.y + p.vy, p.z + p.vz, p.vz - 0.08, p.t + 1
+    if p.t > 30 then table.remove(POPS, i) end
+  end
+end
+function pop(e)
+  if not e.alive then return end
+  e.alive = false
+  S.got[key_of(e)] = true
+  S.scrap = S.scrap + 1
+  local gx, gy = ground(e)
+  local z = pick_z(e) + 20
+  for i = 1, 12 do
+    POPS[#POPS + 1] = {x = gx, y = gy, z = z, vx = math.cos(i * 0.52) * 1.2, vy = math.sin(i * 0.52) * 1.2, vz = 0.6 + (i % 3) * 0.4, t = 0,
+      c = ({26, 27, 13})[i % 3 + 1]}
+  end
+  msg("Pop! Scrap +1", 60)
+  sfx("E6", 3, 0.3, 4, nil, 0, -600); sfx("A5", 1, 0.3, 6)
 end
 
 function collect(e)
@@ -24017,7 +24643,7 @@ function fly_draw()
   for _, e in ipairs(ents_all()) do
     if DRAW[e.name] or e.name == "ring" or e.name == "pigeon" then
       local gx, gy = ground(e)
-      local z = PICK[e.name] and pick_z(e) or hget(gx, gy)
+      local z = (PICK[e.name] or FLOAT[e.name]) and pick_z(e) or hget(gx, gy)
       if e.name == "pigeon" then
         local a = gt * 0.02 + e.phase
         gx, gy, z = gx + math.cos(a) * 60, gy + math.sin(a) * 60, 50 + math.sin(a * 3) * 8
@@ -24036,6 +24662,14 @@ function fly_draw()
   for _, s in ipairs(SPRAY) do
     local x, y, k = proj(s.x, s.y, s.z)
     if x then circfill(x, y, math.max(1, k * 1.2), 23) end
+  end
+  for _, p in ipairs(POPS) do
+    local x, y, k = proj(p.x, p.y, p.z)
+    if x then rectfill(x, y, math.max(1, k * 1.5), math.max(1, k), p.c) end
+  end
+  for _, b in ipairs(SHOTS) do
+    local x, y, k = proj(b.x, b.y, b.z)
+    if x then circfill(x, y, math.max(1, k * (S.sel.g == 2 and 0.8 or 1.4)), 31); if k > 1 then pset(x - k * 0.3, y - k * 0.3, 29) end end
   end
   for i, t in ipairs(TRAIL) do
     local x, y, k = proj(t[1], t[2], t[3])
@@ -24082,7 +24716,7 @@ function draw_sky_thing(it)
     return
   end
   local d = DRAW[e.name]
-  local s = k * (PICK[e.name] and 1.3 or K_FLY)
+  local s = k * ((PICK[e.name] or FLOAT[e.name]) and 1.3 or K_FLY)
   if e.name == "coil" or e.name == "satchel" then         -- a glow so you can spot them from far away
     local r = 10 * k + math.sin(gt * 0.15) * 2 * k + 2
     circ(it.sx, it.sy - 8 * s, r, 27)
@@ -24259,6 +24893,28 @@ texts{
     ["Snagged on an old mast out on the reef. Easy... mostly."] = "Hing an einem alten Mast draußen am Riff. Ganz leicht... meistens.",
     ["Pip, how would you like a job? Perch could use a mail plane."] = "Pip, wie wär's mit einem Job? Perch könnte ein Postflugzeug brauchen.",
     ["Thanks for playing Tinwing! Keep flying to find the rest of the scrap."] = "Danke fürs Spielen von Tinwing! Flieg weiter, um den restlichen Schrott zu finden.",
+    ["No cannons"] = "Keine Kanonen",
+    ["Clean wings, nothing to carry."] = "Freie Flügel, nichts zu tragen.",
+    ["Cork Popper"] = "Korkknaller",
+    ["Toy cannons for the wings. B: pop balloons!"] = "Spielzeugkanonen für die Flügel. B: Ballons knallen!",
+    ["Puff Mortar"] = "Puffmörser",
+    ["Heavy, slow, and pops anything near it."] = "Schwer, langsam, und knallt alles in der Nähe.",
+    ["Cannons"] = "Kanonen",
+    ["Make the body big enough for your motor and battery, and grab M or B to move them. The motor stays in the front."] = "Mach den Rumpf groß genug für Motor und Akku, und pack M oder B, um sie zu verschieben. Der Motor bleibt vorne.",
+    ["More wing glides, short wings turn quick. Cannons go on the wings: B fires them at balloons."] = "Mehr Flügel gleitet, kurze Flügel wenden schnell. Kanonen kommen auf die Flügel: B schießt auf Ballons.",
+    ["%s sticks out of the body."] = "%s ragt aus dem Rumpf.",
+    ["%s: too tall. Raise it on SIDE."] = "%s: zu hoch. Auf SEITE erhöhen.",
+    ["%s: too wide. Widen it on TOP."] = "%s: zu breit. Auf OBEN verbreitern.",
+    ["The motor must sit in the front half."] = "Der Motor muss vorne sitzen.",
+    ["Motor and battery overlap. Move one."] = "Motor und Akku überlappen. Schieb einen.",
+    ["Cannons must sit on the wings (TOP)."] = "Kanonen gehören auf die Flügel (OBEN).",
+    ["The motor has to stay in the front."] = "Der Motor muss vorne bleiben.",
+    ["D-pad: pick a corner or part. A: grab."] = "Kreuz: Ecke oder Teil wählen. A: packen.",
+    ["off!"] = "daneben!",
+    ["PRE-FLIGHT"] = "VORFLUG",
+    ["Wings"] = "Flügel",
+    ["B fires the cannons. Pop the balloons!"] = "B feuert die Kanonen. Knall die Ballons!",
+    ["Pop! Scrap +#"] = "Plopp! Schrott +#",
   },
 }
 `;
@@ -24437,6 +25093,21 @@ texts{
     return outline(g);
   }
 
+  // a party balloon with a little bag of scrap hanging under it: the cannons' targets
+  function balloon() {
+    const g = G(16, 24);
+    const R = (x, y, w, h, c) => fill(g, x, y, w, h, c);
+    for (let y = 0; y < 14; y++) for (let x = 0; x < 16; x++) {
+      const dx = (x - 7.5) / 6.5, dy = (y - 6.5) / 6.8;
+      if (dx * dx + dy * dy <= 1) g[y][x] = (dx > 0.35 || dy > 0.55) ? 25 : 26;
+    }
+    R(4, 3, 2, 3, 13); px(g, 6, 2, 13);
+    R(7, 13, 2, 2, 25);
+    for (let y = 15; y < 18; y++) px(g, 8 - (y & 1), y, 29);
+    R(5, 18, 6, 5, 7); R(5, 18, 6, 1, 6); R(7, 20, 2, 1, 28);
+    return outline(g);
+  }
+
   function buoy() {
     const g = G(8, 16);
     const R = (x, y, w, h, c) => fill(g, x, y, w, h, c);
@@ -24509,7 +25180,7 @@ texts{
     // people only appear in the story's speech boxes
     blit(64, person(pip, 'down', 0)); blit(66, person(mags, 'down', 0)); blit(68, person(tobin, 'down', 0));
     blit(76, planeIcon());
-    blit(120, crate()); blit(122, coil()); blit(124, satchel());
+    blit(120, crate()); blit(122, coil()); blit(124, satchel()); blit(70, balloon());
     blit(126, pigeon(0)); blit(127, pigeon(1)); blit(142, pigeon(2));
     blit(160, house({ wall: 7, wallDark: 6, roof: 25, roofDark: 24, chimney: true }));
     blit(164, house({ wall: 12, wallDark: 11, roof: 21, roofDark: 19 }));
@@ -24537,7 +25208,7 @@ texts{
         thing('boat', 248, 4, 2), thing('buoy', 252, 1, 2), thing('palm', 246, 2, 3),
         Object.assign({}, base, { name: 'pigeon', sw: 1, sh: 1, anims: [A('idle', [126]), A('fly', [127, 142], 4)], tree: null }),
         thing('tower', 240, 3, 8), thing('wreck', 243, 3, 5),
-        thing('crate', 120, 2, 2), thing('coil', 122, 2, 2), thing('satchel', 124, 2, 2),
+        thing('crate', 120, 2, 2), thing('coil', 122, 2, 2), thing('satchel', 124, 2, 2), thing('balloon', 70, 2, 3),
         thing('ring', 27, 2, 2),
       ],
       placed: [],
@@ -24634,6 +25305,8 @@ texts{
       [96, 62], [20, 26]].forEach(([x, y]) => at(splaced, 'crate', x * 8, y * 8));
     [[42, 96], [62, 86], [84, 74], [118, 62], [140, 48], [160, 36], [70, 40], [130, 96]].forEach(([x, y]) => at(splaced, 'ring', x * 8, y * 8));
     [[30, 98], [34, 100], [24, 100], [36, 104]].forEach(([x, y]) => at(splaced, 'pigeon', x * 8, y * 8));
+    // balloons for the wing cannons: a few near home, more out towards the reef
+    [[48, 92], [66, 100], [52, 70], [92, 90], [76, 50], [112, 70], [124, 50], [138, 74], [152, 44], [166, 80], [172, 34], [58, 30]].forEach(([x, y]) => at(splaced, 'balloon', x * 8, y * 8));
     [[40, 106], [58, 98], [88, 84], [150, 60]].forEach(([x, y]) => at(splaced, 'buoy', x * 8, y * 8));
     islands.forEach(([cx, cy, r], i) => {
       if (r < 5) return;
@@ -29416,8 +30089,12 @@ window.BKMyBit = (function () {
 (function () {
   const code = `-- Puffball: keep the puffer off your sand (1-8 players, on one screen or on linked Bits)
 --   Left / right: run. A: jump. B: dive (a quick lunge along the sand).
+--   Serve: the server carries the puffer above their head, walks to a good spot and jumps. A moment later
+--   the puffer lets go. Nobody is frozen after a point, and the side that lost the point serves.
 --   Match: two sides, the puffer lands on your sand and the other side scores. 3 touches a side at most.
 --   Rally: everyone works together and passes the puffer over the net as often as they can.
+-- Before the first serve a setup screen lets every player pick a colour and set the net and the puffer.
+-- New match (pause menu, or A after a match) starts over with the same setup.
 -- Every touch puffs the puffer up: it gets bigger and faster until somebody misses.
 -- Odd players start on the left, even players on the right; crabs (CPU) fill the empty spots.
 -- Linked Bits run in lockstep: the game only uses rnd() and the frame count, and drawing never calls rnd().
@@ -29425,12 +30102,20 @@ window.BKMyBit = (function () {
 GROUND, NETX, NET_TOP, NET_W = 204, 160, 150, 3
 GRAV, JUMP = tune("Gravity", 0.3, 0.1, 0.6, 0.01), -tune("Jump power", 5.6, 3, 8, 0.1)
 SPEED, DIVE = tune("Run speed", 2.3, 1, 4, 0.1), tune("Dive speed", 5, 3, 8, 0.5)
-BALL_G, HIT = tune("Puffer gravity", 0.14, 0.05, 0.3, 0.01), tune("Hit power", 4.7, 3, 7, 0.1)
+BALL_G0, HIT = tune("Puffer gravity", 0.12, 0.05, 0.3, 0.01), tune("Hit power", 4.7, 3, 7, 0.1)
 HEAT = tune("Speed-up per touch", 0.07, 0, 0.2, 0.01)
+SERVE_T = tune("Serve timer (frames)", 10, 0, 40)   -- after the server jumps, how long until the puffer lets go
+SERVE_WAIT = 300                            -- a server who never jumps: the puffer goes by itself after this long
+CARRY = 36                                  -- how far above the server's feet the puffer is carried
 RALLY_GOAL = 30
 PR = 12                                     -- body radius of a player
-PC = { 10, 21, 17, 5, 27, 26, 22, 13 }      -- player colours
+PC = { 10, 21, 17, 5, 27, 26, 22, 13 }      -- the colours players pick from
 PD = { 9, 20, 16, 4, 10, 25, 21, 29 }       -- and their shades
+CNAME = { "SUNNY", "OCEAN", "LIME", "GRAPE", "LEMON", "CORAL", "SKY", "SNOW" }
+-- the setup screen: each row is {name, values}; COLORS is every player's own colour
+NETS = { { "Low", 164 }, { "Normal", 150 }, { "High", 134 } }       -- the top of the net
+FLOAT = { { "Floaty", 0.7 }, { "Normal", 1 }, { "Heavy", 1.3 } }   -- times the puffer gravity
+SIZES = { { "Small", 6 }, { "Normal", 8 }, { "Big", 11 } }          -- the puffer's size before it puffs up
 MODES = { { "MATCH", "Two sides. Most points wins." }, { "RALLY", "Together: keep it flying." } }
 KEYS = { "left", "right", "up", "down", "a", "b" }
 
@@ -29441,15 +30126,22 @@ function _init()
     goal = "Win a Match before the other side does, or pass the puffer " .. RALLY_GOAL .. " times in a row in a Rally.",
     help = {
       "Left / right: run. A: jump. B: dive.",
+      "Serving: you carry the puffer. Walk to where you want to serve from and jump: it lets go a moment later.",
       "Match: if the puffer lands on your sand, the other side scores. A side may touch it 3 times in a row.",
       "Rally: everyone plays together. Every pass over the net counts; 3 drops end the run.",
       "Every touch puffs the puffer up and speeds it up.",
+      "Before a game, everyone picks a colour, and you can set the net height and how floaty and big the puffer is.",
+      "New match (in the pause menu, or A after a match) starts over with the same setup.",
       "Odd players are on the left, even players on the right. Crabs fill the empty spots.",
     },
     continue = function(cp) if cp and cp.mode then start(cp.mode, cp) end end,
     settings = {
       { key = "cpu", name = "Crabs (CPU)", values = { "Easy", "Normal", "Hard" }, value = 2 },
       { key = "points", name = "Points to win", min = 3, max = 15, value = 7 },
+    },
+    pause = {
+      { "New match", function() start(mode) end },
+      { "Change setup", function() go_setup() end },
     },
     title_draw = function(t) draw_title(t) end,   -- its own animated title screen (at the end of the code)
     look = { title = 13, shadow = 24, panel = 24, edge = 10, hi = 25, text = 12, pick = 27, goal = 12, footer = 11 },
@@ -29458,9 +30150,54 @@ function _init()
   gt, last_t, pick_t = 0, -9, 0
   pad, edge = {}, {}
   fx, best, won_rally = {}, 0, false
-  sel = 1
+  sel, row = 1, 1
+  col = {}
+  for p = 1, 8 do col[p] = p end
+  opt = { net = 2, float = 2, size = 2, points = setting("points") or 7 }
   start(1)
   state = "pick"
+end
+
+-- the setup screen's rows for the picked game (Points only in a Match)
+function setup_rows()
+  local r = { "COLORS", "NET", "PUFFER", "SIZE" }
+  if mode == 1 then r[#r + 1] = "POINTS" end
+  return r
+end
+function row_value(name)
+  if name == "NET" then return NETS[opt.net][1]
+  elseif name == "PUFFER" then return FLOAT[opt.float][1]
+  elseif name == "SIZE" then return SIZES[opt.size][1]
+  elseif name == "POINTS" then return tostring(opt.points) end
+  return ""
+end
+function change_row(name, d)
+  if name == "NET" then opt.net = mid(1, opt.net + d, #NETS)
+  elseif name == "PUFFER" then opt.float = mid(1, opt.float + d, #FLOAT)
+  elseif name == "SIZE" then opt.size = mid(1, opt.size + d, #SIZES)
+  elseif name == "POINTS" then opt.points = mid(3, opt.points + d, 15) end
+end
+-- the next colour for player p that no other player has
+function next_color(p, d)
+  local c = col[p]
+  for _ = 1, #PC do
+    c = (c - 1 + d) % #PC + 1
+    local free = true
+    for q = 1, NP do if q ~= p and col[q] == c then free = false end end
+    if free then col[p] = c; return true end
+  end
+  return false
+end
+function go_setup(m)
+  mode = m or mode
+  state, setup_t = "setup", 0
+  row = math.min(row, #setup_rows())
+end
+function apply_opt()
+  NET_TOP = NETS[opt.net][2]
+  BALL_G = BALL_G0 * FLOAT[opt.float][2]
+  R0 = SIZES[opt.size][2]
+  if ball and ball.carry then ball.r = R0 end      -- the puffer behind the setup screen shows the new size
 end
 
 -- ---------------------------------------------------------------- helpers
@@ -29495,6 +30232,8 @@ end
 -- ---------------------------------------------------------------- setting up
 function start(m, cp)
   mode = m
+  if cp and cp.opt then opt, col = cp.opt, cp.col or col end
+  apply_opt()
   local k = math.max(1, (NP + 1) // 2)            -- players on each side
   P = {}
   for side = 1, 2 do
@@ -29507,9 +30246,10 @@ function start(m, cp)
   score = { cp and cp.s1 or 0, cp and cp.s2 or 0 }
   best = cp and cp.best or best
   lives, streak, passes_total = 3, 0, 0
-  target = setting("points") or 7
+  target = opt.points
   if score[1] >= target or score[2] >= target then score = { 0, 0 } end
   state, state_t, winner = "play", 0, 0
+  serves, banner_t = { 0, 0 }, 0
   serve(1)
 end
 
@@ -29520,8 +30260,15 @@ function new_player(side, n, k, pl)
            dive_t = 0, cd = 0, hit_cd = 0, err = 0, jump_ok = true, squash = 0 }
 end
 
+-- A serve: one player of the side carries the puffer above their head and walks to where they want to
+-- serve from. Nobody is frozen. When the server jumps, a short timer runs and then the puffer lets go,
+-- carrying on up and the way the server was moving. The players of a side take turns.
 function serve(side)
-  ball = { x = side == 1 and 84 or 236, y = 84, vx = 0, vy = 0, r = 8, hold = 50, spin = 0 }
+  serves[side] = serves[side] + 1
+  local team = {}
+  for _, p in ipairs(P) do if p.side == side then team[#team + 1] = p end end
+  local s = team[(serves[side] - 1) % #team + 1]
+  ball = { x = s.x, y = s.y - CARRY, vx = 0, vy = 0, r = R0, spin = 0, carry = s, wait = 0, count = nil }
   touches, last_side, hits = 0, 0, 0
   for _, p in ipairs(P) do p.err, p.jump_ok = 0, true end
 end
@@ -29530,7 +30277,7 @@ end
 -- where the puffer comes down to height y, and in how many frames
 function predict(y)
   local x, by, vx, vy = ball.x, ball.y, ball.vx, ball.vy
-  if ball.hold > 0 then return x, 60 end
+  if ball.carry then return x, 60 end
   for n = 1, 240 do
     vy = vy + BALL_G
     x, by = x + vx, by + vy
@@ -29546,7 +30293,13 @@ function cpu(p)
   local lx, lt = predict(GROUND - 34)
   local mine = (lx < NETX) == (p.side == 1)
   local tx = p.home
-  if mine then
+  if ball.carry == p then
+    -- my serve: walk up towards the net, then jump
+    tx = (p.side == 1 and 104 or 216) + p.err
+    if p.ground and not ball.count and (math.abs(tx - p.x) <= 3 or ball.wait > 70) then I.jump = true end
+  elseif ball.carry then
+    -- somebody else's serve: back to my spot
+  elseif mine then
     -- the one closest to the landing spot goes for it
     local go = true
     for _, o in ipairs(P) do
@@ -29583,7 +30336,8 @@ function move(p, I)
     sfx("C3", 3, 0.25, 6, nil, pan(p.x))
     burst(p.x, GROUND, 11, 5, 1.2)
   end
-  if I.jump and p.ground then p.vy, p.ground = JUMP, false; sfx("C4", 1, 0.2, 5, nil, pan(p.x), 500) end
+  p.jumped = false
+  if I.jump and p.ground then p.vy, p.ground, p.jumped = JUMP, false, true; sfx("C4", 1, 0.2, 5, nil, pan(p.x), 500) end
   p.vy = p.vy + GRAV
   p.x, p.y = p.x + p.vx, p.y + p.vy
   if p.y >= GROUND then
@@ -29596,7 +30350,7 @@ end
 function touch(p)
   if last_side == p.side then touches = touches + 1 else touches, last_side = 1, p.side end
   hits = hits + 1
-  ball.r = math.min(15, 8 + hits * 0.35)
+  ball.r = math.min(R0 + 7, R0 + hits * 0.35)
   -- crabs get sloppier the longer a match rally lasts; in a Rally your crab partner is always a good one
   local sk = mode == 2 and 3 or (setting("cpu") or 2)
   local e = ({ 22, 12, 5 })[sk]
@@ -29613,7 +30367,7 @@ function fault(side, why)
   sfx("C3", 2, 0.4, 14, nil, 0, -60)
   if mode == 1 then
     score[3 - side] = score[3 - side] + 1
-    checkpoint({ mode = 1, s1 = score[1], s2 = score[2], best = best })
+    checkpoint({ mode = 1, s1 = score[1], s2 = score[2], best = best, opt = opt, col = col })
     if score[3 - side] >= target then
       winner = 3 - side
       state, state_t = "over", 0
@@ -29621,7 +30375,7 @@ function fault(side, why)
       if NP > 1 or winner == 1 then
         game_win(tr("%s won the match %d to %d!", tr(side_name(winner)), score[winner], score[side]))
       end
-      checkpoint({ mode = 1, s1 = 0, s2 = 0, best = best })
+      checkpoint({ mode = 1, s1 = 0, s2 = 0, best = best, opt = opt, col = col })
       return
     end
   else
@@ -29629,7 +30383,8 @@ function fault(side, why)
     streak = 0
     if lives <= 0 then state, state_t = "over", 0 return end
   end
-  state, state_t, serve_to = "point", 0, side
+  banner_t = 60
+  serve(side)            -- the side that lost the point serves next, so it can't be scored on again right away
 end
 
 function side_name(s)
@@ -29642,7 +30397,19 @@ end
 
 function ball_step()
   local b = ball
-  if b.hold > 0 then b.hold = b.hold - 1
+  if b.carry then
+    local s = b.carry
+    b.x, b.y = s.x, s.y - CARRY
+    b.wait = b.wait + 1
+    if s.jumped and not b.count then b.count = SERVE_T end
+    if b.count then b.count = b.count - 1 end
+    if (b.count and b.count <= 0) or b.wait > SERVE_WAIT then
+      b.carry = nil
+      b.vx, b.vy = s.vx * 1.4, math.min(s.vy, 0) - 2.2
+      if not b.count then b.vy = -4 end
+      sfx("E5", 4, 0.35, 6, nil, pan(b.x), 300)
+    end
+    return
   else
     b.vy = b.vy + BALL_G
     local ox = b.x
@@ -29667,7 +30434,7 @@ function ball_step()
       touches, last_side = 0, 0
       if mode == 2 then
         streak, passes_total = streak + 1, passes_total + 1
-        if streak > best then best = streak; checkpoint({ mode = 2, best = best }) end
+        if streak > best then best = streak; checkpoint({ mode = 2, best = best, opt = opt, col = col }) end
         if streak == RALLY_GOAL and not won_rally then
           won_rally = true
           game_win(RALLY_GOAL .. " passes without dropping the puffer!")
@@ -29687,7 +30454,6 @@ function ball_step()
       local sp = HIT + math.min(hits, 24) * HEAT
       b.vx = nx * sp + p.vx * 0.45
       b.vy = math.min(ny * sp + p.vy * 0.3, -1.6)
-      b.hold = 0
       p.hit_cd = 10
       touch(p)
       if state ~= "play" then return end
@@ -29714,26 +30480,41 @@ function _update()
     if any_edge("right") or any_edge("down") then sel = sel % #MODES + 1; sfx("E5", 0, 0.15, 3) end
     if any_edge("a") and pick_t > 10 then
       sfx("C5", 4, 0.3, 6)
-      start(sel)
-      checkpoint({ mode = sel, s1 = 0, s2 = 0, best = best })
+      go_setup(sel)
+    end
+    return
+  end
+  if state == "setup" then
+    setup_t = setup_t + 1
+    local rows = setup_rows()
+    if any_edge("up") then row = row == 1 and #rows or row - 1; sfx("E5", 0, 0.15, 3) end
+    if any_edge("down") then row = row % #rows + 1; sfx("E5", 0, 0.15, 3) end
+    for p = 1, NP do
+      local d = (edge[p].right and 1 or 0) - (edge[p].left and 1 or 0)
+      if d ~= 0 then
+        if rows[row] == "COLORS" then if next_color(p, d) then sfx(64 + col[p], 0, 0.15, 4, nil, 0) end
+        else change_row(rows[row], d); apply_opt(); sfx("G5", 0, 0.15, 3) end
+      end
+    end
+    if setup_t > 10 then
+      if any_edge("a") then
+        sfx("C5", 4, 0.3, 6)
+        start(mode)
+        checkpoint({ mode = mode, s1 = 0, s2 = 0, best = best, opt = opt, col = col })
+      elseif any_edge("b") then state, pick_t = "pick", 0 end
     end
     return
   end
   state_t = state_t + 1
   if state == "over" then
     if state_t > 50 then
-      if any_edge("a") then start(mode) elseif any_edge("b") then state, pick_t = "pick", 0 end
+      if any_edge("a") then start(mode) elseif any_edge("b") then go_setup() end
     end
     return
   end
-  if state == "point" then
-    if state_t > 70 then state = "play"; serve(serve_to) end
-    ball.vx, ball.vy = ball.vx * 0.9, 0
-  end
-  for _, p in ipairs(P) do
-    move(p, state == "play" and (p.pl > 0 and human(p) or cpu(p)) or { mx = 0 })
-  end
-  if state == "play" then ball_step() end
+  if banner_t > 0 then banner_t = banner_t - 1 end
+  for _, p in ipairs(P) do move(p, p.pl > 0 and human(p) or cpu(p)) end
+  ball_step()
 end
 
 -- ---------------------------------------------------------------- drawing (never calls rnd)
@@ -29766,7 +30547,7 @@ end
 
 function draw_player(p, i)
   local c, d = 29, 30
-  if p.pl > 0 then c, d = PC[p.pl], PD[p.pl] end
+  if p.pl > 0 then c, d = PC[col[p.pl]], PD[col[p.pl]] end
   local sq = p.squash > 0 and 2 or 0
   local cy = p.y - PR + sq
   rectfill(p.x - 10, GROUND + 1, 20, 3, 9)                          -- shadow
@@ -29845,12 +30626,20 @@ function _draw()
     end
     ctext(MODES[sel][2], 128, 13)
     ctext(NP == 1 and "1 player, with a crab" or NP .. " players", 140, 29)
-    ctext("left / right: pick    A: play", 152, 29)
+    ctext("left / right: pick    A: next", 152, 29)
     return
   end
+  if state == "setup" then draw_setup() return end
   draw_hud()
-  if state == "point" and state_t < 60 then stext(why_text or "", 70, 27, 2) end
-  if ball.hold > 20 and state == "play" and hits == 0 then stext("READY", 60, 13, 2) end
+  if state == "play" and banner_t > 0 then stext(why_text or "", 70, 27, 2) end
+  local s = ball.carry
+  if s and state == "play" then
+    if ball.count then circ(ball.x, ball.y, ball.r + 3 + ball.count, 13)             -- the serve timer closing in
+    elseif s.pl > 0 and (gt // 20) % 2 == 0 then
+      local hint = tr("A: serve")
+      text(hint, mid(2, ball.x - #hint * 4, 318 - #hint * 8), ball.y - ball.r - 14, 13)
+    end
+  end
   if state == "over" then
     rectfill(40, 70, 240, 80, 1) rect(40, 70, 240, 80, 13)
     if mode == 1 then
@@ -29862,8 +30651,44 @@ function _draw()
       stext("DROPPED!", 80, 26, 2)
       ctext(passes_total .. " passes this run, best streak " .. best, 104, 13)
     end
-    if state_t > 50 then ctext("A: again    B: pick a game", 128, 29) end
+    if state_t > 50 then ctext("A: new match    B: setup", 128, 29) end
   end
+end
+
+-- the setup screen: every player's colour, then the net and the puffer
+function blob(x, y, c, d, r)
+  circfill(x, y, r, d) circfill(x, y - 1, r - 1, c)
+  for s = -1, 1, 2 do circfill(x + s * r * 0.42, y - r * 0.33, math.max(1, r // 4), 13) pset(x + s * r * 0.42, y - r * 0.33, 1) end
+end
+function draw_setup()
+  local rows = setup_rows()
+  rectfill(20, 30, 280, 186, 1) rect(20, 30, 280, 186, 13)
+  stext(mode == 1 and "SET UP THE MATCH" or "SET UP THE RALLY", 38, 27, 2)
+  local y = 62
+  for i, name in ipairs(rows) do
+    local on = i == row
+    local h = name == "COLORS" and 40 or 14
+    if on then rectfill(26, y - 2, 268, h, 20) end
+    text(name, 34, y + 2, on and 27 or 29)
+    if name == "COLORS" then
+      local w = 196 / NP
+      for p = 1, NP do
+        local x = 104 + (p - 0.5) * w
+        local r = NP > 4 and 7 or 10
+        blob(x, y + 13, PC[col[p]], PD[col[p]], r)
+        if on and (gt // 15) % 2 == 0 and NP <= 4 then text("<", x - r - 10, y + 9, 13) text(">", x + r + 3, y + 9, 13) end
+        local nm = NP == 1 and tr(CNAME[col[p]]) or player_name(p, NP > 4 and 3 or 6)
+        text(nm, x - #nm * 4, y + 27, (ME or 0) == p and 27 or 13)
+      end
+    else
+      local v = tr(row_value(name))
+      text(v, 200 - #v * 4, y + 2, 13)
+      if on then text("<", 200 - #v * 4 - 14, y + 2, 27) text(">", 200 + #v * 4 + 6, y + 2, 27) end
+    end
+    y = y + h + 4
+  end
+  ctext(row == 1 and "left / right: your own colour" or "up/down: choose  left/right: change", 186, 29)
+  ctext("A: play    B: back", 200, 29)
 end
 
 -- the title screen (game{title_draw = ...}): two crabs keep the puffer flying over a sunset beach.
@@ -29887,8 +30712,8 @@ function draw_title(t)
     line(x, 148 + (i * 7) % 24, x + 10, 148 + (i * 7) % 24, i % 3 == 0 and 27 or 21)
   end
   rectfill(0, 172, 320, 68, 9) rectfill(0, GROUND, 320, 36, 8)        -- sand in the evening
-  rectfill(NETX - NET_W, NET_TOP, NET_W * 2, GROUND - NET_TOP, 29)
-  rectfill(NETX - NET_W, NET_TOP, NET_W * 2, 3, 13)
+  rectfill(NETX - NET_W, 150, NET_W * 2, GROUND - 150, 29)
+  rectfill(NETX - NET_W, 150, NET_W * 2, 3, 13)
   -- the puffer flies from crab to crab and back, a little bigger with every touch
   local n, f = t // 70, (t % 70) / 70
   local from, to = n % 2 == 0 and 40 or 280, n % 2 == 0 and 280 or 40
@@ -29913,9 +30738,9 @@ texts{
     ["Crabs (CPU)"] = "Krabben (Computer)",
     ["Points to win"] = "Punkte zum Sieg",
     ["MATCH"] = "MATCH",
-    ["Two sides. Most points wins."] = "Zwei Seiten. Die meisten Punkte gewinnen.",
+    ["Two sides. Most points wins."] = "Zwei Teams. Wer mehr punktet.",
     ["RALLY"] = "RALLY",
-    ["Together: keep it flying."] = "Zusammen: halt ihn in der Luft.",
+    ["Together: keep it flying."] = "Halt ihn zusammen in der Luft.",
     ["%s won the match %d to %d!"] = "%s: Match gewonnen, %d zu %d!",
     ["You"] = "Du",
     ["The crab"] = "Die Krabbe",
@@ -29926,7 +30751,7 @@ texts{
     ["PICK A GAME"] = "WÄHL EIN SPIEL",
     ["1 player, with a crab"] = "1 Spieler, mit einer Krabbe",
     ["# players"] = "# Spieler",
-    ["left / right: pick    A: play"] = "links / rechts: wählen    A: spielen",
+    ["left / right: pick    A: play"] = "Wahl: links/rechts  A: spielen",
     ["READY"] = "BEREIT",
     ["You win!"] = "Du gewinnst!",
     ["The crabs win!"] = "Die Krabben gewinnen!",
@@ -29937,6 +30762,44 @@ texts{
     ["A: again    B: pick a game"] = "A: nochmal    B: anderes Spiel",
     ["4 TOUCHES!"] = "4 BERÜHRUNGEN!",
     ["SPLAT!"] = "PLATSCH!",
+    ["Gravity"] = "Schwerkraft",
+    ["Jump power"] = "Sprungkraft",
+    ["Run speed"] = "Lauftempo",
+    ["Dive speed"] = "Hechttempo",
+    ["Puffer gravity"] = "Kugelfisch-Schwerkraft",
+    ["Hit power"] = "Schlagkraft",
+    ["Speed-up per touch"] = "Tempo pro Berührung",
+    ["Serve timer (frames)"] = "Aufschlag-Zeit (Frames)",
+    ["SUNNY"] = "SONNE",
+    ["OCEAN"] = "OZEAN",
+    ["LIME"] = "LIMETTE",
+    ["GRAPE"] = "TRAUBE",
+    ["LEMON"] = "ZITRONE",
+    ["CORAL"] = "KORALLE",
+    ["SKY"] = "HIMMEL",
+    ["SNOW"] = "SCHNEE",
+    ["Low"] = "Niedrig",
+    ["High"] = "Hoch",
+    ["Floaty"] = "Schwebend",
+    ["Heavy"] = "Schwer",
+    ["Serving: you carry the puffer. Walk to where you want to serve from and jump: it lets go a moment later."] = "Aufschlag: Du trägst den Kugelfisch. Lauf dahin, von wo du aufschlagen willst, und spring: Kurz danach lässt er los.",
+    ["Before a game, everyone picks a colour, and you can set the net height and how floaty and big the puffer is."] = "Vor dem Spiel wählt jeder eine Farbe, und ihr könnt Netzhöhe, Schweben und Größe des Kugelfischs einstellen.",
+    ["New match (in the pause menu, or A after a match) starts over with the same setup."] = "Neues Match (im Pausenmenü oder A nach einem Match) fängt mit denselben Einstellungen neu an.",
+    ["New match"] = "Neues Match",
+    ["Change setup"] = "Einstellungen ändern",
+    ["COLORS"] = "FARBEN",
+    ["NET"] = "NETZ",
+    ["PUFFER"] = "FISCH",
+    ["SIZE"] = "GRÖSSE",
+    ["POINTS"] = "PUNKTE",
+    ["left / right: pick    A: next"] = "links/rechts: wählen A: weiter",
+    ["A: serve"] = "A: aufschlagen",
+    ["A: new match    B: setup"] = "A: neues Match    B: Einstellungen",
+    ["SET UP THE MATCH"] = "MATCH EINSTELLEN",
+    ["SET UP THE RALLY"] = "RALLY EINSTELLEN",
+    ["left / right: your own colour"] = "links / rechts: deine Farbe",
+    ["up/down: choose  left/right: change"] = "hoch/runter: wählen  links/rechts: ändern",
+    ["A: play    B: back"] = "A: spielen    B: zurück",
   },
 }
 `;
@@ -30594,7 +31457,7 @@ texts{
     ["PICK A GAME"] = "WÄHL EIN SPIEL",
     ["1 player"] = "1 Spieler",
     ["# players"] = "# Spieler",
-    ["left / right: pick    A: play"] = "links / rechts: wählen    A: spielen",
+    ["left / right: pick    A: play"] = "Wahl: links/rechts  A: spielen",
     ["Fence off #%. Mind the moles!"] = "Umzäun #%. Pass auf die Maulwürfe auf!",
     ["Most land wins!"] = "Das meiste Land gewinnt!",
     ["GARDEN # DONE!"] = "GARTEN # FERTIG!",
@@ -31241,14 +32104,14 @@ texts{
     ["ONE KITCHEN"] = "EINE KÜCHE",
     ["Together: earn the target."] = "Zusammen: erreicht das Ziel.",
     ["TEAMS"] = "TEAMS",
-    ["Two kitchens. Most coins wins."] = "Zwei Küchen. Die meisten Münzen gewinnen.",
+    ["Two kitchens. Most coins wins."] = "Zwei Küchen im Duell.",
     ["The crew earned # coins in one shift (target #)!"] = "Die Crew hat in einer Schicht # Münzen verdient (Ziel #)!",
     ["The left kitchen wins, %d coins to %d!"] = "Die linke Küche gewinnt, %d zu %d Münzen!",
     ["The right kitchen wins, %d coins to %d!"] = "Die rechte Küche gewinnt, %d zu %d Münzen!",
     ["coins"] = "Münzen",
     ["PICK A GAME"] = "WÄHL EIN SPIEL",
     ["# players"] = "# Spieler",
-    ["left / right: pick    A: play"] = "links / rechts: wählen    A: spielen",
+    ["left / right: pick    A: play"] = "Wahl: links/rechts  A: spielen",
     ["SHIFT STARTS"] = "SCHICHTBEGINN",
     ["KITCHEN DUEL"] = "KÜCHENDUELL",
     ["Earn # coins!"] = "Verdient # Münzen!",
@@ -33975,7 +34838,7 @@ window.BKShare = (() => {
   }
   async function showHub(body, fresh) {
     body.innerHTML = `<div class="hub-bar"><div class="seg">${['all', 'game', 'app', 'photo', 'clip'].map(k => `<button data-hf="${k}" class="${hubFilter === k ? 'active' : ''}">${k === 'all' ? 'Everything' : KINDS[k]}</button>`).join('')}</div>
-      <span class="grow"></span><a class="small" href="${SITE}hub.html" target="_blank" rel="noopener" title="The Share hub as a website, to browse and pass around">website ↗</a><button id="hubRefresh" class="tiny" title="Load the hub again">⟳</button></div><div id="hubGrid" class="hub-grid"><p class="dim">Loading the hub…</p></div>`;
+      <span class="grow"></span><a class="btnlink" href="${SITE}hub.html" target="_blank" rel="noopener" title="The Share hub as a website, to browse and pass around">🎮 Open the Share website ↗</a><button id="hubRefresh" class="tiny" title="Load the hub again">⟳</button></div><div id="hubGrid" class="hub-grid"><p class="dim">Loading the hub…</p></div>`;
     body.querySelectorAll('[data-hf]').forEach(b => { b.onclick = () => { hubFilter = b.dataset.hf; showHub(body); }; });
     document.getElementById('hubRefresh').onclick = () => showHub(body, true);
     const grid = document.getElementById('hubGrid');
@@ -36891,6 +37754,7 @@ display()                                   -- off</pre><p class="dim">The Help 
         ${st !== 'browser' ? '<button id="libBrowser" class="tiny">Use this browser instead</button>' : ''}</div>
       <div class="games-head"><b>Built-in games</b><span class="dim small">Play them, or open one to see how it is made.</span></div>
       <div class="game-cards">${cards}</div>
+      <div class="games-head"><b>Games by other people</b><span class="dim small">Games and utility apps people shared, to play here or put on your PocketBit.</span><span class="grow"></span><a id="gmSite" class="btnlink" href="https://dvrkstvr.github.io/bitkit/hub.html" target="_blank" rel="noopener">🎮 Open the Share website ↗</a></div>
       <p class="dim small">Switching games never loses work: a game you changed is kept as it was when you left it.</p></div>`,
       [['Close', closeModal, 'primary']], 'wide');
     document.querySelectorAll('canvas[data-mine]').forEach(cv => { const g = mine[+cv.dataset.mine]; if (g.data) { try { drawIcon(cv, decodeCart(g.data)); } catch (e) { /* no icon */ } } });

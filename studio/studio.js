@@ -2799,6 +2799,7 @@ display()                                   -- off</pre><p class="dim">The Help 
         ${st !== 'browser' ? '<button id="libBrowser" class="tiny">Use this browser instead</button>' : ''}</div>
       <div class="games-head"><b>Built-in games</b><span class="dim small">Play them, or open one to see how it is made.</span></div>
       <div class="game-cards">${cards}</div>
+      <div class="games-head"><b>Games by other people</b><span class="dim small">Games and utility apps people shared, to play here or put on your PocketBit.</span><span class="grow"></span><a id="gmSite" class="btnlink" href="https://dvrkstvr.github.io/bitkit/hub.html" target="_blank" rel="noopener">🎮 Open the Share website ↗</a></div>
       <p class="dim small">Switching games never loses work: a game you changed is kept as it was when you left it.</p></div>`,
       [['Close', closeModal, 'primary']], 'wide');
     document.querySelectorAll('canvas[data-mine]').forEach(cv => { const g = mine[+cv.dataset.mine]; if (g.data) { try { drawIcon(cv, decodeCart(g.data)); } catch (e) { /* no icon */ } } });

@@ -53,7 +53,9 @@ const runtime = require('../studio/runtime.js');
   const last = tag => { const l = logs.filter(x => x.startsWith(tag)).pop(); return l ? l.split(/\s+/).slice(1) : []; };
   const run = (n, input) => { for (let f = 0; f < n; f++) if (frame(input ? input(f) : 0)) return false; return true; };
   // the probe prints the state every frame
-  const PROBE = 'local _pd = _bk_overlay\nfunction _bk_overlay() _pd() print("tw", MODE, S.scrap, S.coil, S.satchel, S.done, P and math.floor(P.z) or -1, P and string.format("%.2f", P.bat) or -1, GAME.state, cutscene_playing() and "cut" or "free", #problems(), H and H.tab or 0, S.shape.nose, S.sel.m, S.sel.c, MODE == "fly" and P and string.format("%.2f", math.abs(angdiff(P.h, VIEW.a))) or -1) end\n';
+  const PROBE = 'local _pd = _bk_overlay\nfunction _bk_overlay() _pd() print("tw", MODE, S.scrap, S.coil, S.satchel, S.done, P and math.floor(P.z) or -1, P and string.format("%.2f", P.bat) or -1, GAME.state, cutscene_playing() and "cut" or "free", #problems(), H and H.tab or 0, S.shape.nose, S.sel.m, S.sel.c, MODE == "fly" and P and string.format("%.2f", math.abs(angdiff(P.h, VIEW.a))) or -1, H and H.tab <= 2 and handles(H.tab)[H.sel[H.tab]].name:gsub(" ", "_") or "-", S.place.m, S.place.c, S.place.g, S.sel.g) end\n' +
+    // Y (unused by the game) selects the next blueprint handle named in PICKQ, so the test needn't steer the cursor
+    'local _pu = _update\nfunction _update() if btnp("y") and PICKQ and #PICKQ > 0 and H then local n = table.remove(PICKQ, 1) for i, h in ipairs(handles(H.tab)) do if h.name == n then H.sel[H.tab] = i end end end _pu() end\n';
   const st = () => last('tw');
   const init = c => `local _i = _init\nfunction _init() _i() ${c} end\n`;
   const A = bit('a');
@@ -76,8 +78,8 @@ const runtime = require('../studio/runtime.js');
   tap('r'); shot('blueprint-top');
   if (st()[10] !== '2') fail('R should switch to the top view: ' + st().join(' '));
 
-  // 3. parts: buy the Buzzer with scrap; it doesn't fit the stock nose, so FLY refuses until the body grows
-  load(PROBE + init('INTRO = false S.scrap = 6'));
+  // 3. parts: buy the Buzzer with scrap; it doesn't fit in the thin nose, so FLY refuses until it moves
+  load(PROBE + init('INTRO = false S.scrap = 6 PICKQ = {"Motor", "Motor", "Battery"}'));
   run(3);
   tap('r'); tap('r');                     // PARTS
   tap('right'); tap('a');                 // Buzzer: bought and fitted
@@ -87,17 +89,17 @@ const runtime = require('../studio/runtime.js');
   tap('r'); tap('a'); run(2);             // FLY: refused
   if (st()[0] !== 'hangar') fail('FLY should refuse while a part does not fit: ' + st().join(' '));
   shot('preflight');
-  // make the front of the body taller and wider on the blueprint (side view: front top up, front bottom down)
+  // the motor can't go behind the middle of the plane, however far you push it
   tap('r');                               // round to SIDE
-  tap('left');                            // nose -> the next corner back (front top)
-  tap('a'); for (let i = 0; i < 4; i++) tap('up'); tap('a');
-  tap('down');                            // front bottom
-  tap('a'); for (let i = 0; i < 4; i++) tap('down'); tap('a');
-  tap('r');                               // TOP: front width
-  tap('a'); for (let i = 0; i < 4; i++) tap('right'); tap('a');
-  shot('reshaped');
-  if (st()[9] !== '0') fail('a bigger front should fit the Buzzer: ' + st().join(' ') + ' ' + logs.filter(l => l.startsWith('ERR')).join(' '));
-  tap('r'); tap('r'); tap('a'); run(3);   // FLY
+  tap('y'); if (st()[15] !== 'Motor') fail('Y should pick the Motor handle: ' + st().join(' '));
+  tap('a'); for (let i = 0; i < 30; i++) tap('left'); tap('a');
+  if (Math.abs(+st()[16] - 2.75) > 0.01) fail('the motor should stop with its back end at the Middle corners (2.75): ' + st().join(' '));
+  // slide the motor back into the fat part of the body and the battery out of its way: now it fits, no reshaping
+  tap('y'); tap('a'); for (let i = 0; i < 4; i++) tap('right'); tap('a');   // motor at 3.75
+  tap('y'); tap('a'); for (let i = 0; i < 8; i++) tap('left'); tap('a');    // battery at -1
+  shot('moved');
+  if (st()[9] !== '0') fail('moving the Buzzer back and the battery out of the way should fit: ' + st().join(' '));
+  tap('l'); tap('a'); run(3);            // FLY (L goes round from SIDE)
   if (st()[0] !== 'fly') fail('FLY should launch once everything fits: ' + st().join(' '));
   run(30); shot('launch');
 
@@ -155,6 +157,54 @@ const runtime = require('../studio/runtime.js');
   skipCut(); run(3);
   if (st()[7] !== 'won') fail('the goal complete screen should show: ' + st().join(' '));
   shot('won');
+
+  // 10. what you see on the blueprint is what fits: fits() agrees with a fine scan of the box against the body,
+  // for many random shapes and places (it used to guess the box's height and miss corners)
+  load(PROBE + init(`INTRO = false
+    local bad, n = 0, 0
+    for k = 1, 400 do
+      local s = default_shape()
+      for i, st in ipairs(s.st) do st[2] = 0.6 + math.random() * 3.5 st[3] = -0.4 - math.random() * 3.5 st[4] = 0.5 + math.random() * 4 end
+      s.nose = s.st[1][1] + 1.5 + math.random() * 6
+      local part = (k % 2 == 0) and MOTORS[1 + k % 3] or CELLS[1 + k % 3]
+      local pl = {m = s.tail + math.random() * (s.nose - s.tail), c = 99, g = 6}
+      local ok, _, why = fits(s, "m", part, pl)
+      local x0, x1 = slot("m", part, pl)
+      local good = x0 < s.nose and x1 > s.tail
+      if good then
+        local lo, hi, wm = -99, 99, 99
+        for i = 0, 400 do local t, b, w = section(s, x1 + (x0 - x1) * i / 400) lo, hi, wm = math.max(lo, b), math.min(hi, t), math.min(wm, w) end
+        good = hi - lo >= part.h - 0.01 and wm * 2 >= part.w - 0.01
+      end
+      local geo = ok or why == "front" or why == "overlap"
+      if geo ~= good then bad = bad + 1 end
+      n = n + 1
+    end
+    print("fitprop", bad, n)`));
+  run(2);
+  if (last('fitprop')[0] !== '0') fail('fits() should match the blueprint for every shape, mismatches: ' + last('fitprop').join(' '));
+
+  // 11. cannons: buy the Cork Popper, they go on the wings; slid off the tip they don't fit
+  load(PROBE + init('INTRO = false S.scrap = 4 PICKQ = {"Cannons"}'));
+  run(3);
+  tap('r'); tap('r'); tap('down'); tap('down'); tap('right'); tap('a');
+  if (st()[19] !== '2' || st()[1] !== '0' || st()[9] !== '0') fail('A should buy the Cork Popper and it should fit: ' + st().join(' '));
+  shot('cannon-parts');
+  tap('l'); tap('y');                     // TOP: the Cannons handle
+  if (st()[15] !== 'Cannons') fail('Y should pick the Cannons handle on TOP: ' + st().join(' '));
+  tap('a'); for (let i = 0; i < 30; i++) tap('right'); tap('a');
+  if (st()[9] !== '1') fail('cannons past the wing tip should be a problem: ' + st().join(' '));
+  tap('a'); for (let i = 0; i < 4; i++) tap('left'); tap('a');
+  if (st()[9] !== '0') fail('cannons back on the wing should fit: ' + st().join(' '));
+  shot('cannon-top');
+  // B fires; a balloon in front pops for 1 scrap
+  load(PROBE + init('INTRO = false S.sel.g = 2 S.own.g2 = true fly_start()') +
+    fly('P.launch = 0 local e = ents_all("balloon")[1] TARGET = e local x, y = ground(e) P.x, P.y, P.z, P.h, P.pitch, P.pv, P.bank, P.bv = x - 70, y, pick_z(e) + 20, 0, 0, 0, 0, 0'));
+  run(31);
+  run(30, f => (f < 3 ? bit('b') : 0) | A);
+  shot('cannon-pop');
+  if (st()[1] !== '1') fail('a cannon ball should pop the balloon for 1 scrap: ' + st().join(' '));
+  if (errors.length) fail('errors: ' + errors.join(' '));
 
   // 9. the title screen
   load(PROBE, 0); run(5); shot('title');

@@ -256,7 +256,7 @@ window.BKShare = (() => {
   }
   async function showHub(body, fresh) {
     body.innerHTML = `<div class="hub-bar"><div class="seg">${['all', 'game', 'app', 'photo', 'clip'].map(k => `<button data-hf="${k}" class="${hubFilter === k ? 'active' : ''}">${k === 'all' ? 'Everything' : KINDS[k]}</button>`).join('')}</div>
-      <span class="grow"></span><a class="small" href="${SITE}hub.html" target="_blank" rel="noopener" title="The Share hub as a website, to browse and pass around">website ↗</a><button id="hubRefresh" class="tiny" title="Load the hub again">⟳</button></div><div id="hubGrid" class="hub-grid"><p class="dim">Loading the hub…</p></div>`;
+      <span class="grow"></span><a class="btnlink" href="${SITE}hub.html" target="_blank" rel="noopener" title="The Share hub as a website, to browse and pass around">🎮 Open the Share website ↗</a><button id="hubRefresh" class="tiny" title="Load the hub again">⟳</button></div><div id="hubGrid" class="hub-grid"><p class="dim">Loading the hub…</p></div>`;
     body.querySelectorAll('[data-hf]').forEach(b => { b.onclick = () => { hubFilter = b.dataset.hf; showHub(body); }; });
     document.getElementById('hubRefresh').onclick = () => showHub(body, true);
     const grid = document.getElementById('hubGrid');
