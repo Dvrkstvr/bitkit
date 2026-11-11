@@ -8,12 +8,18 @@
 -- Water drops heal you, mud and sticky seeds slow you down.
 -- Reach the red flag to go to the next level (levels are made on the Map tab).
 -- Cutscenes (Cutscenes tab) play when a level starts, when you walk into a trigger zone, or from code.
+-- Levels (title screen or pause menu) replays any level you have reached and shows its stats,
+-- which are kept with save(). Replays can skip the cutscenes.
 -- Two players: pick 2 under Players. Each player's sprout reads its own controller.
 
 function _init()
   score, total, defeated = 0, #ents_all("drop"), 0
   spawn_x, spawn_y = PLAYER.x, PLAYER.y
   banner, banner_t = LEVELS[LEVEL].name, 120
+  mode, clear_t = "play", 0
+  load_records()
+  new_run(LEVEL)
+  if skip_cutscenes() then cutscene_skip() end    -- level 1's intro is already playing
 
   -- title screen, pause menu (Start), settings and Continue: the game shell (see GAME_RULES.md)
   game{
@@ -23,33 +29,52 @@ function _init()
       "D-pad or stick: move. A: jump (hold for higher). Squeeze R to run. B: throw a pebble.",
       "Stand by a sapling until it grows into a tree: that's your checkpoint.",
       "Water drops heal you, mud and sticky seeds slow you down.",
+      "Levels replays any level you have reached and shows your best time, drops, deaths and more.",
     },
     continue = function(cp)       -- carry on from the last checkpoint
       if not cp then return end
       resume = cp
       if cp.level == LEVEL then place_at(cp) else level(cp.level) end
     end,
-    pause = {{"Back to checkpoint", function() respawn(PLAYER) end}},
+    menu = {{"Levels", function() open_levels(false) end}},
+    pause = {
+      {"Back to checkpoint", function() respawn(PLAYER) end},
+      {"Level select", function() open_levels(true) end},
+    },
   }
 
   -- a new level loaded (an Exit flag uses the "Go to level" step)
   on("level", function(n, name)
     spawn_x, spawn_y = PLAYER.x, PLAYER.y
-    total = total + #ents_all("drop")
+    if picked then                 -- started from the Levels screen: a fresh run of just this level
+      picked = nil
+      score, total, defeated, won = 0, #ents_all("drop"), 0, false
+      for _, p in ipairs(ents_players()) do p.hp = stat(p, "hp") end
+    else
+      total = total + #ents_all("drop")
+    end
     banner, banner_t = name, 120
+    new_run(n)
     if resume then place_at(resume) end
     save_checkpoint()
   end)
+  on("clear", function() finish_run() end)     -- the exit flag sends "clear" before it changes level
   on("win", function()
+    finish_run()
     if not won then
       won = true; sfx("C6", 4, 0.4, 30); cutscene("ending")
       game_win("You reached the flag with " .. score .. "/" .. total .. " water drops.")
     end
   end)
+  -- replaying a level you have cleared: skip its cutscenes if the Levels screen says so
+  on("cutscene", function() if skip_cutscenes() then cutscene_skip() end end)
 
   -- events sent by entities (their behavior trees use "Send event")
-  on("pickup", function() score = score + 1 end)
-  on("death", function(e) defeated = defeated + 1; sfx("G5", 3, 0.4, 6) end)
+  on("pickup", function() score = score + 1; run.drops = run.drops + 1 end)
+  on("death", function(e)
+    defeated = defeated + 1; sfx("G5", 3, 0.4, 6)
+    if e.team == "enemy" and not e.proj then add_stat("kills") end
+  end)
   on("open_door", function()
     if not gate_open then gate_open = true; print("the gate opens!") end
   end)
@@ -60,14 +85,159 @@ function _init()
   end)
 
   -- the player is the "sprout" entity
-  ents_on("sprout", "hurt", function(p) sfx("A2", 2, 0.6, 14, nil, 0, -300) end)
+  ents_on("sprout", "hurt", function(p) sfx("A2", 2, 0.6, 14, nil, 0, -300); add_stat("hits") end)
   ents_on("sprout", "death", function(p)
+    add_stat("deaths")
     respawn(p)                     -- don't die: respawn at the last checkpoint
     -- with a friend still standing, pop back in next to them instead
     for _, q in ipairs(ents_players()) do
       if q ~= p and q.alive and q.ground then p.x, p.y = q.x, q.y - 12 break end
     end
   end)
+end
+
+-- ---- level records: one table per level, kept with save() (the shell keeps the checkpoint next to it)
+-- Linked Bits must play the same game, so they keep records for this session only (GAME_RULES.md).
+function load_records()
+  REC, SKIP = {}, false
+  local d = (ME or 0) == 0 and saved() or nil
+  if type(d) == "table" and type(d.levels) == "table" then
+    REC, SKIP = d.levels, d.skip and true or false
+  end
+end
+function save_records()
+  if (ME or 0) == 0 then save({levels = REC, skip = SKIP}) end
+  rec_dirty = false
+end
+function rec(n)
+  REC[n] = REC[n] or {plays = 0, clears = 0, deaths = 0, kills = 0, hits = 0}
+  return REC[n]
+end
+function add_stat(k)
+  run[k] = run[k] + 1
+  local r = rec(run.level)
+  r[k] = (r[k] or 0) + 1
+  rec_dirty = true
+end
+function unlocked(n)
+  return n == 1 or (ME or 0) > 0 or rec(n).seen or rec(n - 1).clears > 0
+end
+
+-- one try at a level, from its start (or from Continue) to its flag
+function new_run(n)
+  run = {level = n, t = 0, drops = 0, kills = 0, deaths = 0, hits = 0, total = #ents_all("drop"),
+         replay = rec(n).clears > 0}
+  rec(n).seen = true
+  rec_dirty = true
+end
+function skip_cutscenes() return SKIP and run.replay end
+
+function finish_run()
+  if run.done then return end
+  run.done = true
+  local r = rec(run.level)
+  r.clears = r.clears + 1
+  r.total = run.total
+  local best = not r.time or run.t < r.time
+  if best then r.time = run.t end
+  r.drops = math.max(r.drops or 0, run.drops)
+  r.fewest = math.min(r.fewest or 999, run.deaths)
+  save_records()
+  clear_t = 300
+  clear_lines = {
+    LEVELS[run.level].name .. " clear!",
+    "time " .. clock_text(run.t) .. (best and "  NEW BEST" or "  best " .. clock_text(r.time)),
+    "drops " .. run.drops .. "/" .. run.total .. "  defeated " .. run.kills .. "  deaths " .. run.deaths,
+  }
+end
+
+function clock_text(f)
+  if not f then return "--" end
+  local s = f // 6                 -- tenths of a second
+  return string.format("%d:%02d.%d", s // 600, (s // 10) % 60, s % 10)
+end
+
+-- ---- the Levels screen (a game_screen(): the shell stays out of the way until game_play() or game_title())
+function open_levels(from_pause)
+  if rec_dirty then save_records() end
+  mode, levels_from_pause = "levels", from_pause
+  sel = LEVEL
+  game_screen()
+end
+function close_levels()
+  mode = "play"
+  if levels_from_pause then game_play() else game_title() end
+end
+function start_level(n)
+  mode, picked = "play", n
+  cutscenes_reset()                -- its intro plays again (unless you skip cutscenes)
+  level(n)
+  game_play()
+end
+function levels_update()
+  local rows = #LEVELS + 1         -- the levels, then the skip-cutscenes switch
+  if anyp("up") then sel = (sel - 2) % rows + 1; sfx("E5", 0, 0.15, 3) end
+  if anyp("down") then sel = sel % rows + 1; sfx("E5", 0, 0.15, 3) end
+  if sel == rows then
+    if anyp("a") or anyp("left") or anyp("right") then
+      SKIP = not SKIP; save_records(); sfx("A5", 0, 0.2, 4)
+    end
+  elseif anyp("a") then
+    if unlocked(sel) then sfx("C5", 4, 0.25, 6); start_level(sel) return end
+    sfx("C3", 1, 0.2, 6)
+  end
+  if anyp("b") then close_levels() end
+end
+
+function levels_draw()
+  shade(0.75)
+  text("LEVELS", 112, 8, 1, 2) text("LEVELS", 111, 7, 27, 2)
+  for i, L in ipairs(LEVELS) do
+    local y, on, open = 36 + (i - 1) * 26, sel == i, unlocked(i)
+    local r = rec(i)
+    rectfill(8, y, 148, 22, on and 2 or 1)
+    if on then rect(8, y, 148, 22, 27) end
+    text(i .. " " .. (open and L.name or "???"), 14, y + 3, open and (on and 27 or 13) or 29)
+    local note = not open and "locked" or (r.clears > 0 and ("cleared x" .. r.clears) or "not cleared yet")
+    text(note, 14, y + 12, r.clears > 0 and 17 or 29)
+    if r.clears > 0 then spr(3, 144, y + 7) end
+  end
+  -- the picked level's stats
+  local n = math.min(sel, #LEVELS)
+  local r = rec(n)
+  rectfill(162, 36, 150, 158, 1) rect(162, 36, 150, 158, 13)
+  if not unlocked(n) then
+    text("Locked", 170, 44, 29)
+    text("Clear " .. LEVELS[n - 1].name, 170, 60, 13)
+    text("to open it.", 170, 70, 13)
+  else
+    text(LEVELS[n].name, 170, 42, 27)
+    local rows = {
+      {"Best time", clock_text(r.time)},
+      {"Most drops", r.total and ((r.drops or 0) .. "/" .. r.total) or "--"},
+      {"Deaths", r.deaths or 0},
+      {"Fewest deaths", r.fewest or "--"},
+      {"Defeated", r.kills or 0},
+      {"Hits taken", r.hits or 0},
+      {"Cleared", r.clears .. "x"},
+      {"Played", (r.plays or 0) .. "x"},
+    }
+    for i, row in ipairs(rows) do
+      local y, v = 44 + i * 16, tostring(row[2])
+      text(row[1], 170, y, 29)
+      text(v, 304 - #v * 8, y, 13)
+    end
+  end
+  -- the skip-cutscenes switch
+  local on = sel == #LEVELS + 1
+  rectfill(8, 200, 304, 16, on and 2 or 1)
+  if on then rect(8, 200, 304, 16, 27) end
+  text("Skip cutscenes on replays", 16, 204, on and 27 or 13)
+  local v = SKIP and "< ON >" or "< OFF >"
+  text(v, 304 - #v * 8, 204, SKIP and 17 or 29)
+  rectfill(0, 224, 320, 16, 1)
+  local help = on and "A or left/right: switch   B: back" or "A: play this level   B: back"
+  text(help, 160 - #help * 4, 228, 29)
 end
 
 function respawn(p)
@@ -81,6 +251,7 @@ end
 
 -- the title screen's Continue starts here: the level, the spot and the drops collected so far
 function save_checkpoint()
+  if rec_dirty then save_records() end
   checkpoint({level = LEVEL, x = spawn_x, y = spawn_y, score = score})
 end
 function place_at(cp)
@@ -90,7 +261,11 @@ function place_at(cp)
 end
 
 function _update()
+  if mode == "levels" then levels_update() return end
   ents_update()
+  if not run.counted then run.counted = true; rec(run.level).plays = (rec(run.level).plays or 0) + 1 end
+  if not run.done and not cutscene_playing() then run.t = run.t + 1 end
+  if rec_dirty and t() % 600 == 0 then save_records() end    -- and every 10 seconds
 end
 
 function _draw()
@@ -111,7 +286,9 @@ function _draw()
   map(cx // 8, 0, 41, 30, (cx // 8) * 8, 0)
   ents_draw()
   camera()
+  if mode == "levels" then levels_draw() return end
   hud()
+  if rec_dirty and GAME.state ~= "play" then save_records() end   -- keep the stats when the game is paused
 end
 
 function hearts(p, x)
@@ -140,6 +317,11 @@ function hud()
     text(score .. "/" .. total .. " drops", 124, 114, 13)
   elseif score == total and total > 0 then
     text("ALL DROPS! THE GARDEN BLOOMS", 48, 110, 27)
+  end
+  if clear_t > 0 then             -- the level-clear card: this run's time, drops, enemies and deaths
+    if not cutscene_playing() then clear_t = clear_t - 1 end
+    rectfill(8, 150, 304, 40, 1) rect(8, 150, 304, 40, 17)
+    for i, l in ipairs(clear_lines) do text(l, 160 - #l * 4, 142 + i * 11, i == 1 and 17 or 13) end
   end
   if banner_t > 0 then
     banner_t = banner_t - 1
@@ -324,7 +506,7 @@ end
     const flag = { sh: 2, hp: 0, team: 'neutral', damage: 0, grav: false, collide: false, anims: [A('idle', [30])] };
     cart.entities.types.push(
       Object.assign({}, base, flag, { name: 'exit',
-        tree: N('sequence', {}, [N('touching', { what: 'player' }), N('sound', { note: 'C6', wave: 4 }), N('level', { n: 2 })]) }),
+        tree: N('sequence', {}, [N('touching', { what: 'player' }), N('emit', { event: 'clear' }), N('sound', { note: 'C6', wave: 4 }), N('level', { n: 2 })]) }),
       Object.assign({}, base, flag, { name: 'goal',
         tree: N('selector', {}, [N('sequence', {}, [N('touching', { what: 'player' }), N('emit', { event: 'win' })]),
           N('sequence', {}, [N('near', { dist: 48 }), N('say', { text: 'Almost there!' })])]) }),
@@ -396,7 +578,7 @@ end
     ];
   }
 
-  window.BK_DEMO = { name: 'Sprout Hop', code, buildGfx, about: 'A small platformer with two levels and cutscenes.' };
+  window.BK_DEMO = { name: 'Sprout Hop', code, buildGfx, about: 'A small platformer with two levels, cutscenes, and a Levels screen with stats for every level.' };
   // the studio's Demo button lists every entry; other demo files add themselves with window.BK_DEMOS.push(...)
   window.BK_DEMOS = window.BK_DEMOS || [];
   window.BK_DEMOS.unshift(window.BK_DEMO);

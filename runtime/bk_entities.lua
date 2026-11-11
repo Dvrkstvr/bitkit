@@ -843,6 +843,10 @@ function cutscene(name, once)
   return true
 end
 function cutscene_playing() return CUT ~= nil, CUT and CUT.name end
+-- cutscene_skip(): jump to the end of the playing cutscene, as if Start was pressed
+function cutscene_skip() if CUT then CUT.skip = true end end
+-- cutscenes_reset(): forget which cutscenes have played, so level intros and once-only cutscenes play again
+function cutscenes_reset() CUT_SEEN = {} end
 
 local function level_intro(n)
   for name, c in pairs(CUTSCENES) do
