@@ -111,7 +111,7 @@ When the player reaches the goal, call `game_win("what they did")`. It shows the
 
 Picking the game up again takes one button press. Two things make that happen:
 
-- **Pausing on the Bit.** Leaving a game with Start+Select (or the home screen) keeps it exactly where it was. Picking it again on the home screen carries on mid-jump. The Bit does this for every game; you don't need any code.
+- **Pausing on the Bit.** Leaving a game with Start+Select (or the home screen) keeps it exactly where it was. Picking it again on the home screen opens the game's main menu (its title screen and intro still play), and **Continue** carries on mid-jump. Games made with `game{}` do this on the Bit and in the studio; you don't need any code. (A race keeps running, and X on the home screen still starts a game over.)
 - **Continue from a checkpoint.** After a reload or a restart, Continue on the title screen goes straight back into play: call `checkpoint({...})` whenever the player reaches a safe spot (a new level, a checkpoint flag, a finished race), and give `game{}` a `continue = function(cp) ... end` that puts the player back there. Games that already keep their own `save()` pass `can_continue = function() return saved() ~= nil end` instead, plus `new_game` to reset the game.
 
 Continue never goes through extra screens: no "press start", no level select, no garage. Straight into the game.

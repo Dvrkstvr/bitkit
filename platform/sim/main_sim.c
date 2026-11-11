@@ -199,6 +199,9 @@ int main(int argc, char **argv) {
       bk_host_launch(g);
       ticks(3, 0);
       if (strcmp(bk_host_playing(), p->name) || BK->frame < fr) FAIL("%s did not carry on after a pause (frame %u, was %u)", p->name, BK->frame, fr);
+      /* a game with the game shell carries on from its main menu, not in the middle of play */
+      if (bk_lua_eval("if GAME and GAME.state ~= 'off' and GAME.state ~= 'title' then error('opened on ' .. GAME.state) end"))
+        FAIL("%s should carry on from its main menu: %s", p->name, bk_lua_error());
       bk_host_go_home();
     }
     if (bk_host_paused_count() > cfg.max_paused) FAIL("%d games paused, the limit is %d", bk_host_paused_count(), cfg.max_paused);

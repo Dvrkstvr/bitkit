@@ -179,5 +179,23 @@ require('../studio/runtime.js')({ onLog: (m, e) => { if (e) errors.push(m); else
   if (st()[0] !== 'play' || !['loading', 'count'].includes(st()[1])) fail('Kart Lab Continue should go straight to a race, got ' + st().join(' '));
   if (errors.length) { errors.forEach(e => fail('Kart Lab: ' + e)); errors = []; }
 
+  // 8. a paused game picked again on the home screen opens on its main menu (the host calls _bk_resumed()),
+  //    in every demo; Continue goes back to where it was, without starting over
+  const resumed = () => { const p = s('if _bk_resumed then _bk_resumed() end'); M._bkw_eval(p); M._free(p); };
+  for (const d of window.BK_DEMOS) {
+    M.HEAP32[sv] = -1;
+    load(d.name, PROBE + IP);
+    run(3); pick(items()[0]); run(30);
+    if (st()[0] === 'title') { fail(`${d.name}: the first menu item should start the game`); continue; }
+    frame(bit('start', 'select')); run(1);         // Start+Select: off to the home screen (the host pauses the game)
+    const was = st()[0];
+    resumed(); run(2);
+    if (st()[0] !== 'title') { fail(`${d.name}: carrying on with a paused game should open its main menu, got ${st()[0]}`); continue; }
+    if (items()[0] !== 'Continue') fail(`${d.name}: the main menu of a paused game should offer Continue, got ${items().join(', ')}`);
+    pick('Continue'); run(2);
+    if (st()[0] !== was) fail(`${d.name}: Continue should go back to ${was}, got ${st()[0]}`);
+    if (errors.length) { errors.forEach(e => fail(d.name + ' resumed: ' + e)); errors = []; }
+  }
+
   if (!process.exitCode) console.log('ok: game shell (title, pause, settings, checkpoints, Continue, save files, goal) in every demo passed');
 });
