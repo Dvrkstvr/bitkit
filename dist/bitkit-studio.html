@@ -16013,7 +16013,7 @@ ISLE = { x = 240, y = 186, r = 21 }       -- the lighthouse island (small, so th
 DAYLEN, NIGHTLEN = 60 * tune("Day length (seconds)", 60, 20, 180, 10), 60 * tune("Night length (seconds)", 60, 20, 180, 10)   -- tune(): sliders on the Game tab
 DOCKS = { { x = 40, y = 340 }, { x = 440, y = 340 } }
 CANNONS = { { x = 224, y = 196 }, { x = 256, y = 196 }, { x = 230, y = 203 }, { x = 250, y = 203 } }
-MOOR = { { x = 196, y = 214 }, { x = 284, y = 214 }, { x = 196, y = 160 }, { x = 284, y = 160 } }
+MOOR = { { x = 212, y = 204 }, { x = 268, y = 204 }, { x = 212, y = 170 }, { x = 268, y = 170 } }   -- close enough to count as docked
 PCOL = { 17, 21, 26, 27 }                 -- boat colours for players 1-4
 CAP = tune("Crates a rowboat carries", 6, 2, 12)                                   -- crates a rowboat can carry
 KINDS = {
@@ -16100,9 +16100,11 @@ function _init()
     goal = "Guide " .. GOAL .. " ships safely into the harbour.",
     help = {
       "Left / right turns the beam. Squeeze R for a brighter beam, L for a narrow spotlight.",
-      "B: foghorn. X: harbour shop. Y: hop into your rowboat and fetch crates.",
+      "B: foghorn. X: harbour shop. Y: step down to your rowboat and fetch crates.",
       "Ships only see the rocks in your light. At night, light up the pirates to scare them off.",
-      "Players 2-4 row boats: d-pad to row, R to row harder.",
+      "One keeper at a time. Everyone else rows: d-pad to row, R to row harder.",
+      "Dock at the island and press Y to go ashore: the lamp if it's free, then any coast cannon (Y again for the next one).",
+      "Manning a cannon: left / right aims, A fires. You can only swap stations while docked.",
     },
     can_continue = function() return PLAYERS == 1 and saved() ~= nil end,
     new_game = function() save(nil); _init() end,
@@ -16118,11 +16120,14 @@ function _init()
   angle, oil, streak, idle, horn, horn_cd = -math.pi / 2, max_oil(), 0, 0, 0, 0
   spawn_t, pirate_t, loot_t, shop, sel, save_t = 60, 600, 300, false, 1, 0
   bhalf, brange, beam_r = 0.3, 100, 0
-  cannon_cd = { 0, 0, 0, 0 }
+  cannon_cd, cannon_by, cannon_ang = { 0, 0, 0, 0 }, { 0, 0, 0, 0 }, {}
+  for c = 1, 4 do cannon_ang[c] = math.atan(CANNONS[c].y - ISLE.y, CANNONS[c].x - ISLE.x) end
   hint_t = G.docked < 10 and 1200 or 0
   boats = {}
   for n = 1, 4 do boats[n] = { n = n, x = MOOR[n].x, y = MOOR[n].y, vx = 0, vy = 0, a = 0, cargo = 0, val = 0, stun = 0 } end
-  p1_boat = false
+  -- one keeper at a time: player 1 starts in the lighthouse, everyone else in a rowboat at the island
+  role, lamp_pn = {}, 1
+  for n = 1, 4 do role[n] = n == 1 and "lamp" or "boat" end
   new_rocks()
   wisps, waves, stars = {}, {}, {}
   for i = 1, 110 do wisps[i] = { x = rnd(W + 60) - 30, y = rnd(H - 30) + 4, w = rnd(20, 70), s = rnd(3) * 0.06 } end
@@ -16142,7 +16147,9 @@ function wrap(a) return (a + math.pi) % (2 * math.pi) - math.pi end
 function mult() return 1 + math.min(streak // 5, 4) end
 function spawn_every() return math.max(100, 280 - G.harbour * 40 - G.day * 6) end
 function auto_on() return G.auto > 0 and idle > 120 end
-function boat_on(b) return (b.n == 1 and p1_boat) or (b.n > 1 and b.n <= PLAYERS) end
+function boat_on(b) return b.n <= PLAYERS and role[b.n] == "boat" end
+function at_isle(b) return dist2(b.x, b.y, ISLE.x, ISLE.y) < (ISLE.r + 16) ^ 2 end
+function station_of(pn) return role[pn] == "lamp" and 0 or role[pn] == "boat" and -1 or role[pn] end
 
 function fmt(n)
   n = math.floor(n)
@@ -16252,19 +16259,13 @@ function _update()
   if hint_t > 0 then hint_t = hint_t - 1 end
   if banner_t > 0 then banner_t = banner_t - 1 end
 
-  if btnp("y") then
-    p1_boat = not p1_boat
-    sfx(p1_boat and "C4" or "G4", 1, 0.3, 8)
-    if p1_boat then
-      local b = boats[1]
-      if dist2(b.x, b.y, ISLE.x, ISLE.y) > 120 * 120 then b.x, b.y, b.vx, b.vy = MOOR[1].x, MOOR[1].y, 0, 0 end
-    end
-  end
+  for pn = 1, PLAYERS do if btnp("y", pn) then swap_station(pn) end end
   aim()
+  man_cannons()
 
   if horn > 0 then horn = horn - 1 end
   if horn_cd > 0 then horn_cd = horn_cd - 1 end
-  if not p1_boat and btnp("b") and horn_cd == 0 then
+  if lamp_pn > 0 and btnp("b", lamp_pn) and horn_cd == 0 then
     horn, horn_cd = 180, 900
     sfx("A1", 5, 0.5, 80) sfx("E2", 5, 0.35, 80)
   end
@@ -16317,15 +16318,68 @@ function _update()
   if save_t >= 300 then save_t = 0; persist() end
 end
 
+-- Y swaps stations, but only from a boat docked at the island (or back to it).
+-- From the boat: the lamp if nobody keeps it, else the first free cannon. Y again moves on to the
+-- next free station, and after the last one back down to the boat.
+function swap_station(pn)
+  local b = boats[pn]
+  if role[pn] == "boat" and not at_isle(b) then
+    float(b.x - 36, b.y - 22, "dock first", 30); sfx("C3", 1, 0.2, 6)
+    return
+  end
+  local from = station_of(pn)   -- -1 boat, 0 lamp, c cannon
+  if role[pn] == "lamp" then lamp_pn = 0 elseif type(role[pn]) == "number" then cannon_by[role[pn]] = 0 end
+  role[pn] = "boat"
+  local st = next_free(from)
+  if st == 0 then role[pn], lamp_pn = "lamp", pn; idle = 0
+  elseif st then role[pn], cannon_by[st] = st, pn end
+  if role[pn] == "boat" then
+    b.vx, b.vy = 0, 0
+    if from == -1 then float(b.x - 36, b.y - 22, "all taken", 26) end
+  end
+  sfx(role[pn] == "boat" and "C4" or "G4", 1, 0.3, 8)
+end
+
+-- the next free station after from (0 is the lamp, 1-4 the cannons), or nil
+function next_free(from)
+  for st = from + 1, G.cannon do
+    if (st == 0 and lamp_pn == 0) or (st > 0 and cannon_by[st] == 0) then return st end
+  end
+end
+
+-- players at a cannon: left / right aims, A fires where it points
+function man_cannons()
+  for c = 1, G.cannon do
+    local pn = cannon_by[c]
+    if pn > 0 then
+      if btn("left", pn) then cannon_ang[c] = cannon_ang[c] - 0.04 end
+      if btn("right", pn) then cannon_ang[c] = cannon_ang[c] + 0.04 end
+      cannon_ang[c] = wrap(cannon_ang[c])
+      if btnp("a", pn) and cannon_cd[c] <= 0 then
+        local C = CANNONS[c]
+        local vx, vy = math.cos(cannon_ang[c]) * 2.6, math.sin(cannon_ang[c]) * 2.6
+        balls[#balls + 1] = { x = C.x, y = C.y - 4, vx = vx, vy = vy, t = 80 }
+        burst(C.x + vx * 3, C.y - 4 + vy * 3, 29, 4)
+        sfx("C2", 3, 0.4, 10)
+        cannon_cd[c] = 45
+      end
+    end
+  end
+end
+
 function aim()
-  local r, l = press("r"), press("l")
-  local turning = not p1_boat and (btn("left") or btn("right"))
-  if p1_boat then r, l = 0, 0 end
+  local pn = lamp_pn
+  local r, l = 0, 0
+  local turning = false
+  if pn > 0 then
+    r, l = press("r", pn), press("l", pn)
+    turning = btn("left", pn) or btn("right", pn)
+  end
   local manual = turning or r > 8 or l > 8
   idle = manual and 0 or idle + 1
   if turning then
-    if btn("left") then angle = angle - 0.03 end
-    if btn("right") then angle = angle + 0.03 end
+    if btn("left", pn) then angle = angle - 0.03 end
+    if btn("right", pn) then angle = angle + 0.03 end
   end
   if auto_on() then auto_aim() end
   angle = wrap(angle)
@@ -16552,7 +16606,7 @@ end
 function update_cannons()
   for c = 1, G.cannon do
     cannon_cd[c] = cannon_cd[c] - 1
-    if cannon_cd[c] <= 0 then
+    if cannon_cd[c] <= 0 and cannon_by[c] == 0 then
       local C = CANNONS[c]
       for _, p in ipairs(pirates) do
         if p.lit and not p.flee and dist2(p.x, p.y, C.x, C.y) < 190 * 190 then
@@ -16658,14 +16712,19 @@ end
 function update_camera()
   local sx, sy, n = 0, 0, 0
   local function add(x, y) sx, sy, n = sx + x, sy + y, n + 1 end
-  if ME == 0 or ME == 1 then
-    if p1_boat then add(boats[1].x, boats[1].y)
-    else
-      local f = math.min(brange, 150) * 0.55
-      add(LX + math.cos(angle) * f, LY + math.sin(angle) * f)
+  for pn = 1, PLAYERS do
+    if ME == 0 or ME == pn then
+      local r = role[pn]
+      if r == "lamp" then
+        local f = math.min(brange, 150) * 0.55
+        add(LX + math.cos(angle) * f, LY + math.sin(angle) * f)
+      elseif r == "boat" then add(boats[pn].x, boats[pn].y)
+      else
+        local C = CANNONS[r]
+        add(C.x + math.cos(cannon_ang[r]) * 60, C.y + math.sin(cannon_ang[r]) * 60)
+      end
     end
   end
-  for n2 = 2, PLAYERS do if ME == 0 or ME == n2 then add(boats[n2].x, boats[n2].y) end end
   if n == 0 then add(LX, LY) end
   local tx = math.max(0, math.min(W - 320, sx / n - 160))
   local ty = math.max(0, math.min(H - 240, sy / n - 120))
@@ -16820,10 +16879,21 @@ end
 function draw_tower()
   for c = 1, G.cannon do
     local C = CANNONS[c]
-    spr(6, C.x - 4, C.y - 6, 1, 1, C.x > ISLE.x)
+    local pn = cannon_by[c]
+    if pn > 0 then                                   -- a manned cannon: dotted aim line in its player's colour
+      local ca, sa = math.cos(cannon_ang[c]), math.sin(cannon_ang[c])
+      for k = 2, 8 do rectfill(C.x + ca * k * 8 - 1, C.y - 5 + sa * k * 8, 2, 2, PCOL[pn]) end
+    end
+    spr(6, C.x - 4, C.y - 6, 1, 1, pn > 0 and math.cos(cannon_ang[c]) > 0 or (pn == 0 and C.x > ISLE.x))
   end
   spr(32, LX - 16, LY - 4, 2, 2, false, false, 2)
   circfill(LX, LY, 2 + (t() // 8) % 2 + beam_r // 128, oil > 0 and 27 or 10)
+  if PLAYERS > 1 then
+    if lamp_pn > 0 then text(lamp_pn, LX - 3, LY - 16, PCOL[lamp_pn]) end
+    for c = 1, G.cannon do
+      if cannon_by[c] > 0 then text(cannon_by[c], CANNONS[c].x - 3, CANNONS[c].y + 4, PCOL[cannon_by[c]]) end
+    end
+  end
 end
 
 function draw_coast()
@@ -16853,8 +16923,12 @@ function hud(night)
   rectfill(0, 12, math.floor(320 * f), 1, night and 20 or 27)
 
   rectfill(0, 230, 320, 10, 31)
-  if p1_boat then text("Y LAMP", 4, 231, 12)
-  else text(horn_cd == 0 and "B HORN" or "B ....", 4, 231, horn_cd == 0 and 12 or 30) text("Y BOAT", 64, 231, 12) end
+  local me = ME == 0 and 1 or ME
+  local r = role[me]
+  if r == "lamp" then text(horn_cd == 0 and "B HORN" or "B ....", 4, 231, horn_cd == 0 and 12 or 30) text(next_free(station_of(me)) and "Y NEXT" or "Y BOAT", 64, 231, 12)
+  elseif r == "boat" then
+    if at_isle(boats[me]) then text("Y GO ASHORE", 4, 231, 12) else text("DOCK TO SWAP", 4, 231, 30) end
+  else text(cannon_cd[r] <= 0 and "A FIRE" or "A ....", 4, 231, cannon_cd[r] <= 0 and 12 or 30) text(next_free(station_of(me)) and "Y NEXT" or "Y BOAT", 64, 231, 12) end
   text("X SHOP", 268, 231, 12)
   if auto_on() and t() // 30 % 2 == 0 then text("AUTO", 132, 231, 17)
   else
@@ -16863,7 +16937,7 @@ function hud(night)
   end
   if hint_t > 0 then
     rectfill(0, 13, 320, 11, 31)
-    local h = PLAYERS > 1 and "P1 BEAM  P2-4 ROW: GET THE CRATES" or "<> AIM  R BRIGHT  L NARROW  Y ROW"
+    local h = PLAYERS > 1 and "ONE KEEPER, THE REST ROW. DOCK + Y" or "<> AIM  R BRIGHT  L NARROW  Y ROW"
     text(h, 160 - #h * 4, 15, 29)
   end
 end
