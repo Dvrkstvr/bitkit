@@ -340,6 +340,86 @@ require('../studio/runtime.js')({ onLog: (m, e) => { (e ? errors : logs).push(m)
   check('the silo, the driver and the route are in the save', get('G.silo_b, G.auto, G.daily, G.silo.pea, route_len() > 10'), '1 1 1 3 true');
   if (errors.length) { errors.forEach(e => fail('route: ' + e)); errors = []; }
 
+  // 7f. the wider valley: shore, fen, hills and desert, and what is found there
+  load(null); run(5);
+  ev('G.area, px, py, dx, dy = 2, 15 * 16 + 8, 18 * 16 + 14, 0, 1 toast_t = 0'); run(3);
+  tap('a'); check('the fallen pine wants an axe', get('G.pine, toast:find("axe") ~= nil'), '0 true');
+  ev('G.axe = 1 toast_t = 0'); tap('a'); check('the axe clears it', get('G.pine, have("wood")'), '1 4');
+  run(40, 1 << B.down); run(40);
+  check('the path south leads to Gull Shore', get('G.area, AREAS[G.area].name, G.seen.Shore'), '4 Gull Shore 1');
+  shot('windrow-shore');
+  ev('px, py, dx, dy = 3 * 16 + 8, 7 * 16 + 14, 0, -1 toast_t = 0'); run(3); tap('a');
+  check('a tin box on the shore', get('G.coins, have("pearl"), G.tins:sub(4, 4)'), '60 1 1');
+  ev('px, py = 26 * 16, 8 * 16 + 12 toast_t = 0'); run(40, 1 << B.right);
+  check('the desert turns you back without a waterskin', get('G.area, toast:find("waterskin") ~= nil'), '4 true');
+  ev('G.skin = 1'); run(40, 1 << B.right); run(40);
+  check('with one you cross into the Dry Reach', get('G.area, fl(px / 16) < 3'), '7 true');
+  ev('px, py = 17 * 16, 9 * 16 + 12'); run(3); shot('windrow-desert');
+  ev('px, py = 20, 8 * 16 + 12'); run(40, 1 << B.left); run(40);
+  check('and back to the shore', get('G.area, fl(px / 16)'), '4 27');
+  ev('px, py = 13 * 16 + 8, 30'); run(40, 1 << B.up); run(40);
+  check('north again into the woods', get('G.area, fl(px / 16), fl(py / 16)'), '2 15 19');
+  ev('px, py = 20, 9 * 16 + 12'); run(40, 1 << B.left); run(40);
+  check('west of the woods lies Sedge Fen', get('G.area, fl(px / 16), fl(py / 16)'), '5 25 10');
+  ev('px, py = 12 * 16, 10 * 16 + 12 G.clk = DAY_FRAMES * 0.8'); run(3); shot('windrow-fen');
+  ev('G.clk = 100 px, py = 6 * 16 + 8, 30'); run(40, 1 << B.up); run(40);
+  check('and north of the fen the Flint Hills', get('G.area, fl(px / 16), fl(py / 16)'), '6 6 19');
+  // surface mining: rocks break with the pickaxe and are back the next morning
+  ev('px, py, dx, dy = 8 * 16 + 8, 4 * 16 + 12, 1, 0 toast_t = 0'); run(3);
+  check('a rock stands there', get('tile(6, 9, 4)'), 'R');
+  tap('a'); check('rocks want a pickaxe', get('toast:find("pickaxe") ~= nil, tile(6, 9, 4)'), 'true R');
+  ev('G.pick = 1'); tap('a'); tap('a'); tap('a');
+  check('three blows break it', get('tile(6, 9, 4), have("stone") + have("flint")'), ', 1');
+  shot('windrow-hills');
+  ev('px, py, dx, dy = 19 * 16 + 8, 4 * 16 + 12, 0, 1'); run(3);
+  check('copper lies in the hills', get('tile(6, 19, 5)'), 'C');
+  for (let i = 0; i < 4; i++) tap('a');
+  check('and comes out', get('have("copper")'), '1');
+  ev('persist()'); load(getSave()); run(3);
+  check('you wake where you were, with the way open', get('G.area, G.pine, G.skin, G.seen.Hills'), '6 1 1 1');
+  ev('new_day()');
+  check('the rocks are back in the morning', get('tile(6, 9, 4), tile(6, 19, 5)'), 'R C');
+  for (const a of [4, 5, 6, 7]) {
+    const n = num(`(function() local n = 0 for i, o in ipairs(FORAGE) do if o.a == ${a} then n = n + 1 end end return n end)()`);
+    if (n < 4) fail(`things should grow wild in ${get(`AREAS[${a}].name`)}: ${n}`);
+  }
+  ev('G.inv = {} for i, o in ipairs(FORAGE) do if o.a == 7 then G.area, px, py, WANT = 7, o.x * 16 + 8, o.y * 16 + 12, o.k break end end'); run(3); tap('a');
+  check('and can be picked', get('have(WANT)'), '1');
+  ev('ui = "bag"'); run(2); shot('windrow-bag-finds'); ev('ui = nil');
+  if (errors.length) { errors.forEach(e => fail('valley: ' + e)); errors = []; }
+
+  // 7g. fishing
+  load(null); run(5);
+  ev('G.area, px, py, dx, dy = 4, 8 * 16 + 8, 14 * 16 + 12, 1, 0 toast_t = 0'); run(3);
+  tap('a'); check('no rod, no fishing', get('ui, toast:find("rod") ~= nil'), 'nil true');
+  ev('ui = "shop" for i, it in ipairs(shop_items()) do if it.name == "Fishing rod" then ui_sel = i end end G.coins = 200'); tap('a'); tap('b');
+  check('Marrow sells a rod', get('G.rod, G.coins'), '1 50');
+  ev('toast_t = 0'); tap('a', 2); check('A at the water casts', get('ui, FISHING.phase'), 'fish wait');
+  shot('windrow-fishing-wait');
+  let waited = 0;
+  while (get('FISHING and FISHING.phase') === 'wait' && waited++ < 300) run(1);
+  check('after a while something bites', get('FISHING.phase'), 'bite');
+  tap('a', 0); check('A strikes', get('FISHING.phase, FISHING.f.a'), 'reel 4');
+  // reel while it rests, ease off while it runs
+  let frames = 0, shotDone = false;
+  while (get('ui') === 'fish' && frames++ < 3000) {
+    run(1, get('FISHING.run') === 'true' ? 0 : 1 << B.a);
+    if (!shotDone && frames === 40) { shot('windrow-fishing'); shotDone = true; }
+  }
+  check('played well, the fish is landed', get('ui, G.caught, fish_kinds(), count_bag()'), 'nil 1 1 1');
+  // a strong fish and a tight line
+  ev('fish_rest = nil start_fishing(9, 14) FISHING.phase, FISHING.f, FISHING.dist, FISHING.ten, FISHING.run, FISHING.runt = "reel", FISH_BY.sunray, 90, 20, true, 9999');
+  run(120, 1 << B.a);
+  check('reeling against a run snaps the line', get('ui, G.caught, toast:find("Snap") ~= nil'), 'nil 1 true');
+  ev('fish_rest = nil start_fishing(9, 14) FISHING.phase, FISHING.f, FISHING.dist, FISHING.ten, FISHING.run, FISHING.runt = "reel", FISH_BY.sunray, 90, 20, true, 9999');
+  run(200);
+  check('doing nothing lets it get away', get('ui, G.caught, toast:find("slipped") ~= nil'), 'nil 1 true');
+  ev('fish_rest = nil start_fishing(9, 14) FISHING.phase, FISHING.t = "bite", 5'); run(20);
+  check('a missed bite is gone', get('ui, toast:find("slow") ~= nil'), 'nil true');
+  for (const a of [1, 2, 4, 5, 6, 7]) check('every water has its own fish: area ' + a, get(`pick_fish(${a}).a`), a);
+  check('fish sell at the crate', num('price("sunray")') > 100, true);
+  if (errors.length) { errors.forEach(e => fail('fishing: ' + e)); errors = []; }
+
   // 8. all four seasons draw, with rain, snow and nightfall
   load(null);
   for (const [d, name] of [[3, 'spring'], [10, 'summer'], [17, 'autumn'], [24, 'winter']]) {
@@ -359,6 +439,9 @@ require('../studio/runtime.js')({ onLog: (m, e) => { (e ? errors : logs).push(m)
     if (f % 12 === 0) mask = (1 << rand(4)) | (rand(3) === 0 ? 1 << (4 + rand(6)) : 0);
     if (f === 8000) ev('G.area, px, py = 2, 20 * 16, 10 * 16 + 12');
     if (f === 12000) ev('G.area, mine_hp = 3, 3 mine_floor(7)');
+    if (f === 13000) ev('ui = nil G.area, G.rod, G.pick, px, py = 4, 1, 1, 8 * 16 + 8, 13 * 16 + 12');
+    if (f === 14000) ev('ui, FISHING = nil, nil G.area, px, py = 6, 8 * 16, 5 * 16 + 12');
+    if (f === 15000) ev('ui, FISHING = nil, nil G.area, px, py = 5, 12 * 16, 10 * 16 + 12');
     if (f === 4000) ev('G.trac, G.imp, G.impsel, G.plots = 1, { 1, 1, 1, 1 }, 1, { true, true, true } G.area, px, py = 1, 10 * 16, 17 * 16 mount()');
     if (M._bkw_frame(mask, 0)) { fail('random play stopped at frame ' + f + ': ' + errors.join(' ')); break; }
   }
