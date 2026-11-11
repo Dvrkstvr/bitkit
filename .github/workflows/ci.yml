@@ -38,6 +38,8 @@ jobs:
         run: node tools/musictest.cjs
       - name: Puffball, Hedge Hogs and Cauldron Crew
         run: node tools/partytest.cjs
+      - name: Windrow
+        run: node tools/windrowtest.cjs
 
   linked-bits:
     runs-on: ubuntu-latest
