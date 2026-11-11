@@ -21,6 +21,17 @@ local row, asel = 0, 1         -- 0 the games, 1 the utilities (Down / Up)
 local aslide, vy = 0, 0        -- the utilities' sideways slide; how far the screen has scrolled down
 local ROWH = 200               -- the utilities row sits one screen below the games
 local rpick = false            -- Select: race instead of playing together (games that can do both)
+-- X (start over) and Y (edit) act only when held for two seconds, so a stray press can't lose a paused game
+local HOLD = 120
+local hold = { x = 0, y = 0 }
+local function held(b, ok)
+  if ok and btn(b) then
+    hold[b] = hold[b] + 1
+    return hold[b] == HOLD           -- once: let go to do it again
+  end
+  hold[b] = 0
+  return false
+end
 
 function _init()
   for i, g in ipairs(BIT.games) do if g.app then APPS[#APPS + 1] = i else GAMES[#GAMES + 1] = i end end
@@ -115,8 +126,10 @@ function _update()
     if btnp("left") then asel = (asel - 2) % #APPS + 1; aslide = -24 end
     if asel ~= was then theme_sfx(T, "move"); track(-2, APPS[asel]) end
     local i = APPS[asel]
-    if btnp("a") or btnp("start") then theme_sfx(T, "open"); launch(i) end
-    if BIT.games[i].paused and btnp("x") then theme_sfx(T, "back"); track(-1, i) end
+    if asel ~= was then hold.x = 0 end
+    if btnp("a") then theme_sfx(T, "open"); launch(i) end
+    if held("x", BIT.games[i].paused) then theme_sfx(T, "back"); track(-1, i) end
+    held("y", false)
     return
   end
   local n = #GAMES
@@ -124,11 +137,11 @@ function _update()
   local was = sel
   if btnp("right") then sel = sel % n + 1; slide = 24; theme_sfx(T, "move") end
   if btnp("left") then sel = (sel - 2) % n + 1; slide = -24; theme_sfx(T, "move") end
-  if sel ~= was then track(-2, GAMES[sel]) end
+  if sel ~= was then track(-2, GAMES[sel]); hold.x, hold.y = 0, 0 end
   local i = GAMES[sel]
-  if btnp("a") or btnp("start") then theme_sfx(T, "open"); launch(i) end
-  if BIT.games[i].paused and btnp("x") then theme_sfx(T, "back"); track(-1, i) end
-  if BIT.studio and btnp("y") then theme_sfx(T, "row"); launch(i, true) end
+  if btnp("a") then theme_sfx(T, "open"); launch(i) end
+  if held("x", BIT.games[i].paused) then theme_sfx(T, "back"); track(-1, i) end
+  if held("y", BIT.studio) then theme_sfx(T, "row"); launch(i, true) end
   if btnp("select") and both_modes(BIT.games[i]) then
     rpick = not rpick; theme_sfx(T, "row"); track(-3, rpick and 1 or 0)
   end
@@ -231,12 +244,20 @@ function _draw()
     else hint = "A play alone (1 player)" end
     if both_modes(g) then hint = hint .. (how == "race" and "   SEL together" or "   SEL race") end
   end
-  if n > 0 and BIT.games[GAMES[sel]].paused then hint = "A continue   X restart" end
-  if BIT.studio and n > 0 then hint = hint .. "   Y edit" end
+  if n > 0 and BIT.games[GAMES[sel]].paused then hint = "A continue  hold X restart" end
+  if BIT.studio and n > 0 then hint = hint .. "  hold Y edit" end
   if row == 1 then
-    hint = BIT.games[APPS[asel]].paused and "A continue   X restart" or "A open   < > choose"
+    hint = BIT.games[APPS[asel]].paused and "A continue  hold X restart" or "A open   < > choose"
   end
   text(hint, 8, 227, bt)
   if #APPS == 0 and n > 0 then ctext("hold START+SELECT to come back", 204, TC.dim) end
+  -- holding X or Y: a bar fills up over two seconds
+  local hb = hold.x > 0 and "x" or (hold.y > 0 and "y" or nil)
+  if hb and hold[hb] < HOLD then
+    local label = hb == "x" and "KEEP HOLDING X TO START OVER" or "KEEP HOLDING Y TO EDIT"
+    rectfill(40, 196, 240, 22, TC.card) rect(40, 196, 240, 22, TC.edge)
+    rectfill(44, 210, math.floor(232 * hold[hb] / HOLD), 4, TC.accent)
+    ctext(label, 200, TC.text)
+  end
 end
 `;

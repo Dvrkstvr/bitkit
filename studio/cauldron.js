@@ -335,7 +335,7 @@ function _update()
   end
   if state == "over" then
     if state_t > 60 then
-      if any_edge("a") then start(mode); save_point()
+      if hold_btn("a") then start(mode); save_point()
       elseif any_edge("b") and NP > 1 then state, pick_t = "pick", 0 end
     end
     return
@@ -517,7 +517,7 @@ function _draw()
       stext(winner == 0 and "A DRAW!" or (winner == 1 and "LEFT KITCHEN WINS" or "RIGHT KITCHEN WINS"), 86, 27, winner == 0 and 2 or 1)
       ctext(score[1] .. " : " .. score[2], 108, 13, 2)
     end
-    if state_t > 60 then ctext(NP > 1 and "A: again   B: pick a game" or "A: another shift", 146, 29) end
+    if state_t > 60 then ctext(NP > 1 and "hold A: again   B: pick a game" or "hold A: another shift", 146, 29) end
   end
 end
 

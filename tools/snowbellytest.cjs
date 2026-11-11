@@ -165,8 +165,7 @@ const runtime = require('../studio/runtime.js');
     input: f => [f === 10 ? bit('right') : f === 14 ? bit('down') : f === 18 ? bit('right') : f === 30 || f === 70 ? bit('a') : 0,
                  f === 12 ? bit('down') : f === 15 ? bit('down') : f === 20 ? bit('left') : f === 40 ? bit('a') : 0], shot: [25, 'snowbelly-yard'] }, 'count 2 2 1 true');
   // the cup: three runs, the points add up, then the podium
-  expect('cup', { setup: 'cup = {run = 1, total = {}} start_run(1)', every: 'if state == "results" and state_t == 70 then btn_a = true end',
-    pads: 'if state == "results" and state_t > 62 and state_t < 66 then edge[1].a = true end', check: 'state, cup and cup.run', at: 18000 }, 'podium 3');
+  expect('cup', { setup: 'cup = {run = 1, total = {}} start_run(1) local hb = hold_btn hold_btn = function(b, n) if b == "a" and state == "results" and state_t == 64 then return true end return hb(b, n) end', check: 'state, cup and cup.run', at: 18000 }, 'podium 3');
   shot('snowbelly-podium');
   mash('1 player', 'start_run(2)', 1, 4000);
   mash('4 players split screen', 'start_run(1)', 4, 3000, [1200, 'snowbelly-4-players']);

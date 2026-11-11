@@ -386,7 +386,7 @@ function _update()
   end
   if state == "over" or state == "clear" then
     if state_t > 50 then
-      if press_a then
+      if hold_btn("a") then
         if state == "clear" then start(1, lvl + 1) else start(mode, lvl) end
       elseif press_b then state, pick_t = "pick", 0 end
     end
@@ -525,7 +525,7 @@ function _draw()
     rectfill(40, 86, 240, 70, 1) rect(40, 86, 240, 70, 13)
     stext("GARDEN " .. lvl .. " DONE!", 96, 17, 2)
     ctext(lvl >= GARDENS and "Every garden is in bloom." or "On to the next garden.", 120, 13)
-    if state_t > 50 then ctext("A: next garden   B: pick a game", 136, 29) end
+    if state_t > 50 then ctext("hold A: next garden   B: pick a game", 136, 29) end
   elseif state == "over" then
     rectfill(40, 70, 240, 110, 1) rect(40, 70, 240, 110, 13)
     if mode == 1 then
@@ -540,7 +540,7 @@ function _draw()
         text(percent(h.team) .. "%", 192, 100 + (i - 1) * 12, 13)
       end
     end
-    if state_t > 50 then ctext(mode == 1 and "A: try again   B: pick a game" or "A: again   B: pick a game", 164, 29) end
+    if state_t > 50 then ctext(mode == 1 and "hold A: try again   B: pick a game" or "hold A: again   B: pick a game", 164, 29) end
   end
 end
 

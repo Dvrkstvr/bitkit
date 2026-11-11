@@ -418,10 +418,10 @@ function _update()
     update_q()
     if lap.left <= 0 then end_lap() end
   elseif state == "lapdone" then
-    if state_t > 150 or (state_t > 30 and any_edge("a")) then next_lap() end
+    if state_t > 150 or (state_t > 30 and hold_btn("a", 30)) then next_lap() end
   elseif state == "done" then
     if state_t > 60 then
-      if any_edge("a") then
+      if hold_btn("a") then
         if run.mode == "practice" then start_run("practice", run.laps[1])
         else state, pick_t = "pick", 0 end
       elseif any_edge("b") then state, pick_t = run.mode == "practice" and "practice" or "pick", 0 end
@@ -705,7 +705,7 @@ function _draw()
       ctext(lap.right .. " right, " .. lap.wrong .. " wrong", 120, 23)
       if run.mode == "practice" or SOLO then ctext("best " .. S.best[lap.e] .. "   next level " .. (SOLO and S.lv[lap.e] or lap.lv), 136, 29) end
     end
-    ctext("A: on", 154, 29)
+    ctext("hold A: on", 154, 29)
     return
   end
   if state == "done" then
@@ -741,7 +741,7 @@ function _draw()
         end
       end
     end
-    if state_t > 60 then ctext("A: again    B: back", 180, 29) end
+    if state_t > 60 then ctext("hold A: again    B: back", 180, 29) end
   end
 end
 
