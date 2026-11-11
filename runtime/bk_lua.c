@@ -40,6 +40,137 @@ static int l_line(lua_State *l) { bk_line(ci(l, 1), ci(l, 2), ci(l, 3), ci(l, 4)
 static int l_rect(lua_State *l) { bk_rect(ci(l, 1), ci(l, 2), ci(l, 3), ci(l, 4), ci(l, 5)); return 0; }
 static int l_rectfill(lua_State *l) { bk_rectfill(ci(l, 1), ci(l, 2), ci(l, 3), ci(l, 4), ci(l, 5)); return 0; }
 static int l_shade(lua_State *l) { bk_shade((float)optn(l, 1, 0.5)); return 0; }
+/* ---- screen shaders (bk_core.c) ---- */
+static int l_tint(lua_State *l) { bk_tint(ci(l, 1), (float)optn(l, 2, 0.5)); return 0; }
+static int l_fog(lua_State *l) {
+  bk_fog(ci(l, 1), ci(l, 2), ci(l, 3), (float)optn(l, 4, 1), (float)optn(l, 5, 0));
+  return 0;
+}
+static int l_dither(lua_State *l) { bk_dither(ci(l, 1), (float)optn(l, 2, 0.5)); return 0; }
+/* remap({[from] = to, ...}) or remap(from, to, [from2, to2, ...]) */
+static int l_remap(lua_State *l) {
+  uint8_t lut[256];
+  for (int i = 0; i < 256; i++) lut[i] = (uint8_t)i;
+  if (lua_istable(l, 1)) {
+    lua_pushnil(l);
+    while (lua_next(l, 1)) {
+      if (lua_isnumber(l, -2) && lua_isnumber(l, -1)) {
+        lua_Integer k = lua_tointeger(l, -2);
+        if (k >= 0 && k < 256) lut[k] = (uint8_t)(lua_tointeger(l, -1) & 255);
+      }
+      lua_pop(l, 1);
+    }
+  } else {
+    int n = lua_gettop(l);
+    for (int i = 1; i + 1 <= n; i += 2) { int k = ci(l, i); if (k >= 0 && k < 256) lut[k] = (uint8_t)(ci(l, i + 1) & 255); }
+  }
+  bk_remap(lut);
+  return 0;
+}
+/* wave(amp, [len=32], [speed=1], [vertical]): speed in waves per second, driven by the frame count */
+static int l_wave(lua_State *l) {
+  float speed = (float)optn(l, 3, 1);
+  bk_wave((float)luaL_checknumber(l, 1), (float)optn(l, 2, 32), (float)BK->frame * speed / BK_FPS, lua_toboolean(l, 4));
+  return 0;
+}
+static int l_ripple(lua_State *l) {
+  bk_ripple(ci(l, 1), ci(l, 2), (float)luaL_checknumber(l, 3), (float)optn(l, 4, 4), (float)optn(l, 5, 10));
+  return 0;
+}
+static int l_pixelate(lua_State *l) { bk_pixelate(opti(l, 1, 4)); return 0; }
+static int l_glitch(lua_State *l) { bk_glitch((float)optn(l, 1, 0.5), (uint32_t)opti(l, 2, (int)BK->frame)); return 0; }
+
+/* sprfx{outline=, flash=, flash_amount=, light=, light_x=, light_y=, light_at={x, y}, dissolve=, silhouette=,
+   shadow=, shadow_x=, shadow_y=, shader=function(x, y, c, w, h) return c end}   sprfx() turns them off */
+static int sfx_ref = LUA_NOREF;
+static int sfx_call(int x, int y, int c, int w, int h) {
+  lua_rawgeti(L, LUA_REGISTRYINDEX, sfx_ref);
+  lua_pushinteger(L, x); lua_pushinteger(L, y);
+  if (c < 0) lua_pushnil(L); else lua_pushinteger(L, c);
+  lua_pushinteger(L, w); lua_pushinteger(L, h);
+  lua_call(L, 5, 1);
+  int r = lua_isinteger(L, -1) || lua_isnumber(L, -1) ? (int)lua_tointeger(L, -1) : -1;
+  lua_pop(L, 1);
+  return r;
+}
+static void sfx_clear(lua_State *l) {
+  if (sfx_ref != LUA_NOREF && l) luaL_unref(l, LUA_REGISTRYINDEX, sfx_ref);
+  sfx_ref = LUA_NOREF;
+  bk_sprfx_reset();
+}
+static float fieldn(lua_State *l, const char *k, float d) {
+  float v = d;
+  if (lua_getfield(l, 1, k) == LUA_TNUMBER) v = (float)lua_tonumber(l, -1);
+  else if (lua_isboolean(l, -1) && !lua_toboolean(l, -1)) v = d;
+  lua_pop(l, 1);
+  return v;
+}
+static int l_sprfx(lua_State *l) {
+  sfx_clear(l);
+  if (lua_isnoneornil(l, 1)) return 0;
+  luaL_checktype(l, 1, LUA_TTABLE);
+  bk_sprfx_t *f = &bk_sprfx;
+  f->outline = (int)fieldn(l, "outline", -1);
+  f->flash = (int)fieldn(l, "flash", -1);
+  f->flash_k = fieldn(l, "flash_amount", 1);
+  f->light = fieldn(l, "light", 0);
+  f->lx = fieldn(l, "light_x", -1); f->ly = fieldn(l, "light_y", -1);
+  if (lua_getfield(l, 1, "light_at") == LUA_TTABLE) {
+    lua_rawgeti(l, -1, 1); lua_rawgeti(l, -2, 2);
+    f->light_at = 1; f->lpx = (float)luaL_optnumber(l, -2, 0); f->lpy = (float)luaL_optnumber(l, -1, 0);
+    lua_pop(l, 2);
+    if (f->light <= 0) f->light = 0.6f;
+  }
+  lua_pop(l, 1);
+  f->dissolve = fieldn(l, "dissolve", 0);
+  f->silhouette = (int)fieldn(l, "silhouette", -1);
+  f->shadow = (int)fieldn(l, "shadow", -1);
+  f->sdx = (int)fieldn(l, "shadow_x", 1); f->sdy = (int)fieldn(l, "shadow_y", 1);
+  if (lua_getfield(l, 1, "shader") == LUA_TFUNCTION) { sfx_ref = luaL_ref(l, LUA_REGISTRYINDEX); f->fn = sfx_call; }
+  else lua_pop(l, 1);
+  f->on = f->outline >= 0 || (f->flash >= 0 && f->flash_k > 0) || f->light > 0 || f->dissolve > 0 || f->silhouette >= 0 || f->shadow >= 0 || f->fn;
+  return 0;
+}
+
+/* raster(fn): fn(y) for every row of the clip rectangle; it returns dx (slide the row), and optionally c, amount
+   to tint the row. Your own scanline shader: 240 calls a frame at most, cheap enough for the device. */
+static int l_raster(lua_State *l) {
+  luaL_checktype(l, 1, LUA_TFUNCTION);
+  const int y0 = BK->clip_y0, y1 = BK->clip_y1;
+  for (int y = y0; y < y1; y++) {
+    lua_pushvalue(l, 1); lua_pushinteger(l, y);
+    lua_call(l, 1, 3);
+    if (lua_isnumber(l, -3)) bk_row_shift(y, (int)lround(lua_tonumber(l, -3)));
+    if (lua_isnumber(l, -2) && lua_isnumber(l, -1)) bk_row_tint(y, (int)lua_tointeger(l, -2), (float)lua_tonumber(l, -1));
+    lua_pop(l, 3);
+  }
+  return 0;
+}
+
+/* display() off | display("crt") a preset | display{scanlines=0.4, curve=0.3, ..., look="crt"} */
+static int l_display(lua_State *l) {
+  if (lua_isnoneornil(l, 1)) { bk_display_reset(); return 0; }
+  if (lua_type(l, 1) == LUA_TSTRING) {
+    if (!bk_display_preset(lua_tostring(l, 1))) luaL_error(l, "display: no look called \"%s\" (try off, crt, arcade, old tv, handheld, sepia, night, vivid)", lua_tostring(l, 1));
+    return 0;
+  }
+  luaL_checktype(l, 1, LUA_TTABLE);
+  bk_display_reset();
+  if (lua_getfield(l, 1, "look") == LUA_TSTRING && !bk_display_preset(lua_tostring(l, -1)))
+    luaL_error(l, "display: no look called \"%s\"", lua_tostring(l, -1));
+  lua_pop(l, 1);
+  static const char *F[] = { "scanlines", "vignette", "curve", "split", "blur", "grain", "bright", "contrast", "saturation", "warm" };
+  int32_t *v = &BK->display.scan;
+  for (int i = 0; i < 10; i++) {
+    if (lua_getfield(l, 1, F[i]) == LUA_TNUMBER) {
+      double x = lua_tonumber(l, -1);
+      if (i == 3) v[i] = (int32_t)(x < 0 ? 0 : x > 4 ? 4 : x);                  /* split: pixels */
+      else { double lo = i >= 6 ? -1 : 0; x = x < lo ? lo : x > 1 ? 1 : x; v[i] = (int32_t)lround(x * 100); }
+    }
+    lua_pop(l, 1);
+  }
+  return 0;
+}
 static int l_circ(lua_State *l) { bk_circ(ci(l, 1), ci(l, 2), ci(l, 3), ci(l, 4)); return 0; }
 static int l_circfill(lua_State *l) { bk_circfill(ci(l, 1), ci(l, 2), ci(l, 3), ci(l, 4)); return 0; }
 
@@ -350,7 +481,7 @@ static int l_print(lua_State *l) {
 
 static const luaL_Reg API[] = {
   {"cls", l_cls}, {"pset", l_pset}, {"pget", l_pget}, {"line", l_line},
-  {"rect", l_rect}, {"rectfill", l_rectfill}, {"shade", l_shade}, {"circ", l_circ}, {"circfill", l_circfill},
+  {"rect", l_rect}, {"rectfill", l_rectfill}, {"shade", l_shade}, {"tint", l_tint}, {"fog", l_fog}, {"dither", l_dither}, {"remap", l_remap}, {"wave", l_wave}, {"ripple", l_ripple}, {"pixelate", l_pixelate}, {"glitch", l_glitch}, {"display", l_display}, {"sprfx", l_sprfx}, {"raster", l_raster}, {"circ", l_circ}, {"circfill", l_circfill},
   {"text", l_text}, {"spr", l_spr}, {"map", l_map}, {"floor", l_floorplane}, {"floorh", l_floorh}, {"hset", l_hset}, {"hget", l_hget}, {"depth", l_depth}, {"project", l_project}, {"sspr", l_sspr}, {"mget", l_mget}, {"mset", l_mset},
   {"fget", l_fget}, {"fset", l_fset}, {"camera", l_camera}, {"clip", l_clip},
   {"pal", l_pal}, {"palt", l_palt}, {"palette", l_palette},
@@ -389,7 +520,7 @@ static int pcall_budget(int nargs) {
   return r;
 }
 
-void bk_lua_close(void) { if (L) lua_close(L); L = 0; }
+void bk_lua_close(void) { if (L) lua_close(L); L = 0; sfx_ref = LUA_NOREF; bk_sprfx_reset(); }
 
 static int run_chunk(const char *src, const char *name) {
   if (luaL_loadbufferx(L, src, strlen(src), name, "t") != LUA_OK) {
@@ -427,6 +558,8 @@ int bk_lua_load_ex(const char *data, const char *code) {
   lua_sethook(L, hook, LUA_MASKCOUNT, HOOK_STEP);
 
   bk_reset_draw_state();
+  bk_display_reset();
+  sfx_clear(NULL);
   memset(BK->height, 0, sizeof(BK->height));
   BK->frame = 0;
   for (int c = 0; c < BK_CHANNELS; c++) BK->voice[c].len = 0;
@@ -467,10 +600,13 @@ int bk_lua_frame(void) {
     int cx = BK->cam_x, cy = BK->cam_y, x0 = BK->clip_x0, y0 = BK->clip_y0, x1 = BK->clip_x1, y1 = BK->clip_y1;
     uint8_t dp[256], tr[256];
     memcpy(dp, BK->draw_pal, 256); memcpy(tr, BK->transparent, 256);
+    bk_sprfx_t fx = bk_sprfx;                  /* the menus draw plain sprites; the cart's sprfx{} comes back after */
     bk_reset_draw_state();
+    bk_sprfx_reset();
     int r = pcall_budget(0);
     BK->cam_x = cx; BK->cam_y = cy; BK->clip_x0 = x0; BK->clip_y0 = y0; BK->clip_x1 = x1; BK->clip_y1 = y1;
     memcpy(BK->draw_pal, dp, 256); memcpy(BK->transparent, tr, 256);
+    bk_sprfx = fx;
     if (r != LUA_OK) return 1;
   } else lua_pop(L, 1);
   BK->frame++;

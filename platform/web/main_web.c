@@ -46,4 +46,6 @@ EMSCRIPTEN_KEEPALIVE int32_t *bkw_track(void) { return machine.track; }
 EMSCRIPTEN_KEEPALIVE int32_t *bkw_sys(void) { return machine.sys; }
 /* network events: int32 id, out_n, in_n, in_r, out[16][10], in[64][10] (see bk_machine.net) */
 EMSCRIPTEN_KEEPALIVE int32_t *bkw_net(void) { return &machine.net.id; }
+/* display shader: int32 scan, vignette, curve, split, blur, grain, bright, contrast, sat, warm (see bk_machine.display) */
+EMSCRIPTEN_KEEPALIVE int32_t *bkw_display(void) { return &machine.display.scan; }
 EMSCRIPTEN_KEEPALIVE const char *bkw_error(void) { return bk_lua_error(); }
