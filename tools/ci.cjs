@@ -308,8 +308,9 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
     M._bkw_players(1, 0);
     M.HEAPU8.set(kc.tiles, M._bkw_tiles()); M.HEAPU8.set(kc.flags, M._bkw_flags()); M.HEAPU16.set(kc.map, M._bkw_map() >> 1);
     const probe = '\nlocal _u = _update\nfunction _update() local m = mode _u() if m ~= mode then print("rmode", mode) end ' +
+      'if mode == "race" then for _, k in ipairs(karts) do wall_d = math.max(wall_d or -999, arena_d(ARENA, k.x, k.y)) end end ' +
       'if mode == "race" and gt == 1 then print("rstart", GMODE, ARENA.name, #karts, karts[2].helmets, math.floor(arena_d(ARENA, player.x, player.y))) end ' +
-      'if mode == "race" and gt == 1500 then local lost = 0 for _, k in ipairs(karts) do lost = lost + rules.helmets - k.helmets end print("rfight", lost) ' +
+      'if mode == "race" and gt == 1500 then local lost = 0 for _, k in ipairs(karts) do lost = lost + rules.helmets - k.helmets end print("rfight", lost) print("rwall", wall_d) ' +
       'local v = karts[1] == player and karts[2] or karts[1] while not v.ko do v.spin = 0 v.shield = 0 hit(v, player) end print("rko", v.ko, v.helmets) ' +
       'for _, k in ipairs(karts) do if k ~= player then k.ko = true k.ko_t = race_t end end end end';
     if (M._bkw_load(s('GAME_BOOT = 3 ' + kd.code + probe)) !== 0) fail('Kart Lab Rumble did not load: ' + errors.join(' '));
@@ -319,6 +320,8 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
     const g = k => (logs.find(x => x.startsWith(k)) || '').split('\t').slice(1).join(' ');
     if (g('rstart') !== 'rumble Quarry Bowl 8 3 ' + g('rstart').split(' ').pop() || !(+g('rstart').split(' ').pop() < 0)) fail('Kart Lab Rumble start: ' + g('rstart') + ' (expected 8 karts with 3 helmets inside Quarry Bowl)');
     if (!(+g('rfight') > 0)) fail('Kart Lab Rumble: no helmets lost in 25 s of fighting (' + g('rfight') + ')');
+    // the player holds the throttle and never steers, so they drive straight into the kerb: it must hold them
+    if (!(+g('rwall') <= -3.9)) fail('Kart Lab Rumble: a kart got past the arena kerb (' + g('rwall') + ' from the edge, the wall is at -4)');
     if (g('rko') !== 'true 0') fail('Kart Lab Rumble KO: ' + g('rko'));
     const rm = logs.filter(x => x.startsWith('rmode')).map(x => x.split('\t')[1]).join(',');
     if (rm !== 'setup,garage,loading,count,race,results') fail('Kart Lab Rumble modes: ' + rm);
