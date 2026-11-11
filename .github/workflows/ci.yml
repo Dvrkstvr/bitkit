@@ -40,6 +40,8 @@ jobs:
         run: node tools/partytest.cjs
       - name: Mind Laps (five exercises, daily jog and streak, race, team, linked Bits)
         run: node tools/mindlapstest.cjs
+      - name: Snowbelly (a full run, rings, flags, tricks, crates, playstyles, cup, linked Bits)
+        run: node tools/snowbellytest.cjs
       - name: Windrow
         run: node tools/windrowtest.cjs
       - name: Windrow neighbours
@@ -75,6 +77,8 @@ jobs:
         run: platform/sim/build/bitsim --link build/device-flash build/device-link --loss 15
       - name: Two linked Bits playing Mind Laps (race or team in lockstep) with packets lost
         run: platform/sim/build/bitsim --link build/device-flash build/device-link-ml --loss 15 --game "Mind Laps"
+      - name: Two linked Bits racing Snowbelly in lockstep with packets lost
+        run: platform/sim/build/bitsim --link build/device-flash build/device-link-sb --loss 15 --game "Snowbelly"
       - name: Two Bits share a game and a photo with the Share app, with packets lost
         run: platform/sim/build/bitsim --share build/device-flash build/device-share --loss 15
       - name: Frame times on the CI machine
