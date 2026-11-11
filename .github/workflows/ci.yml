@@ -22,6 +22,8 @@ jobs:
         run: node tools/harbourtest.cjs
       - name: Game shell and game rules
         run: node tools/gametest.cjs
+      - name: Crossgate checks
+        run: node tools/crossgatetest.cjs
 
   linked-bits:
     runs-on: ubuntu-latest
