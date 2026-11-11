@@ -399,6 +399,12 @@ static int l_tone(lua_State *l) {
   bk_sfx(ch, (float)luaL_checknumber(l, 1), opti(l, 2, 0), (float)optn(l, 3, 0.8), opti(l, 4, 8), (float)optn(l, 6, 0), (float)optn(l, 7, 0));
   return 0;
 }
+/* voice(ch, hz, vol, [wave=0], [pan=0]): a held note for the music player. It keeps sounding until
+   voice(ch, hz, 0) (or stop(ch)); calling it again changes pitch, volume and pan without restarting. */
+static int l_voice(lua_State *l) {
+  bk_voice_set(ci(l, 1), (float)luaL_checknumber(l, 2), opti(l, 4, 0), (float)luaL_checknumber(l, 3), (float)optn(l, 5, 0));
+  return 0;
+}
 static int l_stop(lua_State *l) {
   if (lua_isnoneornil(l, 1)) { for (int c = 0; c < BK_CHANNELS; c++) BK->voice[c].len = 0; }
   else { int c = ci(l, 1); if (c >= 0 && c < BK_CHANNELS) BK->voice[c].len = 0; }
@@ -487,7 +493,7 @@ static const luaL_Reg API[] = {
   {"pal", l_pal}, {"palt", l_palt}, {"palette", l_palette},
   {"btn", l_btn}, {"btnp", l_btnp}, {"btnr", l_btnr}, {"press", l_press},
   {"t", l_t}, {"time", l_time}, {"rnd", l_rnd}, {"srand", l_srand},
-  {"sfx", l_sfx}, {"tone", l_tone}, {"stop", l_stop},
+  {"sfx", l_sfx}, {"tone", l_tone}, {"voice", l_voice}, {"stop", l_stop},
   {"print", l_print}, {"track", l_track}, {"launch", l_launch}, {"home", l_home}, {"_level_map", l_level_map}, {"_restart", l_restart},
   {"net_send", l_net_send}, {"net_recv", l_net_recv},
   {"_save_raw", l_save_raw}, {"_load_raw", l_load_raw}, {"clock", l_clock},
@@ -581,6 +587,18 @@ int bk_lua_load_ex(const char *data, const char *code) {
   if (lua_isfunction(L, -1)) { if (pcall_budget(0) != LUA_OK) return 1; }
   else lua_pop(L, 1);
   return 0;
+}
+
+/* Run a chunk in the loaded cart's Lua state, e.g. an editor telling its player cart what changed. */
+int bk_lua_eval(const char *code) {
+  if (!L) return 1;
+  if (luaL_loadbufferx(L, code, strlen(code), "=eval", "t") != LUA_OK) {
+    snprintf(err_buf, sizeof(err_buf), "%s", lua_tostring(L, -1));
+    lua_pop(L, 1);
+    log_msg(err_buf, 1);
+    return 1;
+  }
+  return pcall_budget(0) != LUA_OK;
 }
 
 int bk_lua_frame(void) {

@@ -492,3 +492,53 @@ li.CodeMirror-hint-active { background: #3a2e5c; color: #fff; }
 }
 
 .bit2-note { flex-direction: column; } .bit2-note a { color: var(--accent2); }
+
+/* ------------------------------------------------ music: Hexbeat (tracker) and Loopbox (loops) */
+.mus-tab { gap: 6px; }
+.mus-tab.active { overflow: hidden; }
+.mus-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.mus-bar input[type=number], .mus-bar .mus-name { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; color: var(--text); padding: 2px 5px; }
+.mus-bar code, .hx-help code { background: var(--panel2); padding: 0 4px; border-radius: 4px; }
+.hx-main, .lb-main { display: flex; gap: 8px; flex: 1; min-height: 0; }
+.hx-order { width: 150px; display: flex; flex-direction: column; gap: 6px; min-height: 0; }
+.hx-side { width: 230px; display: flex; flex-direction: column; gap: 6px; min-height: 0; overflow: auto; }
+.hx-head { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: .05em; }
+.hx-list { display: flex; flex-direction: column; gap: 2px; overflow: auto; min-height: 60px; max-height: 40vh; }
+.hx-order .hx-list { flex: 1; max-height: none; }
+.hx-item { display: flex; gap: 6px; align-items: center; padding: 2px 6px; border-radius: 6px; cursor: pointer; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; border: 1px solid transparent; }
+.hx-item:hover { background: var(--panel2); }
+.hx-item.sel { border-color: var(--accent2); background: var(--panel2); }
+.hx-item .inst-n { color: #6fb6ff; }
+.hx-mini { padding: 0 6px; font-size: 11px; line-height: 16px; }
+.hx-mini.on { background: var(--accent2); color: #fff; }
+.hx-loop { color: var(--warn); }
+.hx-btns { display: flex; flex-wrap: wrap; gap: 4px; }
+.hx-gridwrap { flex: 1; min-width: 0; overflow: auto; border: 1px solid var(--line); border-radius: 6px; background: #0d0d16; }
+#hxGrid { display: block; outline: none; }
+#hxGrid:focus { box-shadow: inset 0 0 0 1px var(--accent2); }
+.hx-inst { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.hx-inst label { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
+.hx-inst input[type=range] { flex: 1; min-width: 70px; }
+.hx-inst input:not([type]), .hx-inst input[type=number] { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; color: var(--text); padding: 2px 5px; }
+.hx-help { font-size: 12px; }
+.hx-helpcols { display: flex; gap: 24px; flex-wrap: wrap; line-height: 1.6; padding: 4px 0; }
+.lb-tracks { width: 200px; display: flex; flex-direction: column; gap: 6px; overflow: auto; }
+.lb-track { border: 1px solid var(--line); border-left: 4px solid var(--tc); border-radius: 6px; padding: 4px 6px; display: flex; flex-direction: column; gap: 4px; cursor: pointer; background: var(--panel); }
+.lb-track.sel { border-color: var(--tc); background: var(--panel2); }
+.lb-trow { display: flex; gap: 4px; align-items: center; }
+.lb-trow select { flex: 1; min-width: 0; font-size: 12px; }
+.lb-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--tc); flex: none; }
+.lb-tname { flex: 1; min-width: 0; background: transparent; border: 1px solid transparent; color: var(--text); border-radius: 4px; padding: 1px 4px; }
+.lb-tname:focus { border-color: var(--line); outline: none; }
+.lb-editor { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: #0d0d16; }
+#lbRoll { display: block; outline: none; cursor: crosshair; }
+.lb-bottom { display: flex; flex-direction: column; gap: 6px; }
+.lb-strip { display: flex; gap: 6px; overflow-x: auto; padding: 4px 0; align-items: stretch; }
+.lb-pad, .lb-block { border: 1px solid var(--line); border-radius: 8px; padding: 4px; background: var(--panel); cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 2px; flex: none; position: relative; }
+.lb-block { flex-direction: row; }
+.lb-pad.sel, .lb-block.sel { border-color: var(--accent2); background: var(--panel2); }
+.lb-block.now { box-shadow: 0 0 0 2px var(--accent); }
+.lb-pad canvas, .lb-block canvas { border-radius: 4px; }
+.lb-padbtns { display: flex; flex-direction: column; gap: 4px; justify-content: center; }
+.pick-list { display: flex; flex-direction: column; gap: 4px; }
+.lb-sub { text-transform: none; letter-spacing: 0; }

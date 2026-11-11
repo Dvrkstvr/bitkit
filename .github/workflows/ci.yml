@@ -32,6 +32,8 @@ jobs:
         run: node tools/tinwingtest.cjs
       - name: Shaders and Deepglow
         run: node tools/shadertest.cjs
+      - name: Music player, Hexbeat and Loopbox
+        run: node tools/musictest.cjs
 
   linked-bits:
     runs-on: ubuntu-latest

@@ -192,7 +192,8 @@ end
   const API_NAMES = ['cls', 'pset', 'pget', 'line', 'rect', 'rectfill', 'circ', 'circfill', 'text', 'spr', 'map', 'mget', 'mset',
     'fget', 'fset', 'camera', 'clip', 'pal', 'palt', 'palette', 'btn', 'btnp', 'btnr', 'press', 't', 'time', 'rnd', 'srand',
     'sfx', 'tone', 'stop', 'print', '_init', '_update', '_draw', 'cutscene', 'cutscene_playing', 'cutscene_skip', 'cutscenes_reset', 'tune', 'game', 'checkpoint', 'game_win', 'game_play', 'game_screen', 'game_title', 'save', 'saved',
-    'shade', 'tint', 'fog', 'dither', 'remap', 'wave', 'ripple', 'pixelate', 'glitch', 'display', 'sprfx', 'raster'];
+    'shade', 'tint', 'fog', 'dither', 'remap', 'wave', 'ripple', 'pixelate', 'glitch', 'display', 'sprfx', 'raster',
+    'music', 'music_stop', 'music_pos', 'music_playing', 'music_note', 'voice'];
   let cm = null, ta = null, errLine = null;
   if (window.CodeMirror) {
     // highlight the engine API on top of the lua mode
@@ -326,16 +327,21 @@ end
     if (t === 'cutscenes') csEd.render();
     if (t === 'track') trkEd.render();
     if (t === 'game') renderGameTab();
+    if (t === 'hexbeat') hexEd.render();
+    if (t === 'loops') loopEd.render();
+    if (t !== 'hexbeat' && t !== 'loops') BKMusic.player.stop();
     lsSet(LS.settings + '.tab', t);
     if (typeof trkEd !== 'undefined') refreshTabs();
   }
   // The tabs fit the game: an editor the game does not use (Kart Lab has no entities, Sweep Storm no painted map)
   // waits under "More" until it is opened or the game starts using it.
-  const TAB_WHY = { map: 'This game has no painted map', track: 'This game has no race tracks', entities: 'This game has no entities', cutscenes: 'This game has no cutscenes' };
+  const TAB_WHY = { map: 'This game has no painted map', track: 'This game has no race tracks', entities: 'This game has no entities', cutscenes: 'This game has no cutscenes',
+    hexbeat: 'This game has no music yet', loops: 'This game has no music yet' };
   function tabUsed(t) {
     if (!TAB_WHY[t]) return true;
     const tracks = BKTracks.uses(cart), ents = cart.entities, small = getCode().length < 5000;
     if (t === 'track') return tracks;
+    if (t === 'hexbeat' || t === 'loops') return (ents.songs || []).length > 0;
     if (t === 'map') return !tracks && (small || cart.levels.some(L => L.placed.length || L.map.some(v => v)));
     // (an entity that is never placed or spawned is only there as the game's icon)
     if (t === 'entities') return (!tracks && small) || ((ents.types.length > 0 || (ents.effects || []).length > 0) &&
@@ -404,6 +410,15 @@ end
     syncLevel: () => syncLevel(), bindLevel: i => bindLevel(i), levelsChanged: () => { refreshLevels(); refreshTabs(); },
     run: (lvl, extra) => run(lvl, extra)
   });
+  // music: Hexbeat (tracker) and Loopbox (loops) edit the same songs, cart.entities.songs (studio/music.js)
+  const musicCtx = name => ({ cart, toast, escapeHtml, changed: markDirty, ask: (...a) => ask(...a), isActive: () => activeTab === name,
+    pickFrom: (title, names, cb) => {
+      modal(title, '<div class="pick-list">' + names.map((n, i) => `<button data-pick="${i}">${escapeHtml(n)}</button>`).join('') + '</div>', [['Cancel', closeModal]]);
+      modalEl.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => { closeModal(); cb(+b.dataset.pick); });
+    } });
+  const hexEd = BKHexbeat.init(musicCtx('hexbeat'));
+  const loopEd = BKLoopbox.init(musicCtx('loops'));
+  BKMusic.player.setMuted(() => settings.muted);
   const csEd = BKCutscenes.init({
     cart, $, toast, escapeHtml, changed: markDirty, ask: (...a) => ask(...a),
     levels: () => cart.levels,
@@ -1488,7 +1503,7 @@ display()                                   -- off</pre><p class="dim">The Help 
     gfxDirtyRT = false;
   }
   // save data (save()/saved() in Lua): kept per cart in this browser under bitkit.save.<name>
-  const SAVE_MAX = 4096;
+  const SAVE_MAX = 16384;
   let saveKey = null;
   function putSave(key) {
     saveKey = key;
@@ -2173,6 +2188,7 @@ display()                                   -- off</pre><p class="dim">The Help 
   function gameKey(g) {
     if (g.studio) { syncLevel(); return { id: 'studio', fp: BKSnap.hash(JSON.stringify(serialize())) }; }
     if (g.demo) return { id: 'demo:' + g.name, fp: BKSnap.hash(g.demo.code) };
+    if (g.app) return { id: 'app:' + g.name, fp: BKSnap.hash(g.app.code) };
     return { id: 'file:' + g.file, fp: BKSnap.hash(JSON.stringify(g.data)) };
   }
   // keep the game that is playing on the Bit (call before anything else runs in the runtime)
@@ -2195,7 +2211,7 @@ display()                                   -- off</pre><p class="dim">The Help 
     playingLevel = snap.meta.level | 0;
     gfxDirtyRT = false; mapDirtyRT = false;
     playingEditor = !!g.studio; playingLevels = c.levels;
-    bit.playing = g.studio ? 'studio' : g.demo ? 'demo:' + g.name : g.file;
+    bit.playing = g.studio ? 'studio' : g.demo ? 'demo:' + g.name : g.app ? 'app:' + g.name : g.file;
     bit.cur = key;
     if (g.studio) newRouteSegment(playingLevel);
     bit.hold = true;
@@ -2226,17 +2242,20 @@ display()                                   -- off</pre><p class="dim">The Help 
     // every built-in demo is on the Bit too, unless the studio or the memory card already has a game with that name
     const taken = new Set([cart.name].concat(libGames.map(g => g.name)));
     const demos = DEMOS().filter(d => !taken.has(d.name)).map(d => ({ name: d.name, demo: d }));
-    bit.games = [{ name: cart.name, studio: true, cart: null }].concat(libGames, demos);
+    // the Bit's own apps (studio/bitapps.js) go on the shelf under the games
+    const apps = (window.BK_APPS || []).map(a => ({ name: a.name, app: a }));
+    bit.games = [{ name: cart.name, studio: true, cart: null }].concat(libGames, demos, apps);
     const paused = await BKSnap.list(), np = linkRoster().length;   // linked: a game is paused when every player's Bit kept it
     const tiles = new Uint8Array(TILES * 64);
     const COLORS = [3, 8, 15, 20, 25, 4, 9, 16];
     const rows = bit.games.slice(0, 96).map((g, i) => {
       const slot = Math.floor(i / 8) * 32 + (i % 8) * 2 + 0;
       let c = null;
-      if (g.studio) c = cart; else if (g.demo) { try { c = demoCart(g.demo); } catch (e) { c = null; } } else { try { c = decodeCart(g.data); } catch (e) { c = null; } }
+      if (g.app) { appIcon(g.app, slot, tiles); c = null; }
+      else if (g.studio) c = cart; else if (g.demo) { try { c = demoCart(g.demo); } catch (e) { c = null; } } else { try { c = decodeCart(g.data); } catch (e) { c = null; } }
       const has = c && iconFor(c, slot, tiles);
       const k = gameKey(g), p = np > 1 ? Array.from({ length: np }, (_, j) => paused.get(linkSnapId(np, k.id, j + 1)) === k.fp).every(Boolean) : paused.get(k.id) === k.fp;
-      return `{name=${luaStr(g.name)}, file=${luaStr(g.file || '')}, studio=${g.studio ? 'true' : 'false'}, paused=${p}, ${has ? `icon=${slot}` : `color=${COLORS[i % COLORS.length]}`}}`;
+      return `{name=${luaStr(g.name)}, file=${luaStr(g.file || '')}, studio=${g.studio ? 'true' : 'false'}, paused=${p}, ${has || g.app ? `icon=${slot}` : `color=${COLORS[i % COLORS.length]}`}${g.app ? ', app=true' : ''}}`;
     });
     if (bit.sel > bit.games.length) bit.sel = 1;
     const data = `BIT = { games = {${rows.join(',')}}, sel = ${bit.sel}, studio = ${!IS_BIT2}, link = true, source = ${luaStr(BKStore.state === 'folder' ? BKStore.label() : '')} }`;
@@ -2249,16 +2268,27 @@ display()                                   -- off</pre><p class="dim">The Help 
     acc = 0; last = performance.now();
     screen.focus();
   }
+  function appIcon(a, slotTile, tiles) {   // an app's 16x16 icon into the home screen's tile sheet
+    for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++)
+      tiles[(slotTile + (y >> 3) * 16 + (x >> 3)) * 64 + (y & 7) * 8 + (x & 7)] = (a.icon[y] || [])[x] || 0;
+  }
+  // an app as a cart (no graphics of its own: apps draw with shapes and text)
+  const appCarts = new Map();
+  function appCart(a) {
+    if (!appCarts.has(a)) appCarts.set(a, { name: a.name, code: a.code, palette: new Uint8Array(DEFAULT_PAL), tiles: new Uint8Array(TILES * 64), flags: new Uint8Array(TILES),
+      map: new Uint16Array(MAPW * MAPH), entities: { types: [], placed: [] }, levels: [{ name: 'App', w: MAPW, h: MAPH, map: new Uint16Array(MAPW * MAPH), placed: [] }] });
+    return appCarts.get(a);
+  }
   let lastPlayed = null;
-  function playCart(c, label, extraLua) {
-    lastPlayed = { c, label };
+  function playCart(c, label, extraLua, key) {
+    lastPlayed = { c, label, key };
     startAudio();
     overlay.classList.add('hidden');
     RT.HEAPU8.set(c.palette, ptr.pal); RT.HEAPU8.set(c.tiles, ptr.tiles); RT.HEAPU8.set(c.flags, ptr.flags);
     RT.HEAPU16.set(c.levels[0].map, ptr.map >> 1);
     gfxDirtyRT = true; playingEditor = false; bit.playing = label; playingLevels = c.levels; playingLevel = 0;
     log(`▶ Bit: playing "${c.name}"`, 'sys');
-    running = loadCode(c.code, BKEntities.toLua(c.entities, levelsMeta(c.levels), 0, extraLua), c.name || label, p2Local() ? 2 : 1, 0) === 0;
+    running = loadCode(c.code, BKEntities.toLua(c.entities, levelsMeta(c.levels), 0, extraLua), key || c.name || label, p2Local() ? 2 : 1, 0) === 0;
     acc = 0; last = performance.now();
     screen.focus();
   }
@@ -2271,7 +2301,7 @@ display()                                   -- off</pre><p class="dim">The Help 
       const key = bit.cur;
       BKSnap.forget(key.id);
       stop(true);
-      playCart(lastPlayed.c, lastPlayed.label, extra);
+      playCart(lastPlayed.c, lastPlayed.label, extra, lastPlayed.key);
       bit.cur = key;
     } else if (playingEditor) {
       stop(true);
@@ -2293,8 +2323,8 @@ display()                                   -- off</pre><p class="dim">The Help 
       const key = gameKey(g);
       key.name = g.name;
       let c = null;
-      try { c = g.studio ? cart : g.demo ? demoCart(g.demo) : decodeCart(g.data); } catch (e) { log(`Could not start ${g.name}: ${e.message}`, 'err'); return; }
-      if (linkWanted() && !isNetGame(c.code)) { linkFromHome(g, c, key, fresh); return; }   // other Bits are on their home screens: play it together
+      try { c = g.app ? appCart(g.app) : g.studio ? cart : g.demo ? demoCart(g.demo) : decodeCart(g.data); } catch (e) { log(`Could not start ${g.name}: ${e.message}`, 'err'); return; }
+      if (linkWanted() && !isNetGame(c.code) && !g.app) { linkFromHome(g, c, key, fresh); return; }   // other Bits are on their home screens: play it together
       if (!fresh) {
         bit.busy = true;
         let snap = null;
@@ -2303,10 +2333,11 @@ display()                                   -- off</pre><p class="dim">The Help 
         if (snap && resumeGame(snap, g, c, key)) return;
       }
       if (g.studio) run();
+      else if (g.app) playCart(c, 'app:' + g.name, '', g.app.saveKey);
       else playCart(c, g.demo ? 'demo:' + g.name : g.file);
       bit.cur = key;
     } else if (cmd === 3) {          // Y on the home screen: edit that game (the one open before is kept, see openGame)
-      if (IS_BIT2) return;
+      if (IS_BIT2 || g.app) return;
       bit.sel = 1;
       if (g.studio) setMode('edit'); else openGame(g.demo ? { demo: g.demo } : { file: g.file, data: g.data });
     }
@@ -2746,7 +2777,15 @@ display()                                   -- off</pre><p class="dim">The Help 
     ['Sound (8 channels, stereo)', [
       ['sfx(note,[wave],[vol],[frames],[ch],[pan],[slide])', 'Play a note like "C4", "F#5" or a MIDI number. wave: 0 square, 1 triangle, 2 saw, 3 noise, 4 sine, 5 thin pulse. vol 0-1, frames = length (60 per second), pan -1..1, slide in Hz per second. Picks a free channel if ch is nil.'],
       ['tone(hz,...)', 'Like sfx but with a frequency in Hz.'],
-      ['stop([ch])', 'Silence one channel or all.']]],
+      ['stop([ch])', 'Silence one channel or all.'],
+      ['voice(ch, hz, vol, [wave], [pan])', 'A held note with no decay of its own (the music player uses it). Calling it again changes pitch, volume and pan smoothly; vol 0 ends it.']]],
+    ['Music (made on the Tracker and Loops tabs)', [
+      ['music(n, [opts])', 'Play song n from the Tracker/Loops tabs (or music("name")). It loops back to the song\'s loop point. opts: {loop=false} plays it once, {pos=, row=} starts somewhere, {pat=p} loops one pattern.'],
+      ['music_stop([frames])', 'Stop the music, or fade it out over that many frames.'],
+      ['music_pos()', 'Where the song is: order position (from 1) and row (from 0), or nil.'],
+      ['music_playing()', 'The song that is playing (a table), or nil.'],
+      ['music_note(n, inst, note, [frames])', 'Play one note with song n\'s instrument inst (from 1): jingles and menu sounds that match the music.'],
+      ['SONGS', 'The game\'s songs. Music uses the top channels (a 4-channel song uses 7, 6, 5 and 4), so sfx() keeps the others. The Music and Volume settings turn it down.']]],
     ['Entities (made on the Entities tab)', [
       ['ents_update() / ents_draw()', 'Run every entity\'s behavior, physics and animation; draw them. Call in _update and _draw (after camera()).'],
       ['ents_player(x,y,[w,h])', 'Tell entities where the player is (for chasing, sensors, touch and damage). Call every frame before ents_update.'],
