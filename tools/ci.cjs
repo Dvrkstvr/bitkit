@@ -2,6 +2,7 @@
 // for 3000 frames with scripted input. Exits non-zero on any Lua error.
 const fs = require('fs'); global.window = {};
 eval(fs.readFileSync(__dirname + '/../studio/demo.js', 'utf8'));
+eval(fs.readFileSync(__dirname + '/../studio/kart.js', 'utf8'));
 eval(fs.readFileSync(__dirname + '/../studio/entities.js', 'utf8'));
 eval(fs.readFileSync(__dirname + '/../studio/home.js', 'utf8'));
 let errors = [], logs = [];
@@ -136,6 +137,35 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
     M._bkw_players(1, 0);
   }
 
-  errors.forEach(e => fail('Lua error: ' + e));
-  if (!process.exitCode) console.log('ok: runtime checks, home screen, 3000 demo frames, level switching, cutscenes, save data and multiplayer passed');
+
+  errors.forEach(e => fail('Lua error: ' + e)); errors = [];
+
+  // 2.5D: floor() fills the rows below the horizon from the map, project() matches it, sspr() scales
+  {
+    logs = [];
+    const T = M._bkw_tiles(), MP = M._bkw_map() >> 1;
+    M.HEAPU8.fill(7, T + 64, T + 128); M.HEAPU16.fill(1, MP, MP + 256 * 128);
+    M._bkw_load(s('function _draw() cls(0) floor(1024, 512, 0, 20, 100, 160, 9) local x, y, k = project(1024 + 40, 512) local bx = project(1000, 512) sspr(1, 10, 10, 1, 1, 2.5) print("fl", pget(160, 99), pget(160, 110), pget(160, 239), math.floor(x + 0.5), math.floor(y + 0.5), k, bx == nil, pget(29, 29), pget(30, 30)) end'));
+    M._bkw_frame(0, 0);
+    const l = (logs.find(x => x.startsWith('fl')) || '').split(/\s+/).slice(1).join(' ');
+    if (l !== '0 7 7 160 180 4.0 true 7 0') fail('floor/project/sspr: ' + l + ' (expected 0 7 7 160 180 4.0 true 7 0)');
+    if (errors.length) { errors.forEach(e => fail('2.5D: ' + e)); errors = []; }
+  }
+
+  // Kart Lab: start a race from the garage, an autopilot drives your kart; it should finish a lap
+  {
+    logs = [];
+    const kd = window.BK_DEMOS.find(d => d.name === 'Kart Lab');
+    const kc = { tiles: new Uint8Array(512 * 64), flags: new Uint8Array(512), map: new Uint16Array(256 * 128) };
+    kd.buildGfx(kc);
+    M.HEAPU8.set(kc.tiles, M._bkw_tiles()); M.HEAPU8.set(kc.flags, M._bkw_flags()); M.HEAPU16.set(kc.map, M._bkw_map() >> 1);
+    const auto = '\nlocal _sr = start_race\nfunction start_race() _sr() player.ai, player.skill, player.lane, player.lane_want = true, 1, 0, 0 end\nlocal _u = _update\nfunction _update() _u() if t() == 2299 then print("kart", mode, player.lap, #karts) end end';
+    if (M._bkw_load(s(kd.code + auto)) !== 0) fail('Kart Lab did not load');
+    for (let f = 0; f < 2300; f++) if (M._bkw_frame(f === 10 ? 1 << 4 : (f > 400 && f < 700 ? (1 << 8) | (f % 90 < 45 ? 1 : 2) : 0), 0)) { fail('Kart Lab stopped at frame ' + f); break; }
+    const kl = (logs.find(x => x.startsWith('kart')) || '').split(/\s+/);
+    if (kl[1] !== 'race' || !(+kl[2] >= 2) || kl[3] !== '4') fail('Kart Lab race: ' + kl.join(' ') + ' (expected racing on lap 2 with 4 karts)');
+    if (errors.length) { errors.forEach(e => fail('Kart Lab: ' + e)); errors = []; }
+  }
+
+  if (!process.exitCode) console.log('ok: runtime checks, home screen, 3000 demo frames, level switching, cutscenes, save data, multiplayer, 2.5D floor and Kart Lab passed');
 });

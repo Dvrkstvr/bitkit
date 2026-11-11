@@ -103,6 +103,14 @@ void bk_circfill(int cx, int cy, int r, int c);
 int  bk_text(const char *s, int x, int y, int c, int scale);
 void bk_spr(int n, int x, int y, int w, int h, int flipx, int flipy, int scale);
 void bk_map(int cx, int cy, int cw, int ch, int sx, int sy);
+/* 2.5D: a perspective floor drawn from the tile map (SNES-style ground plane) and scaled sprites.
+   Camera: world position (pixels), heading angle (radians, 0 = +x, turning toward +y), height above
+   the floor, horizon row on screen and focal length (pixels). bk_floor() fills the rows below the
+   horizon inside the clip rect; bk_project() maps a world point with the same camera to the screen. */
+typedef struct { float x, y, angle, height, focal, cx; int horizon; float c, s; int valid; } bk_floor_cam;
+void bk_floor(float x, float y, float angle, float height, int horizon, float focal, int outside, int step);
+int  bk_project(float wx, float wy, float wz, float *sx, float *sy, float *scale); /* 0 = behind the camera */
+void bk_sspr(int n, float x, float y, int w, int h, float sc, int flipx, int flipy);
 void bk_to_rgba(uint32_t *out);       /* for hosts that want RGBA8888 */
 void bk_to_rgb565(uint16_t *out);     /* for the ST7789 on device */
 

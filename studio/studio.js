@@ -1411,6 +1411,10 @@ end
       ['pal([c0,c1])', 'Draw colour c0 as c1. pal() resets.'],
       ['palt([c,on])', 'Make colour c transparent for sprites and maps. palt() resets (only 0 is transparent).'],
       ['palette(i,[r,g,b])', 'Read or change palette colour i (0-255 each).']]],
+    ['2.5D (perspective floor)', [
+      ['floor(x,y,angle,height,horizon,[focal],[outside],[step])', 'Draw the map as a floor seen in perspective, like a classic kart racer. x,y = camera position in world pixels, angle in radians (0 looks toward +x, turning toward +y), height = camera height in pixels, horizon = screen row of the horizon. focal (default 160) is the zoom. outside = colour past the map edge and far away (-1 leaves those pixels alone, so draw the sky first). step 2 draws every other column (faster on the device). Fills the rows below the horizon inside clip().'],
+      ['project(x,y,[z])', 'Where world point x,y (z = height above the floor) lands on screen with the last floor() camera. Returns sx, sy, scale (screen pixels per world pixel), or nil if it is behind the camera. Draw far things first.'],
+      ['sspr(n,x,y,[w,h],[scale],[flipx],[flipy])', 'Like spr but at any scale, including fractions (0.5 is half size). Use it with project() for karts, trees and other billboards.']]],
     ['Input', [
       ['btn(b)', 'True while the button is held. b is "left","right","up","down","a","b","x","y","l","r","start","select" or 0-11.'],
       ['btnp(b)', 'True on the frame the button goes down, then repeats while held.'],
