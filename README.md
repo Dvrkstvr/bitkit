@@ -6,6 +6,8 @@ the same C runtime runs on PocketBit and, compiled to WebAssembly, in the browse
 
 ## Try it
 
+Online: https://dvrkstvr.github.io/bitkit/ (deployed from `main` by `.github/workflows/pages.yml`).
+
 Open `dist/bitkit-studio.html` in Chrome, Edge or Firefox. It is one self-contained file and works offline.
 Plug in a controller and press any button on it so the browser sees it.
 
