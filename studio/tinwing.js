@@ -756,7 +756,7 @@ function fly_start()
   local px, py = ground(plane)
   P = {x = px, y = py, z = hget(px, py) + 5, h = -math.pi / 4, pitch = 0.3, bank = 0, bv = 0, pv = 0, spd = 1.0, bat = 1, thr = 1,
     st = st, armed = false, launch = 50, t = 0, flat = false, out = 0, spin = 0, swim = 0, camp = 0.3}
-  P.ch, P.cz, P.foc = P.h, P.z + F_UP, F_FOC
+  P.cam, P.cz, P.foc = P.h, P.z + F_UP, F_FOC
   for _, e in ipairs(ents_all()) do
     if PICK[e.name] and e.name ~= "ring" and S.got[key_of(e)] then e.alive = false end
     if e.name == "coil" and S.coil then e.alive = false end
@@ -921,19 +921,19 @@ end
 function fly_draw()
   if not P then return end
   -- the camera swings round behind the plane a little late, and pulls back as you speed up
-  P.ch = P.ch + angdiff(P.h, P.ch) * 0.09
+  P.cam = P.cam + angdiff(P.h, P.cam) * 0.09
   P.cz = P.cz + (P.z + F_UP - P.cz) * 0.14
   P.foc = P.foc + (F_FOC / (1 + clamp(P.spd - BASE_SPEED, -0.6, 2) * 0.16) - P.foc) * 0.05
   P.camp = P.camp + (P.pitch - P.camp) * 0.1
-  local ch, sh = math.cos(P.ch), math.sin(P.ch)
+  local ch, sh = math.cos(P.cam), math.sin(P.cam)
   local camx, camy = P.x - ch * F_BACK, P.y - sh * F_BACK
   local camz = math.max(P.cz, hget(camx, camy) + 6)
   local hor = F_HOR + math.floor(P.camp * 40)
   local foc = P.foc
-  setview(camx, camy, P.ch, camz, hor, foc)
-  draw_sky(hor, P.ch * foc)
+  setview(camx, camy, P.cam, camz, hor, foc)
+  draw_sky(hor, P.cam * foc)
   water_pal()
-  floorh(camx, camy, P.ch, camz, hor, foc, 20, STEP)
+  floorh(camx, camy, P.cam, camz, hor, foc, 20, STEP)
   pal()
   local g = hget(P.x, P.y)
   local sx, sy, k = proj(P.x, P.y, g)
