@@ -60,6 +60,7 @@
       <button data-tab="code" class="active">Code</button>
       <button data-tab="sprites">Sprites</button>
       <button data-tab="map">Map</button>
+      <button data-tab="track" id="tabTrackBtn" hidden title="Edit race tracks">Track</button>
       <button data-tab="entities">Entities</button>
       <button data-tab="cutscenes">Cutscenes</button>
       <button data-tab="input">Controller</button>
@@ -89,7 +90,7 @@
             <button id="sprUndo" title="Ctrl+Z">Undo</button>
           </div>
           <div class="info"><b id="sprInfo">Tile 0</b> <code id="sprHint"></code></div>
-          <div class="flags"><span class="dim">Flags</span> <span id="sprFlags"></span></div>
+          <div class="flags"><span class="dim" title="Tick what this tile does. Name a behaviour and your code can ask fget(tile, &quot;name&quot;).">Behaviours</span> <span id="sprFlags"></span></div>
           <div class="pal-head">
             <span class="dim">Colour</span> <span id="colInfo"></span>
             <input type="color" id="colEdit" title="Change this palette colour">
@@ -136,6 +137,80 @@
         <div class="map-picker">
           <div class="dim small">Tile: <b id="mapTileInfo">1</b></div>
           <div class="sheet-scroll small-sheet"><canvas id="mapSheet" width="256" height="512" class="pix"></canvas></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-track" class="tab">
+      <div id="trkNone" class="dim" hidden>
+        <p>This cart has no race tracks. A track is a level with a road drawn as a smooth loop: you drag its points around,
+        place boost pads, item crates and hills along it, and paint its elevation.</p>
+        <p><button id="trkMakeTrack">Make the current level a track</button></p>
+      </div>
+      <div id="trkMain">
+        <div class="toolbar">
+          <select id="trkLevel" title="Track to edit"></select>
+          <button id="trkNew" class="tiny" title="Add a new track (a new level)">+ track</button>
+          <button id="trkDup" class="tiny" title="Copy this track">duplicate</button>
+          <button id="trkDel" class="tiny danger" title="Delete this track and its level">delete</button>
+          <button id="trkPlay" class="tiny" title="Run the game and race this track straight away">▶ race it</button>
+          <span class="sep"></span>
+          <button data-ttool="move" class="ttool active" title="Drag points and items. Double-click the road to add a point. Drag empty space to pan.">Move</button>
+          <button data-ttool="point" class="ttool" title="Click to add a point to the nearest stretch of road">+ Point</button>
+          <button data-ttool="erase" class="ttool" title="Click a point or item to delete it (right click does this with any tool)">Erase</button>
+          <span class="sep"></span>
+          <button data-ttool="boost" class="ttool" title="Place a boost pad on the road">Boost pad</button>
+          <button data-ttool="crate" class="ttool" title="Place a row of 3 item crates">Crates</button>
+          <button data-ttool="hill" class="ttool" title="A big smooth hill">Hill</button>
+          <button data-ttool="bump" class="ttool" title="A sharp bump: fast karts jump off it">Bump</button>
+          <button data-ttool="dip" class="ttool" title="A hollow">Dip</button>
+          <span class="sep"></span>
+          <button data-ttool="raise" class="ttool" title="Paint the ground higher">Raise</button>
+          <button data-ttool="lower" class="ttool" title="Paint the ground lower">Lower</button>
+          <button data-ttool="flat" class="ttool" title="Level the ground to the height where you start the stroke">Flatten</button>
+          <button data-ttool="smooth" class="ttool" title="Smooth out bumps">Smooth</button>
+          <span class="grow"></span>
+          <span id="trkPos" class="dim small"></span>
+        </div>
+        <div class="trk-layout">
+          <div class="trk-view-wrap">
+            <canvas id="trkView" width="800" height="400" tabindex="0"></canvas>
+            <div class="dim small"><span id="trkLen"></span>. The red point (S) is the start line and the arrows show which way the race goes.
+              Drag points to shape the road, double-click the road to add one, right click deletes. Scroll to zoom, drag empty space (or Shift+drag) to pan.
+              <button id="trkFit" class="tiny">fit</button></div>
+          </div>
+          <div class="trk-side">
+            <div id="trkEmpty" class="dim" hidden>No track picked.</div>
+            <div id="trkBody">
+              <h4>Track</h4>
+              <div class="prop-grid">
+                <span>Name</span><span><input id="trkName" spellcheck="false"></span>
+                <span>Laps</span><span><input id="trkLaps" type="number" min="1" max="9"></span>
+                <span>Road width</span><span><input id="trkRoad" type="range" min="20" max="72"> <b id="trkRoadV"></b> px</span>
+                <span>Kerb width</span><span><input id="trkKerb" type="range" min="0" max="16"> <b id="trkKerbV"></b> px</span>
+              </div>
+              <button id="trkReverse" class="tiny">Race the other way</button>
+              <div id="trkSel" class="trk-sel"></div>
+              <div id="trkBrushBox" hidden>
+                <h4>Height brush</h4>
+                <div class="prop-grid"><span>Size</span><span><input id="trkBrush" type="range" min="24" max="320" value="72"> <b id="trkBrushV">72</b> px</span></div>
+              </div>
+              <label class="chk"><input type="checkbox" id="trkShowH" checked> show elevation</label>
+              <button id="trkFlatAll" class="tiny">flatten everything</button>
+              <h4>Road look</h4>
+              <div class="dim small">Paint these few tiles: the road, the kerbs and the grass. The edges (where they meet at any angle) are built from them.</div>
+              <div id="trkParts" class="trk-parts"></div>
+              <div class="trk-paint">
+                <canvas id="trkSeg" width="176" height="176" class="pix checker"></canvas>
+                <div>
+                  <canvas id="trkPal" width="192" height="192" class="pix"></canvas>
+                  <div class="dim small">Colour <span id="trkCol" class="trk-col"></span> · right click picks</div>
+                </div>
+              </div>
+              <div class="dim small" id="trkPartAbout"></div>
+              <canvas id="trkPreview" width="192" height="96" class="pix trk-preview" title="A straight bit of road"></canvas>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -407,6 +482,7 @@
 <script src="runtime.js"></script>
 <script src="demo.js"></script>
 <script src="harbour.js"></script>
+<script src="tracks.js"></script>
 <script src="kart.js"></script>
 <script src="entities.js"></script>
 <script src="cutscenes.js"></script>
