@@ -87,6 +87,7 @@ end
 function _init()
   game{
     title = "Crossgate",
+    players = {1, 8},                 -- a duel: with more than two, the winner stays on
     title_draw = draw_title,          -- its own animated title screen (above)
     look = { title = 27, shadow = 24, panel = 6, edge = 8, hi = 24, text = 12, pick = 27, goal = 11, footer = 11 },
     goal = "Fight your way through the town and out of your gate before your rival gets out of theirs.",

@@ -115,6 +115,8 @@ end
 function _init()
   game{
     title = "Tinwing",
+    players = 1,
+    race = "time",                    -- linked Bits: each flies their own plane, first to bring the mail home wins
     title_draw = draw_title,          -- its own animated title screen (above)
     look = { title = 12, shadow = 19, panel = 19, edge = 22, hi = 20, text = 23, pick = 27, goal = 22, footer = 22, menu = "left" },
     goal = "Build an RC plane, find the mail satchel lost past the Drowned Belltower and fly it home to Perch.",

@@ -16,6 +16,8 @@ typedef struct {
   uint8_t icon[256];          /* 16x16 palette indices for the home screen */
   int has_icon;
   int builtin;                /* came with the firmware: the home screen shows no file name */
+  int pmin, pmax, race;       /* how many can play (game{players = ...}) and race: 0 none, 1 "time", 2 "score" */
+  int net;                    /* talks with net_send(): never runs in lockstep */
 } bk_cart;
 
 typedef struct {
@@ -27,6 +29,9 @@ typedef struct {
 enum { BK_CART_INFO = 0, BK_CART_ALL = 1 };
 int  bk_cart_load(bk_cart *c, const char *path, int what, const bk_cart_mem *mem, char *err, size_t errlen);
 void bk_cart_free(bk_cart *c, const bk_cart_mem *mem);
+/* how many can play a game, from its code's game{players = n | {min, max}, race = "time" | "score"}; without
+   players = ..., 1 (or 1-8 when the code uses PLAYERS). The same rules as the studio (studio/rules.js BKPlayers). */
+void bk_cart_players(const char *code, int *pmin, int *pmax, int *race);
 /* helpers, also used by tests */
 size_t bk_b64_decode(const char *in, size_t inlen, uint8_t *out, size_t outmax);
 size_t bk_unrle_b64(const char *in, uint8_t *out, size_t outlen, uint8_t *tmp, size_t tmpmax);

@@ -87,6 +87,105 @@ static void make_icon(bk_cart *c) {
   c->has_icon = any;
 }
 
+/* ------------------------------------------------------------ players = ..., race = ... */
+static int is_word(int c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_'; }
+static int is_space(int c) { return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v'; }
+/* a comment or a string at i: where it ends, or -1 when there is none */
+static long skip_cs(const char *s, long n, long i) {
+  const char c = s[i];
+  if (c == '-' && i + 1 < n && s[i + 1] == '-') {
+    if (i + 3 < n && s[i + 2] == '[' && s[i + 3] == '[') { const char *e = strstr(s + i + 4, "]]"); return e ? (long)(e - s) + 2 : n; }
+    while (i < n && s[i] != '\n') i++;
+    return i;
+  }
+  if (c == '"' || c == '\'') { i++; while (i < n && s[i] != c && s[i] != '\n') i += s[i] == '\\' ? 2 : 1; return i + 1 > n ? n : i + 1; }
+  if (c == '[' && i + 1 < n && s[i + 1] == '[') { const char *e = strstr(s + i + 2, "]]"); return e ? (long)(e - s) + 2 : n; }
+  return -1;
+}
+/* name = in body (not after a word character, a dot or a quote): where its value starts, or -1 */
+static long field_at(const char *b, long n, const char *name) {
+  const long k = (long)strlen(name);
+  for (long i = 0; i + k <= n; i++) {
+    if (memcmp(b + i, name, (size_t)k)) continue;
+    if (i > 0 && (is_word((unsigned char)b[i - 1]) || b[i - 1] == '.' || b[i - 1] == '"' || b[i - 1] == '\'')) continue;
+    long j = i + k;
+    while (j < n && is_space((unsigned char)b[j])) j++;
+    if (j < n && b[j] == '=' && (j + 1 >= n || b[j + 1] != '=')) { j++; while (j < n && is_space((unsigned char)b[j])) j++; return j; }
+  }
+  return -1;
+}
+static int read_int(const char *b, long n, long *j) {
+  int v = 0, any = 0;
+  while (*j < n && b[*j] >= '0' && b[*j] <= '9') { if (v < 10000) v = v * 10 + (b[*j] - '0'); (*j)++; any = 1; }
+  return any ? v : -1;
+}
+void bk_cart_players(const char *s, int *pmin, int *pmax, int *race) {
+  int mn = 1, mx = 1, rc = 0, sees = 0;
+  long body = -1, bodyn = 0;
+  const long n = s ? (long)strlen(s) : 0;
+  char last = 0; int last_fn = 0;     /* the last thing outside comments: a character ('a' for a word); after "function" */
+  for (long i = 0; i < n;) {
+    const long e = skip_cs(s, n, i);
+    if (e >= 0) { if (s[i] != '-') { last = '"'; last_fn = 0; } i = e; continue; }
+    if (is_word((unsigned char)s[i])) {
+      long j = i;
+      while (j < n && is_word((unsigned char)s[j])) j++;
+      const long len = j - i;
+      if (len == 7 && !memcmp(s + i, "PLAYERS", 7)) sees = 1;
+      if (len == 4 && !memcmp(s + i, "game", 4) && body < 0 && last != '.' && last != ':' && !last_fn) {
+        long q = j;
+        while (q < n && is_space((unsigned char)s[q])) q++;
+        if (q < n && s[q] == '(') { q++; while (q < n && is_space((unsigned char)s[q])) q++; }
+        if (q < n && s[q] == '{') {     /* the table given to game{}: up to its closing brace */
+          int d = 1; long r = q + 1;
+          while (r < n && d > 0) {
+            const long e2 = skip_cs(s, n, r);
+            if (e2 >= 0) { r = e2; continue; }
+            if (s[r] == '{') d++; else if (s[r] == '}') d--;
+            r++;
+          }
+          body = q + 1; bodyn = r - 1 - body;
+          if (bodyn < 0) bodyn = 0;
+        }
+      }
+      last = 'a'; last_fn = len == 8 && !memcmp(s + i, "function", 8);
+      i = j;
+      continue;
+    }
+    if (!is_space((unsigned char)s[i])) { last = s[i]; last_fn = 0; }
+    i++;
+  }
+  int declared = 0;
+  if (body >= 0) {
+    const char *b = s + body;
+    long j = field_at(b, bodyn, "players");
+    if (j >= 0) {
+      if (j < bodyn && b[j] == '{') {
+        j++; while (j < bodyn && is_space((unsigned char)b[j])) j++;
+        const int a = read_int(b, bodyn, &j);
+        while (j < bodyn && is_space((unsigned char)b[j])) j++;
+        if (a >= 0 && j < bodyn && b[j] == ',') {
+          j++; while (j < bodyn && is_space((unsigned char)b[j])) j++;
+          const int c2 = read_int(b, bodyn, &j);
+          while (j < bodyn && is_space((unsigned char)b[j])) j++;
+          if (c2 >= 0 && j < bodyn && b[j] == '}') { mn = a; mx = c2; declared = 1; }
+        }
+      } else { const int a = read_int(b, bodyn, &j); if (a >= 0) { mn = mx = a; declared = 1; } }
+    }
+    j = field_at(b, bodyn, "race");
+    if (j >= 0 && j < bodyn && (b[j] == '"' || b[j] == '\'')) {
+      if (j + 5 < bodyn && !memcmp(b + j + 1, "time", 4) && b[j + 5] == b[j]) rc = 1;
+      if (j + 6 < bodyn && !memcmp(b + j + 1, "score", 5) && b[j + 6] == b[j]) rc = 2;
+    }
+  }
+  if (!declared && sees) mx = 8;
+  if (mx > 99) mx = 99;
+  if (mx < 1) mx = 1;
+  if (mn > mx) mn = mx;
+  if (mn < 1) mn = 1;
+  *pmin = mn; *pmax = mx; *race = rc;
+}
+
 int bk_cart_load(bk_cart *c, const char *path, int what, const bk_cart_mem *mem, char *err, size_t errlen) {
   bk_cart_mem m = { def_alloc, def_release };
   if (mem && mem->alloc) m = *mem;
@@ -113,6 +212,8 @@ int bk_cart_load(bk_cart *c, const char *path, int what, const bk_cart_mem *mem,
   c->code = bk_json_str(c->root, "code", "");
   c->entities_lua = bk_json_str(c->root, "entities_lua", "");
   c->builtin = bk_json_bool(c->root, "builtin", 0);
+  bk_cart_players(c->code, &c->pmin, &c->pmax, &c->race);
+  c->net = strstr(c->code, "net_send(") != NULL;
   const bk_json *app = bk_json_get(c->root, "app");
   if (app && app->type == BJ_OBJ) {
     c->is_app = 1;

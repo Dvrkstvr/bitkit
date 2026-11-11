@@ -1156,6 +1156,7 @@ function _init()
   -- title screen, pause menu (Start) and settings: the game shell (see GAME_RULES.md)
   game{
     title = "Kart Lab",
+    players = {1, 8},
     title_draw = draw_title,          -- its own animated title screen (above)
     look = { title = 27, shadow = 24, panel = 1, edge = 25, hi = 25, text = 13, pick = 27, goal = 11, footer = 11, menu = "right", name_y = 10 },
     goal = "Build a kart and finish 1st on every track.",

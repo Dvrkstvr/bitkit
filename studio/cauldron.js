@@ -43,6 +43,7 @@ KITCHEN = {
 function _init()
   game{
     title = "Cauldron Crew",
+    players = {1, 8},
     goal = "Earn the shift's target in coins, or out-brew the other team's kitchen.",
     help = {
       "D-pad: walk. A: pick up, put down or use what you face. B: dash.",

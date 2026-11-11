@@ -3,7 +3,7 @@
    Bit A and Bit B find each other, A starts Crossgate (or the --game one) from its home screen and both play it in lockstep with
    random buttons; A's Start+Select pauses it on both on the same frame (the lockstep hash must match);
    A picks it again and both carry on; this time B leaves; then both play Sweep Storm on their own and hear
-   each other's net_send events; last, B switches off in the middle of a linked game and A goes home by itself.
+   each other's net_send events; A plays Windrow (1 player) alone, then both race Deepglow; last, B switches off in the middle of a linked game and A goes home by itself.
    Included by main_sim.c. MIT License. */
 #include <signal.h>
 #include <sys/socket.h>
@@ -44,6 +44,7 @@ static uint16_t lk_combo(void) { return START | SELECT; }
 static int lk_two(void) { return bk_host_linked() == 2; }
 static int lk_ready(void) { return bk_host_link_ready() == 2 && !strcmp(bk_host_playing(), "home"); }   /* the other Bit is home too */
 static int lk_in_game(void) { return bk_host_link_players() == 2; }
+static int lk_racing(void) { return bk_host_racing(); }
 static int lk_at_home(void) { return !strcmp(bk_host_playing(), "home") && !bk_host_link_players(); }
 static uint32_t lk_target;
 static int lk_frame_reached(void) { uint32_t f; bk_host_link_sync(&f); return f >= lk_target || !bk_host_link_players(); }
@@ -58,7 +59,8 @@ static int link_bit(int is_a, const char *flash, const char *data, const char *r
   const char *me = is_a ? "Bit A" : "Bit B";
   FILE *out = fopen(result, "w");
   uint32_t h1 = 0, f1 = 0, h2 = 0, f2 = 0;
-  const int cross = find_game(lk_game), sweep = find_game("Sweep Storm");
+  const int cross = find_game(lk_game), sweep = find_game("Sweep Storm"), windrow = find_game("Windrow"), deep = find_game("Deepglow");
+  int races = 0;
   if (!cross || !sweep) { FAIL("%s: %s or Sweep Storm missing", me, lk_game); return 1; }
 
   /* 1. they find each other; then A starts Crossgate for both */
@@ -92,6 +94,35 @@ static int link_bit(int is_a, const char *flash, const char *data, const char *r
   { const double t = now_us() + 3.0e6; while (now_us() < t) lk_tick(lk_rand_mask() & (uint16_t)~START); }
   if (bk_host_net_heard() < 1) FAIL("%s: heard no net_send events from the other Bit", me);
   bk_host_go_home();
+  /* 4b. player counts: Windrow (1 player) plays on A alone while B stays home; Deepglow (1 player, race = "time")
+     starts on both as a race: no lockstep, each Bit its own run, and they hear each other's progress */
+  if (windrow && deep) {
+    if (is_a) {
+      if (!lk_until(lk_ready, lk_none, 6)) FAIL("Bit A: Bit B did not leave Sweep Storm");
+      bk_host_launch(windrow);
+      if (bk_host_link_players() || bk_host_racing() || strcmp(bk_host_playing(), "Windrow")) FAIL("Bit A: Windrow (1 player) did not play alone");
+      { const double t = now_us() + 1.0e6; while (now_us() < t) lk_tick(0); }
+      bk_host_go_home();
+      { const double t = now_us() + 0.5e6; while (now_us() < t) lk_tick(0); }
+      if (!lk_until(lk_ready, lk_none, 6)) FAIL("Bit A: Bit B is not on its home screen for the race");
+      bk_host_launch(deep);
+    } else {
+      /* B stays home while A plays Windrow alone */
+      const double t = now_us() + 1.0e6;
+      while (now_us() < t) { lk_tick(0); if (strcmp(bk_host_playing(), "home")) { FAIL("Bit B: left home for A's one-player game (%s)", bk_host_playing()); break; } }
+    }
+    if (!lk_until(lk_racing, lk_none, 8)) FAIL("%s: the race did not start", me);
+    else {
+      if (bk_host_link_players()) FAIL("%s: the race runs in lockstep", me);
+      const int heard0 = bk_host_net_heard();
+      { const double t = now_us() + 5.0e6; while (now_us() < t && bk_host_racing()) lk_tick(lk_rand_mask() & (uint16_t)~START); }
+      if (bk_host_net_heard() <= heard0) FAIL("%s: heard nothing from the other Bit's run", me);
+      if (bk_host_eval("local R = GAME.race assert(R and R.n == 2, 'no race') for s = 1, 2 do assert(R.res[s], 'no word from seat ' .. s) end")) FAIL("%s: the game shell's standings miss a Bit", me);
+    }
+    bk_host_go_home();
+    { const double t = now_us() + 0.5e6; while (now_us() < t) lk_tick(0); }
+    races = 1;
+  }
   /* 5. a linked game again; B switches off after a moment and A has to notice */
   if (is_a) { if (!lk_until(lk_ready, lk_none, 6)) FAIL("Bit A: Bit B did not leave Sweep Storm"); bk_host_launch(cross); }
   if (!lk_until(lk_in_game, lk_none, 6)) FAIL("%s: the third linked game did not start", me);
@@ -100,6 +131,7 @@ static int link_bit(int is_a, const char *flash, const char *data, const char *r
     if (!lk_until(lk_at_home, lk_rand_mask, 12)) FAIL("Bit A: still in the game after Bit B switched off");
     if (bk_host_linked() != 1) FAIL("Bit A: still sees Bit B");
   }
+  if (!races) FAIL("%s: Windrow or Deepglow missing, so the race wasn't tested", me);
   fprintf(out, "%08x %u %08x %u %d %d %d\n", h1, f1, h2, f2, bk_host_net_heard(), lk_sent, lk_lost);
   fclose(out);
   bk_host_shutdown();
@@ -141,6 +173,6 @@ static int link_test(int argc, char **argv) {
   if (fa1 != fb1 || ha1 != hb1 || fa1 < 600) FAIL("game 1 out of step");
   if (fa2 != fb2 || ha2 != hb2 || fa2 < 300) FAIL("game 2 out of step");
   if (ra_fail || rb_fail || fails) { fprintf(stderr, "linked Bits test failed\n"); return 1; }
-  printf("ok: two linked Bits found each other, played in lockstep, paused and carried on together, talked with net_send, and noticed a Bit switching off\n");
+  printf("ok: two linked Bits found each other, played in lockstep, paused and carried on together, talked with net_send, kept a one-player game to one Bit, raced a one-player game, and noticed a Bit switching off\n");
   return 0;
 }

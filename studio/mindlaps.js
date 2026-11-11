@@ -26,6 +26,7 @@ EX = {
 function _init()
   game{
     title = "Mind Laps",
+    players = {1, 8},
     goal = "Run a Daily Jog of five brain laps and earn a gold medal (" .. GOLD .. " points).",
     help = {
       "Five laps of 30 seconds, one exercise each: maths, memory, logic, counting and reaction.",
