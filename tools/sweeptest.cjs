@@ -106,10 +106,17 @@ function state(bits) {
   }
   for (let f = 0; f < 120; f++) tick(bits);     // let the last events arrive
   st = state(bits);
-  // the winner's Bit shows "Goal complete" (game_win) over the results: B goes back to them
+  // the winner's Bit shows "Goal complete" (game_win) over the results: after a moment, holding A
+  // ("Keep playing") goes back to them; B and a quick A do nothing there
   const won = st.map(v => !v);
   if (won.filter(Boolean).length > 1) fail('more than one Bit thinks it won');
-  if (won.some(Boolean)) { tick(bits, won.map(w => w ? 1 << B.b : 0)); tick(bits); st = state(bits); }
+  if (won.some(Boolean)) {
+    tick(bits, won.map(w => w ? 1 << B.b : 0)); tick(bits);
+    if (state(bits).some((v, k) => won[k] && v)) fail('B should not leave the goal screen');
+    for (let f = 0; f < 50; f++) tick(bits);
+    for (let f = 0; f < 50; f++) tick(bits, won.map(w => w ? 1 << B.a : 0));
+    tick(bits); st = state(bits);
+  }
   st.forEach((v, k) => { if (v && (v[12] === '1') !== (v[13] === '1')) fail(`Bit ${k + 1} is #${v[12]} but won=${v[13]}`); });
   console.log('mid-match:', mid && mid[0].join(' '));
   console.log('end:', st.map(v => v && v.join(' ')).join(' | '));
@@ -125,8 +132,12 @@ function state(bits) {
   const total = bits.reduce((n, b) => n + b.sent, 0);
   console.log('events sent:', bits.map(b => b.sent).join(', '), '(bots run on Bit 1)');
   if (total > 60 * 4 * 60 * 2) fail('too many network events for ESP-NOW: ' + total);
-  // after the results, A goes back to the lobby
+  // after the results, holding A goes back to the lobby (a tap doesn't: it might be a dig still being mashed)
   tick(bits, bits.map(() => 1 << B.a)); tick(bits);
+  st = state(bits);
+  if (!st[0] || st[0][0] === 'lobby') fail('a tap of A on the results should not leave them');
+  for (let f = 0; f < 70; f++) tick(bits, bits.map(() => 1 << B.a));   // (still held in the lobby: that doesn't start a match)
+  tick(bits);
   st = state(bits);
   if (!st[0] || st[0][0] !== 'lobby') fail('A on the results did not go back to the lobby');
   bits.forEach(b => b.errors.forEach(e => fail('match: ' + e)));

@@ -52,6 +52,9 @@
 --                   _draw run, but it isn't gameplay yet, so Continue still works. Leave with game_play()
 --                   or game_title()
 --   game_title()    back to the title screen
+--   hold_btn(b, n)  true once, on the frame button b (any player) has been held n frames (default 45): for
+--                   "again" / "next" on a results screen, so a button still mashed from the match can't skip it.
+--                   While it fills, the shell draws a bar at the bottom of the screen. Let go to do it again.
 --   GAME.state      "title", "play", "screen", "pause", "settings", "help", "confirm" or "won"
 --   GAME.items      the names in the menu on screen
 --
@@ -191,7 +194,9 @@ do
     return KIT.set[key]
   end
 
+  local WON_T = 0                  -- frames since the goal screen came up
   local function set_state(s)
+    if s == "won" then WON_T = 0 end
     if s == "title" and ST ~= "title" and ST ~= "settings" and ST ~= "help" and ST ~= "confirm" then TT = 0 end
     ST, GAME.state = s, s
     SEL = 1
@@ -212,6 +217,36 @@ do
     if KIT.started or KIT.cp ~= nil or KIT.won then return true end
     return CFG.can_continue and CFG.can_continue() and true or false
   end
+
+  -- ------------------------------------------------ held buttons (results screens: no skipping by accident)
+  local HOLD_N = 45
+  local HELD = {}                  -- button -> frames held (by any player), counted every frame
+  local ASKED = nil                -- {b, n, f} the hold a results screen is waiting for this frame
+  local HF = 0
+  local LOCKED = {}                -- buttons a hold_btn() used, until they are let go
+  local function count_held()
+    HF = HF + 1
+    for _, b in ipairs({ "a", "b", "x", "y", "start" }) do
+      local down = false
+      for p = 1, players() do if btn(b, p) then down = true end end
+      HELD[b] = down and (HELD[b] or 0) + 1 or 0
+      if not down then LOCKED[b] = nil end
+    end
+  end
+  function hold_btn(b, n)
+    n = n or HOLD_N
+    if not CFG then count_held() end   -- (no game shell: count when asked)
+    ASKED = { b, n, HF }
+    if (HELD[b] or 0) ~= n then return false end
+    LOCKED[b] = true                  -- the screen that comes next doesn't see it as a press (or a repeat)
+    return true
+  end
+  local raw_btnp = btnp
+  function btnp(b, ...)
+    if LOCKED[b] then return false end
+    return raw_btnp(b, ...)
+  end
+  local function hold_fill(b) return (HELD[b] or 0) end
 
   -- ------------------------------------------------ menus
   local function can_resume()      -- there is somewhere to carry on from, not just a save file
@@ -342,11 +377,13 @@ do
       end
     end
     local it = ITEMS[SEL]
-    if any_btnp("a") and it and it[2] then
+    local won = ST == "won"
+    if won and WON_T < 45 then return end   -- the goal screen just came up: buttons still mashed from play wait
+    if (won and (hold_btn("a") or any_btnp("start")) or (not won and any_btnp("a"))) and it and it[2] then
       raw_sfx("C5", 4, 0.25 * vol(), 6)
       it[2]()
-    elseif any_btnp("b") then
-      if ST == "pause" or ST == "won" then set_state("play")
+    elseif any_btnp("b") and not won then
+      if ST == "pause" then set_state("play")
       elseif ST == "settings" or ST == "help" then set_state(BACK)
       elseif ST == "confirm" then set_state(CONFIRM.from) end
     end
@@ -471,7 +508,7 @@ do
       shadow(ST == "won" and "GOAL COMPLETE!" or "PAUSED", y + 8, ST == "won" and lk("goal", 17) or lk("title", 27), ST == "won" and 1 or 2)
       for i, l in ipairs(lines) do center(l, y + 22 + (i - 1) * 10, lk("text", 13)) end
       draw_items(y + 28 + extra, 180)
-      footer("A: choose   B: back to the game")
+      footer(ST == "won" and "hold A: choose" or "A: choose   B: back to the game")
     elseif ST == "settings" then
       local h = #ITEMS * 14 + 34
       local y = 120 - h // 2
@@ -509,6 +546,9 @@ do
     if d ~= k_draw then CART_DRAW = d; _G._draw = k_draw end
   end
   k_update = function()
+    count_held()
+    ASKED = nil
+    if ST == "won" then WON_T = WON_T + 1 end
     race_tick()
     if R and R.cd > 0 and ST == "play" then adopt() return end   -- 3, 2, 1: the run hasn't started yet
     if ST == "screen" then           -- the game's own menu screen: no pause menu, and not gameplay yet
@@ -546,6 +586,18 @@ do
     adopt()
   end
   local overlay = _bk_overlay
+  local function draw_hold()      -- the bar a results screen's hold_btn() fills
+    if not ASKED or ASKED[3] ~= HF then return end
+    local b, n = ASKED[1], ASKED[2]
+    local h = hold_fill(b)
+    if h <= 0 or h >= n then return end
+    camera() clip()
+    local w = math.floor(150 * h / n)
+    rectfill(80, 214, 160, 22, lk("panel", 1) or 1)
+    rect(80, 214, 160, 22, lk("edge", 13) or 13)
+    rectfill(85, 228, w, 4, lk("pick", 27))
+    center("KEEP HOLDING " .. string.upper(b == "start" and "start" or b), 218, lk("text", 13))
+  end
   function _bk_overlay()
     if overlay and not title_art() then overlay() end   -- no cutscene bars or dialog over the title art
     if CFG and ST ~= "play" and ST ~= "screen" then
@@ -570,6 +622,7 @@ do
         center(R.news, 4, 27)
       end
     end
+    draw_hold()
   end
 
   -- ------------------------------------------------ the cart's calls

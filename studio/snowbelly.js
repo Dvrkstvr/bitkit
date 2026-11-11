@@ -788,7 +788,7 @@ function _update()
   end
   if state == "results" then
     update_cams()
-    if state_t > 60 and any_edge("a") then
+    if state_t > 60 and hold_btn("a") then
       if cup and cup.run < 3 then
         cup.run = cup.run + 1
         start_run(cup.run)
@@ -801,7 +801,7 @@ function _update()
   end
   if state == "podium" then
     if state_t > 90 then
-      if any_edge("a") then
+      if hold_btn("a") then
         if cup then cup = nil end
         state, state_t = "pick", 0
       end
@@ -1338,7 +1338,7 @@ function draw_results()
     if cup then text(tostring(b.total), 230, y, 27) end
   end
   if state_t > 60 then
-    ctext(cup and cup.run < 3 and "A: next slope" or "A: to the podium", 206, 29)
+    ctext(cup and cup.run < 3 and "hold A: next slope" or "hold A: to the podium", 206, 29)
   end
 end
 
@@ -1461,7 +1461,7 @@ function draw_podium()
     local s = i .. "." .. b.r.name .. " " .. b.total
     stext(s, i <= 6 and 4 or 316 - #s * 8, 36 + ((i - 4) % 3) * 10, 13)
   end
-  if state_t > 90 then rectfill(0, 229, 320, 11, 19) ctext("A: ride again", 231, 13) end
+  if state_t > 90 then rectfill(0, 229, 320, 11, 19) ctext("hold A: ride again", 231, 13) end
 end
 
 -- ---------------------------------------------------------------- the title screen: a penguin rides the first slope

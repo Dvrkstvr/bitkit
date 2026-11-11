@@ -421,7 +421,7 @@ function _update()
   state_t = state_t + 1
   if state == "over" then
     if state_t > 50 then
-      if any_edge("a") then start(mode) elseif any_edge("b") then go_setup() end
+      if hold_btn("a") then start(mode) elseif any_edge("b") then go_setup() end
     end
     return
   end
@@ -564,7 +564,7 @@ function _draw()
       stext("DROPPED!", 80, 26, 2)
       ctext(passes_total .. " passes this run, best streak " .. best, 104, 13)
     end
-    if state_t > 50 then ctext("A: new match    B: setup", 128, 29) end
+    if state_t > 50 then ctext("hold A: new match    B: setup", 128, 29) end
   end
 end
 

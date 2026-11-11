@@ -140,6 +140,19 @@ require('../studio/runtime.js')({ onLog: (m, e) => { if (e) errors.push(m); else
   load('Sprout Hop', PROBE + '\nlocal _u = _update\nfunction _update() _u() if GAME.state == "play" and not w then w = true emit("win") end end', 'GAME_BOOT = 3\n');
   for (let f = 0; f < 900 && st()[0] !== 'won'; f++) frame(f % 8 === 0 ? bit('a') : 0);
   if (st()[0] !== 'won') fail('game_win() should show the goal screen, got ' + st()[0]);
+  // ... where buttons still mashed from play do nothing: B and a tap of A stay; holding A (or Start, the menu button) goes on,
+  // and the A that was held doesn't count as a press in the game afterwards
+  run(50); tap('b'); tap('a'); run(2);
+  if (st()[0] !== 'won') fail('B or a tap of A should not leave the goal screen, got ' + st()[0]);
+  for (let f = 0; f < 44; f++) frame(bit('a'));
+  if (st()[0] !== 'won') fail('A held under 45 frames should not leave the goal screen');
+  frame(bit('a')); frame(bit('a')); run(1);
+  if (st()[0] !== 'play') fail('holding A on the goal screen should go back to the game, got ' + st()[0]);
+  for (let f = 0; f < 30; f++) frame(bit('a'));   // still held: btnp() must not fire (nor repeat) until it's let go
+  {
+    const p = s('if btnp("a") then error("held A leaked into the game") end'); if (M._bkw_eval(p)) fail('the held A leaked into btnp() after the goal screen: ' + errors.join(' ')); M._free(p);
+    errors = [];
+  }
   if (errors.length) { errors.forEach(e => fail('Sprout Hop: ' + e)); errors = []; }
 
   // 6. Beacon Keeper keeps its own save: Continue when there is one, Delete save wipes it

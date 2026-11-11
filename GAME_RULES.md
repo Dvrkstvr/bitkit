@@ -105,7 +105,9 @@ Every built-in game has its own: Sprout Hop hops through a scrolling meadow and 
 
 There is at least one level that a player can finish: from New game, through the level, to an ending. "Endless" games (idle games, high-score chasers) still need a goal you can reach, like "guide 100 ships home"; the game can carry on afterwards.
 
-When the player reaches the goal, call `game_win("what they did")`. It shows the **Goal complete** screen (after any cutscene that is playing ends), lets them keep playing or go back to the title, and puts a star on the title screen from then on.
+When the player reaches the goal, call `game_win("what they did")`. It shows the **Goal complete** screen (after any cutscene that is playing ends), lets them keep playing or go back to the title, and puts a star on the title screen from then on. Buttons still mashed from play can't skip it: it waits a moment, then **A has to be held** (a bar fills) or **Start** pressed.
+
+**Results screens of your own** ("A: again", "next match") should do the same: use `hold_btn("a")` instead of `btnp("a")`. It is true once, when A has been held for 45 frames, the shell draws the filling bar for you, and the held A doesn't count as a press on the next screen. Say "hold A: again" on screen.
 
 ### 3. Quick resume
 
@@ -196,6 +198,7 @@ game{
 |---|---|
 | `checkpoint(t)` | Remember where to carry on. `t` is any table `save()` can store. `checkpoint(nil)` forgets it. |
 | `game_win(text)` | The goal is reached: the Goal complete screen, and a star on the title. |
+| `hold_btn(b, n)` | True once, when button `b` has been held `n` frames (default 45) by any player: for results screens, so a stray press can't skip them. The shell draws a filling bar while it's held. |
 | `setting(key)` | A settings value. `"volume"` and `"music"` are 0 to 10. |
 | `mus(note, ...)` | Same as `sfx()`, but also follows the Music level. |
 | `game_play()` | Skip the menus and go straight into play (for example when a level is started from the editor). |

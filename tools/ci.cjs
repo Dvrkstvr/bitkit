@@ -45,6 +45,25 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
   M._bkw_frame(0, 0);
   if (M.HEAP32[sys] !== 0) fail('system request was not cleared on the next frame');
   if (errors.length) { errors.forEach(e => fail('home screen: ' + e)); errors = []; }
+  // only A opens a game (not Start); X (start a paused game over) and Y (edit) need a two-second hold
+  {
+    if (M._bkw_load_ex(s('BIT = { games = {{name="A", file="a.bitkit", studio=false, color=3, paused=true}}, sel = 1, studio = true, source = "" }'), s(window.BKThemes.LIB + window.BK_HOME)) !== 0) fail('home screen (paused) did not load');
+    const tr = M._bkw_track() >> 2, X = 1 << 6, Y = 1 << 7, ST = 1 << 10;
+    const req = () => [M.HEAP32[sys], M.HEAP32[tr + 2] ? M.HEAP32[tr] : 0];   // a launch/edit request, a start-over signal
+    let seen = [];
+    const hold = (mask, n) => { for (let f = 0; f < n; f++) { M._bkw_frame(mask, 0); const r = req(); if (r[0] || r[1]) seen.push(r.join(',')); } M._bkw_frame(0, 0); };
+    M._bkw_frame(0, 0);
+    hold(ST, 3);
+    if (seen.length) fail('Start on the home screen should not open a game: ' + seen);
+    hold(X, 60); hold(Y, 60);
+    if (seen.length) fail('a short X or Y on the home screen should do nothing: ' + seen);
+    hold(X, 125);
+    if (seen.join(' ') !== '0,-1') fail('holding X for two seconds should start the paused game over, got ' + seen);
+    seen = [];
+    hold(Y, 125);
+    if (seen.join(' ') !== '3,0') fail('holding Y for two seconds should edit the game, got ' + seen);
+    if (errors.length) { errors.forEach(e => fail('home screen holds: ' + e)); errors = []; }
+  }
 
   const cart = { tiles: new Uint8Array(32768), flags: new Uint8Array(512), map: new Uint16Array(32768) };
   window.BK_DEMO.buildGfx(cart);
@@ -199,14 +218,14 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
   }
 
   // Kart Lab, race end with your own input: start on the last lap, drive over the line, the autopilot
-  // takes over your kart while the rivals finish, then A goes back to the garage
+  // takes over your kart while the rivals finish, then holding A goes back to the garage
   {
     logs = [];
     const kd = window.BK_DEMOS.find(d => d.name === 'Kart Lab');
     const fin = '\nlocal _sr = start_race\nfunction start_race() _sr() player.lap = LAPS end\nlocal _u = _update\nfunction _update() local m = mode _u() if m ~= mode then print("mode", mode) end end';
     if (M._bkw_load(s('GAME_BOOT = 3 ' + kd.code + fin)) !== 0) fail('Kart Lab (finish) did not load');
     for (let f = 0; f < 1500; f++) {
-      const mask = KGO(f) ? 1 << 4 : (f > 250 && f < 1000 ? 1 << 9 : 0) | (f === 1400 ? 1 << 4 : 0);
+      const mask = KGO(f) ? 1 << 4 : (f > 250 && f < 1000 ? 1 << 9 : 0) | (f >= 1400 && f < 1480 ? 1 << 4 : 0);
       if (M._bkw_frame(mask, 0)) { fail('Kart Lab (finish) stopped at frame ' + f); break; }
     }
     const modes = logs.filter(x => x.startsWith('mode')).map(x => x.split(/\s+/)[1]).join(',');

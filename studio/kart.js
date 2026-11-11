@@ -1305,9 +1305,7 @@ function _update()
   elseif mode == "count" or mode == "race" then race_update()
   elseif mode == "results" then
     race_update()
-    local any_a = false
-    for p = 1, NH do if btnp("a", p) then any_a = true end end
-    if gt > 60 and any_a then mode, gt = "setup", 0 end
+    if gt > 60 and hold_btn("a") then mode, gt = "setup", 0 end
   end
 end
 
@@ -1910,7 +1908,7 @@ function _draw()
       local b = best[TRACKS[sel.track].name] or 0
       text(new_best and "New best time!" or ("Best " .. tstr(b)), 64, top + ph - 18, new_best and 17 or 29)
     end
-    if gt > 60 then text("A: next", 128, top + ph - 8, 29) end
+    if gt > 60 then text("hold A: next", 112, top + ph - 8, 29) end
     if #humans > 1 then
       local p = humans[(ME or 0) > 0 and ME or 1]
       if (ME or 0) > 0 and p then text("You: " .. place_str(p.place), 200, top + ph - 18, 27) end
