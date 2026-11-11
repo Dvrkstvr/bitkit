@@ -17979,7 +17979,7 @@ end
 
   // "Choose a controller" panel over the screen: opens by itself in a new Bit 2 window, and from the link bar.
   // Press any button on a controller to take it, or any key for the keyboard.
-  const chooser = { open: false, base: new Map(), el: $('padChooser') };
+  const chooser = { open: false, base: new Map(), shown: 0, el: $('padChooser') };
   function chooserBase(pads) { chooser.base = new Map(pads.map(p => [p.index + '|' + p.id, p.buttons.map(b => b.value)])); }
   function openChooser() {
     chooser.open = true; chooserBase(input.pads); chooserDraw(); chooser.el.hidden = false;
@@ -17990,11 +17990,12 @@ end
     toast(`${IS_BIT2 ? 'Bit 2' : playMode === 'link' ? 'Bit 1' : 'This tab'} uses ${pk.k === 'pad' ? padName(pk.id) : pk.k === 'kb' ? 'the keyboard' : 'auto input'}`);
   }
   function chooserPoll(pads) {
-    if (pads.length !== chooser.base.size) chooserDraw();
+    // check presses first: a controller the browser only now shows (after its first press) is taken by that press
     for (const p of pads) {
       const base = chooser.base.get(p.index + '|' + p.id);
       if (p.buttons.some((b, j) => b.value > .6 && (!base || base[j] < .3))) return choose({ k: 'pad', i: p.index, id: p.id });
     }
+    if (pads.length !== chooser.shown) chooserDraw();
     for (const p of pads) if (!chooser.base.has(p.index + '|' + p.id)) chooser.base.set(p.index + '|' + p.id, p.buttons.map(b => b.value));
   }
   function chooserDraw() {
@@ -18004,12 +18005,12 @@ end
       <div class="dim">Press any button on it, or press a key to use the keyboard.</div>
       <div class="pc-list">${pads.map(p => `<button data-i="${p.index}">🎮 ${p.index + 1}: ${escapeHtml(padName(p.id))}${p === peer ? ` <span class="dim">(${IS_BIT2 ? 'Bit 1' : 'Bit 2'} has it)</span>` : ''}</button>`).join('')}
         <button data-k="kb">⌨ Keyboard</button><button data-k="auto" class="dim">Auto</button></div>
-      ${pads.length ? '' : '<div class="dim">No controller yet: press a button on it so the browser shows it.</div>'}</div>`;
+      <div class="dim">Controller missing? Press a button on it while this window is in front: browsers only show a controller to a window after a press there.</div></div>`;
     chooser.el.querySelectorAll('button').forEach(b => b.onclick = () => {
       if (b.dataset.k) return choose({ k: b.dataset.k });
       const p = input.pads.find(q => q.index === +b.dataset.i); if (p) choose({ k: 'pad', i: p.index, id: p.id });
     });
-    chooserBase(pads);
+    chooser.shown = pads.length;
   }
   window.addEventListener('keydown', e => {
     if (!chooser.open || e.ctrlKey || e.metaKey || e.altKey || e.key === 'Tab') return;
@@ -18085,7 +18086,7 @@ end
     const pads = input.pads;
     [0, 1].forEach(n => {
       const sel = $(n ? 'inputPick2' : 'inputPick'), pk = picks[n];
-      const autoTxt = n ? 'P2: auto (2nd controller + IJKL)' : (pads.length ? 'Auto: keyboard + controllers' : 'Auto: keyboard (no controller yet)');
+      const autoTxt = n ? 'P2: auto (2nd controller + IJKL)' : (pads.length ? 'Auto: keyboard + controllers' : 'Auto: keyboard (press a button on a controller to list it)');
       let html = `<option value="auto">${escapeHtml(autoTxt)}</option><option value="kb">${n ? 'P2: ' : ''}Keyboard only</option>`;
       html += pads.map(p => `<option value="pad:${p.index}">${n ? 'P2: ' : ''}🎮 ${p.index + 1}: ${escapeHtml(padName(p.id))}</option>`).join('');
       const cur = pk.k === 'pad' ? pickedPad(pads, pk) : null;

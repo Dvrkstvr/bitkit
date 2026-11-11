@@ -39,6 +39,13 @@ const { chromium } = require('playwright');
   // reopen and pick the keyboard with a key
   await c.click('#linkPad'); await c.keyboard.press('KeyZ'); await c.waitForTimeout(100);
   if ((await c.evaluate(() => bkStudio.picks[0])).k !== 'kb') fail('key did not pick the keyboard');
+  // a controller the browser only shows after its first press is taken by that press
+  const d = await ctx.newPage(); d.on('pageerror', e => errs.push('D ' + e.message));
+  await d.addInitScript(() => { window.__hidden = true; const real = navigator.getGamepads; navigator.getGamepads = () => window.__hidden ? [] : real(); });
+  await d.goto(url + '?bit=2'); await d.waitForFunction(() => window.bkStudio); await d.waitForTimeout(300);
+  await d.evaluate(() => { __pads[0].buttons[1] = { pressed: true, value: 1 }; window.__hidden = false; }); await d.waitForTimeout(150);
+  const pk2 = await d.evaluate(() => bkStudio.picks[0]);
+  if (pk2.k !== 'pad' || pk2.i !== 0) fail('first press of a newly shown pad did not pick it: ' + JSON.stringify(pk2));
   if (errs.length) fail(errs.join('\n'));
   console.log(process.exitCode ? 'linkpick: failed' : 'linkpick: ok');
   await b.close();
