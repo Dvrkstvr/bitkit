@@ -46,6 +46,7 @@ void bk_reset_draw_state(void) {
   for (int i = 0; i < 256; i++) { BK->draw_pal[i] = (uint8_t)i; BK->transparent[i] = 0; }
   BK->transparent[0] = 1;
   fcam.valid = 0;
+  bk_depth(-1);
 }
 
 void bk_machine_init(bk_machine *m) {
@@ -206,7 +207,7 @@ void bk_floor(float x, float y, float angle, float height, int horizon, float fo
   float c = cosf(angle), s = sinf(angle);
   float cx = (BK->clip_x0 + BK->clip_x1) * 0.5f;
   fcam.x = x; fcam.y = y; fcam.angle = angle; fcam.height = height; fcam.focal = focal;
-  fcam.horizon = horizon; fcam.c = c; fcam.s = s; fcam.valid = 1;
+  fcam.horizon = horizon; fcam.c = c; fcam.s = s; fcam.valid = 1; fcam.hills = 0;
   fcam.cx = cx;
   const int mw = BK_MAP_W * 8, mh = BK_MAP_H * 8;
   uint8_t out = BK->draw_pal[outside & 255];
@@ -240,9 +241,9 @@ void bk_floor(float x, float y, float angle, float height, int horizon, float fo
   }
 }
 
-/* World point (wz = height above the floor) to screen with the camera of the last bk_floor().
-   scale = screen pixels per world pixel at that distance. */
-int bk_project(float wx, float wy, float wz, float *sx, float *sy, float *scale) {
+/* World point (wz = height above the floor) to screen with the camera of the last bk_floor()/bk_floorh().
+   scale = screen pixels per world pixel at that distance, dist = distance along the view (for bk_depth). */
+int bk_project(float wx, float wy, float wz, float *sx, float *sy, float *scale, float *dist) {
   if (!fcam.valid) return 0;
   float dx = wx - fcam.x, dy = wy - fcam.y;
   float z = dx * fcam.c + dy * fcam.s;
@@ -252,7 +253,98 @@ int bk_project(float wx, float wy, float wz, float *sx, float *sy, float *scale)
   *sx = fcam.cx + lat * k;
   *sy = fcam.horizon + (fcam.height - wz) * k;
   *scale = k;
+  if (dist) *dist = z;
   return 1;
+}
+
+/* ---------------- hills ---------------- */
+
+float bk_hget(float x, float y) {
+  float u = x * 0.125f, v = y * 0.125f;
+  if (u < 0) u = 0;
+  if (v < 0) v = 0;
+  if (u > BK_MAP_W - 0.001f) u = BK_MAP_W - 0.001f;
+  if (v > BK_MAP_H - 0.001f) v = BK_MAP_H - 0.001f;
+  int i = (int)u, j = (int)v;
+  float fu = u - i, fv = v - j;
+  const uint8_t *h = &BK->height[j * (BK_MAP_W + 1) + i];
+  float top = h[0] + (h[1] - h[0]) * fu;
+  float bot = h[BK_MAP_W + 1] + (h[BK_MAP_W + 2] - h[BK_MAP_W + 1]) * fu;
+  return top + (bot - top) * fv;
+}
+
+#define OCC_N 40
+static int16_t occ[BK_W][OCC_N];   /* per column: lowest floor row drawn once the ray passed occ_z[k] */
+static float occ_z[OCC_N];
+static float depth_z = -1;
+
+void bk_depth(float z) { depth_z = z; }
+
+static inline int texel(float wx, float wy) {
+  int px = (int)wx, py = (int)wy;
+  if (wx < 0 || wy < 0 || px >= BK_MAP_W * 8 || py >= BK_MAP_H * 8) return -1;
+  int t = BK->map[(py >> 3) * BK_MAP_W + (px >> 3)];
+  if (t <= 0 || t >= BK_TILES) return -1;
+  return BK->draw_pal[BK->tiles[t * BK_TILE_BYTES + (py & 7) * 8 + (px & 7)]];
+}
+
+/* For each screen column a ray walks away from the camera in growing steps. At each step the floor
+   height there is projected to a screen row; if that row is above everything drawn so far in the
+   column, the rows in between are filled, sampling the map along the stretch of ray they cover.
+   Near hills therefore hide far ones. Cost: about 300 steps per column (step 2 halves the columns). */
+#define HILL_FAR 2048.f
+void bk_floorh(float x, float y, float angle, float camz, int horizon, float focal, int outside, int step) {
+  if (step < 1) step = 1;
+  if (focal < 1) focal = 1;
+  if (occ_z[1] == 0) for (int k = 0; k < OCC_N; k++) occ_z[k] = 6.f * powf(1.16f, (float)k);
+  float c = cosf(angle), s = sinf(angle);
+  float cx = (BK->clip_x0 + BK->clip_x1) * 0.5f;
+  fcam.x = x; fcam.y = y; fcam.angle = angle; fcam.height = camz; fcam.focal = focal;
+  fcam.horizon = horizon; fcam.c = c; fcam.s = s; fcam.valid = 1; fcam.hills = 1; fcam.cx = cx;
+  uint8_t out = BK->draw_pal[outside & 255];
+  int top = BK->clip_y0, bottom = BK->clip_y1;
+  for (int sx = BK->clip_x0; sx < BK->clip_x1; sx += step) {
+    int ex = sx + step > BK->clip_x1 ? BK->clip_x1 : sx + step;
+    float rx = (sx + step * 0.5f - cx) / focal;
+    float dx = c - s * rx, dy = s + c * rx;       /* world step per unit of depth */
+    int ybuf = bottom, k = 0;
+    float z = 2.f;
+    float pwx = x + dx * z, pwy = y + dy * z;
+    float psy = horizon + (camz - bk_hget(pwx, pwy)) * focal / z;
+    while (z < HILL_FAR && ybuf > top) {
+      z += 0.3f + z * 0.015f;
+      float wx = x + dx * z, wy = y + dy * z;
+      float sy = horizon + (camz - bk_hget(wx, wy)) * focal / z;
+      int iy = (int)ceilf(sy);
+      if (iy < top) iy = top;
+      if (iy < ybuf) {
+        float span = psy - sy;
+        for (int row = iy; row < ybuf; row++) {
+          float t = span > 0.001f ? (psy - row) / span : 1.f;
+          if (t < 0) t = 0; else if (t > 1) t = 1;
+          int col = texel(pwx + (wx - pwx) * t, pwy + (wy - pwy) * t);
+          if (col < 0) { if (outside < 0) continue; col = out; }
+          uint8_t *d = &BK->screen[row * BK_W + sx];
+          for (int i = sx; i < ex; i++) *d++ = (uint8_t)col;
+        }
+        ybuf = iy;
+      }
+      pwx = wx; pwy = wy; psy = sy;
+      while (k < OCC_N && occ_z[k] <= z) { for (int i = sx; i < ex; i++) occ[i][k] = (int16_t)ybuf; k++; }
+    }
+    if (outside >= 0) {
+      int r0 = horizon + 1 > top ? horizon + 1 : top;
+      for (int row = r0; row < ybuf; row++) memset(&BK->screen[row * BK_W + sx], out, (size_t)(ex - sx));
+    }
+    for (; k < OCC_N; k++) for (int i = sx; i < ex; i++) occ[i][k] = (int16_t)(ybuf < horizon + 1 ? ybuf : horizon + 1);
+  }
+}
+
+/* bk_sspr helper: with bk_depth(z) set after bk_floorh, is screen pixel (x, y) behind a nearer hill? */
+static int occ_k = -1;
+static inline int hidden_px(int x, int y) {
+  if (occ_k < 0 || x < 0 || x >= BK_W) return 0;
+  return y >= occ[x][occ_k];
 }
 
 /* Scaled sprite: tiles n.. (w x h tiles from the sheet) drawn sc times bigger, nearest-neighbour,
@@ -266,6 +358,10 @@ void bk_sspr(int n, float x, float y, int w, int h, float sc, int flipx, int fli
   int dw = (int)(sw * sc + 0.5f), dh = (int)(sh * sc + 0.5f);
   if (dw < 1 || dh < 1 || dw > 4096 || dh > 4096) return;
   int32_t step = (int32_t)(65536.f / sc);
+  occ_k = -1;
+  if (depth_z > 0 && fcam.valid && fcam.hills) {
+    for (int k = 0; k < OCC_N && occ_z[k] < depth_z * 0.97f; k++) occ_k = k;
+  }
   int ya = y0 < BK->clip_y0 ? BK->clip_y0 : y0, yb = y0 + dh > BK->clip_y1 ? BK->clip_y1 : y0 + dh;
   int xa = x0 < BK->clip_x0 ? BK->clip_x0 : x0, xb = x0 + dw > BK->clip_x1 ? BK->clip_x1 : x0 + dw;
   for (int py = ya; py < yb; py++) {
@@ -281,7 +377,7 @@ void bk_sspr(int n, float x, float y, int w, int h, float sc, int flipx, int fli
       int t = trow + (u >> 3);
       if (t < 0 || t >= BK_TILES) continue;
       uint8_t c = BK->tiles[t * BK_TILE_BYTES + (v & 7) * 8 + (u & 7)];
-      if (BK->transparent[c]) continue;
+      if (BK->transparent[c] || hidden_px(px, py)) continue;
       dst[px] = BK->draw_pal[c];
     }
   }

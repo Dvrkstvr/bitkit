@@ -112,16 +112,16 @@ An idle game where you are the lighthouse. Everything is drawn from code, withou
 
 ## 🏎️ The demo: Kart Lab (2.5D)
 
-A kart racer drawn SNES-style: the map becomes a floor seen in perspective, and karts, trees and cones are scaled sprites.
+A kart racer drawn SNES-style: the map becomes a floor seen in perspective, with real hills, and karts, trees and items are scaled sprites.
 
 - **It's all about the karts.** In the garage, pick a body (Dart, Brick, Hopper), an engine (Buzz 2-stroke, Twin, V-Torque), tyres (Slicks, Knobbly, Softs) and a paint job. Every part changes speed, accel, grip, weight, offroad and drift.
-- **Analog throttle** on R: squeeze harder to go faster. B brakes. Hold **L** while turning to drift; the sparks go white, amber, then violet, and letting go gives a boost.
-- Three rival karts with their own random builds, boost pads, 3 laps around Pinewood Loop, and your best time is saved.
-- The track is an ordinary map, so you can repaint it on the Map tab.
+- **Analog throttle** on R: squeeze harder to go faster. B brakes. Steering comes in 3 stages that blend as you hold a direction: a tap nudges, a hold turns, a long hold turns hard.
+- **Drift** with L (or B while on the throttle). The sparks go white, amber, then violet; let go for a boost.
+- **Items** from crates, used with X: Nitro, Oil Slick, Bolt, Drone (chases the kart in front) and Shield. Rivals use them too.
+- **Hills and jumps**: the ground rises and falls, and fast karts leave the ground over crests.
+- **Tracks are levels on the Map tab.** Each has a `start` entity and `node` entities along the middle of the road, plus optional `boost` pads, `crate`s and `hill`/`bump`/`dip` entities. Move them around or add a level with **+ level**, and the road and hills are rebuilt when the race starts. Two tracks are included: Pinewood Loop and Quarry Hills.
 
 <img src="docs/media/kart-lab-race.png" width="400" alt="Kart Lab race"> <img src="docs/media/kart-lab-garage.png" width="400" alt="Kart Lab garage">
-
-Load it with **Demo → Kart Lab**.
 
 ## 🕹️ Controls
 
@@ -139,7 +139,7 @@ Load it with **Demo → Kart Lab**.
 | Callbacks | `_init` `_update` `_draw` |
 | Graphics | `cls pset pget line rect rectfill circ circfill text spr map camera clip pal palt palette` |
 | Map | `mget mset fget fset` |
-| 2.5D | `floor project sspr` (perspective floor from the map, world-to-screen, scaled sprites) |
+| 2.5D | `floor floorh hset hget depth project sspr` (perspective floor from the map, hills, world-to-screen, scaled sprites) |
 | Input | `btn btnp btnr press` |
 | Sound | `sfx tone stop` (8-voice stereo synth) |
 | Entities | `ents_update ents_draw ents_player ents_spawn ents_all ents_touch ents_kill ents_damage ents_on` |
