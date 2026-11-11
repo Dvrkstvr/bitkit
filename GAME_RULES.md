@@ -99,6 +99,8 @@ One sentence, shown on the title screen and in How to play, that says what winni
 
 Linked Bits run the same game in lockstep, so the shell keeps every Bit identical: menus are driven by the players' buttons only, saved checkpoints and game settings are ignored while linked (volume still applies on each Bit), and Continue and Quit to title are hidden. Your game should do the same: when `ME > 0`, don't let one Bit's save change the game.
 
+Games for more Bits than lockstep can carry (10 to 20) use network events instead (`net_send`, `net_recv`, `NET_ID`; see the studio's Help tab). Those Bits aren't kept identical, so the shell treats them like single-player games: each Bit has its own menus, and the pause menu doesn't stop the match for the others. Sweep Storm is the example.
+
 ## `game{}` reference
 
 ```lua

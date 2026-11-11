@@ -22,3 +22,5 @@ jobs:
         run: node tools/harbourtest.cjs
       - name: Game shell and game rules
         run: node tools/gametest.cjs
+      - name: Sweep Storm and network events
+        run: node tools/sweeptest.cjs

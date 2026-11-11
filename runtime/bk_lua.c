@@ -207,6 +207,7 @@ static int l_press(lua_State *l) {
 static void set_player_globals(lua_State *l) {
   lua_pushinteger(l, BK->players < 1 ? 1 : BK->players); lua_setglobal(l, "PLAYERS");
   lua_pushinteger(l, BK->me); lua_setglobal(l, "ME");
+  lua_pushinteger(l, BK->net.id); lua_setglobal(l, "NET_ID");
 }
 
 /* ---- time / rng ---- */
@@ -304,6 +305,30 @@ static int l_load_raw(lua_State *l) {
   lua_pushlstring(l, BK->save.data, (size_t)BK->save.len);
   return 1;
 }
+/* net_send(v1, ..., v8): broadcast an event of up to 8 integers to every other Bit playing this cart.
+   Returns false if the cart already sent BK_NET_OUT events this frame. Events can arrive late or (rarely)
+   not at all, and other Bits are not frame-synced: keep game state owned by whoever sends it. */
+static int l_net_send(lua_State *l) {
+  int n = lua_gettop(l);
+  if (n > BK_NET_VALS) return luaL_error(l, "net_send: at most %d numbers", BK_NET_VALS);
+  if (BK->net.out_n >= BK_NET_OUT) { lua_pushboolean(l, 0); return 1; }
+  int32_t *e = BK->net.out[BK->net.out_n];
+  e[0] = BK->net.id; e[1] = n;
+  for (int i = 0; i < n; i++) e[2 + i] = (int32_t)luaL_checknumber(l, i + 1);
+  BK->net.out_n++;
+  lua_pushboolean(l, 1);
+  return 1;
+}
+/* net_recv() -> from, v1, ... (the next event from another Bit) or nil when there is none */
+static int l_net_recv(lua_State *l) {
+  if (BK->net.in_r >= BK->net.in_n || BK->net.in_r < 0) { lua_pushnil(l); return 1; }
+  int32_t *e = BK->net.in[BK->net.in_r++];
+  int n = e[1] < 0 ? 0 : (e[1] > BK_NET_VALS ? BK_NET_VALS : e[1]);
+  lua_pushinteger(l, e[0]);
+  for (int i = 0; i < n; i++) lua_pushinteger(l, e[2 + i]);
+  return n + 1;
+}
+
 /* clock(): wall-clock unix seconds (RTC on the device). Not deterministic: don't use it inside multiplayer game logic. */
 static int l_clock(lua_State *l) { lua_pushinteger(l, (lua_Integer)time(NULL)); return 1; }
 
@@ -332,6 +357,7 @@ static const luaL_Reg API[] = {
   {"t", l_t}, {"time", l_time}, {"rnd", l_rnd}, {"srand", l_srand},
   {"sfx", l_sfx}, {"tone", l_tone}, {"stop", l_stop},
   {"print", l_print}, {"track", l_track}, {"launch", l_launch}, {"home", l_home}, {"_level_map", l_level_map}, {"_restart", l_restart},
+  {"net_send", l_net_send}, {"net_recv", l_net_recv},
   {"_save_raw", l_save_raw}, {"_load_raw", l_load_raw}, {"clock", l_clock},
   {NULL, NULL}
 };
