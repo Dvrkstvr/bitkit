@@ -798,9 +798,10 @@ end
 
   // the Bit's own settings: one save file ("Bit settings") that the Bit reads for every game and app
   const SETTINGS = `
-LOOKS = {"game", "off", "crt", "arcade", "old tv", "handheld", "sepia", "night", "vivid"}
-LOOK_NAMES = {"GAME'S OWN", "OFF", "CRT", "ARCADE", "OLD TV", "HANDHELD", "SEPIA", "NIGHT", "VIVID"}
+LOOKS = {"theme", "game", "off", "crt", "arcade", "old tv", "handheld", "sepia", "night", "vivid"}
+LOOK_NAMES = {"THEME'S", "GAME'S OWN", "OFF", "CRT", "ARCADE", "OLD TV", "HANDHELD", "SEPIA", "NIGHT", "VIVID"}
 LOOK_ABOUT = {
+  theme = {"The look your theme picks", "(Themes app, Utilities row)."},
   game = {"Each game picks its own look.", "Most play with no shader."},
   off = {"A clean picture, even in games", "that ask for a look."},
   crt = {"Scanlines and curved glass,", "like a home TV from the 80s."},
@@ -811,17 +812,27 @@ LOOK_ABOUT = {
   night = {"Cool and dark, easy on the", "eyes late at night."},
   vivid = {"Punchy colour and contrast,", "no lines."},
 }
-S = {look = "game", strength = 10, bright = 10, volume = 10}
-local ITEMS = {
+-- name, color, bit: the owner's profile. Other Bits see the name in linked games (player_name() in games).
+S = {look = "theme", strength = 10, bright = 10, volume = 10, name = "", color = 27, bit = ""}
+COLORS = {27, 10, 26, 25, 5, 4, 21, 22, 17, 16, 18, 12, 13, 29}
+local PAGES = {"SCREEN", "USER"}
+local SCREEN_ITEMS = {
   {key = "look", name = "SCREEN LOOK"},
   {key = "strength", name = "LOOK STRENGTH", min = 1, max = 10, about = {"How strong the look is.", "10 is the full look."}},
   {key = "bright", name = "BRIGHTNESS", min = 1, max = 10, about = {"The screen's backlight."}},
   {key = "volume", name = "VOLUME", min = 0, max = 10, about = {"Sound for every game and app.", "Games have their own on top."}},
 }
-local sel, tt, flash = 1, 0, 0
+local USER_ITEMS = {
+  {key = "name", name = "YOUR NAME", text = 10, about = {"Other players see it when Bits", "link up, and games show it."}},
+  {key = "color", name = "YOUR COLOUR", about = {"Your colour next to your name."}},
+  {key = "bit", name = "BIT NAME", text = 14, about = {"This Bit's own name: on the home", "screen and when it switches on."}},
+}
+local page, sel, tt, flash = 1, 1, 0, 0
 
+local function items() return page == 1 and SCREEN_ITEMS or USER_ITEMS end
 local function look_index() for i, l in ipairs(LOOKS) do if l == S.look then return i end end return 1 end
-local function show_look() if S.look == "game" then display() else display(S.look) end end
+local function show_look() if S.look == "game" or S.look == "theme" then display() else display(S.look) end end
+local function color_index() for i, c in ipairs(COLORS) do if c == S.color then return i end end return 1 end
 
 function _init()
   local d = saved()
@@ -829,31 +840,46 @@ function _init()
   show_look()
 end
 
+local function stored() save(S); flash = 20 end
 local function change(d)
-  local it = ITEMS[sel]
+  local it = items()[sel]
   if it.key == "look" then
     S.look = LOOKS[(look_index() - 1 + d) % #LOOKS + 1]
     show_look()
+  elseif it.key == "color" then
+    S.color = COLORS[(color_index() - 1 + d) % #COLORS + 1]
+  elseif it.text then
+    return
   else
     local v = math.max(it.min, math.min(it.max, S[it.key] + d))
     if v == S[it.key] then return end
     S[it.key] = v
   end
-  save(S); flash = 20
+  stored()
   sfx(it.key == "volume" and "C5" or "E5", 4, 0.25, 4)
 end
 
 function _update()
   tt = tt + 1
   if flash > 0 then flash = flash - 1 end
-  if btnp("down") then sel = sel % #ITEMS + 1; sfx("G5", 4, 0.15, 3) end
-  if btnp("up") then sel = (sel - 2) % #ITEMS + 1; sfx("G5", 4, 0.15, 3) end
+  if kb_update() then return end
+  if btnp("r") or btnp("l") then page = page % 2 + 1; sel = 1; sfx("G5", 4, 0.15, 3) end
+  local n = #items()
+  if btnp("down") then sel = sel % n + 1; sfx("G5", 4, 0.15, 3) end
+  if btnp("up") then sel = (sel - 2) % n + 1; sfx("G5", 4, 0.15, 3) end
+  local it = items()[sel]
+  if it.text and btnp("a") then
+    kb_open(it.name, S[it.key], it.text, function(v) S[it.key] = v stored() end)
+    return
+  end
   if btnp("right") or btnp("a") then change(1) end
   if btnp("left") or btnp("b") then change(-1) end
 end
 
 local function value_of(it)
   if it.key == "look" then return LOOK_NAMES[look_index()] end
+  if it.key == "color" then return "" end
+  if it.text then return S[it.key] == "" and "(A TO TYPE)" or S[it.key] end
   return S[it.key]
 end
 
@@ -879,37 +905,62 @@ local function test_card(x, y, w, h)
   rectfill(bx, by + 24, 6, 6, 26)
   rect(x, y, w, h, 13)
 end
+-- how other players see you: a name tag over a little player
+local function name_card(x, y, w, h)
+  rectfill(x, y, w, h, 19)
+  rectfill(x, y + h - 30, w, 30, 15)
+  local name = S.name == "" and "P1" or S.name
+  local px = x + w // 2 - 6 + math.floor(math.sin(tt / 25) * 20)
+  local py = y + h - 46
+  text(name, px + 6 - #name * 4, py - 14, S.color)
+  rectfill(px, py, 12, 16, S.color) rectfill(px + 3, py + 4, 2, 3, 1) rectfill(px + 8, py + 4, 2, 3, 1)
+  local bit = S.bit == "" and "PocketBit" or S.bit
+  text(bit, x + w // 2 - #bit * 4, y + 8, 13)
+  text("LINKED PLAY", x + w // 2 - 44, y + h - 20, 18)
+  rect(x, y, w, h, 13)
+end
 
 function _draw()
   cls(1)
   rectfill(0, 0, 320, 14, 31)
   text("SETTINGS", 6, 4, 13)
-  text("this Bit", 314 - 8 * 8, 4, 28)
-  for i, it in ipairs(ITEMS) do
+  local x = 90
+  for i, n in ipairs(PAGES) do
+    if i == page then rectfill(x - 3, 2, #n * 8 + 6, 11, 21) text(n, x, 4, 1) else text(n, x, 4, 28) end
+    x = x + #n * 8 + 14
+  end
+  text("L R page", 314 - 8 * 8, 4, 28)
+  for i, it in ipairs(items()) do
     local y = 24 + (i - 1) * 34
     local on = i == sel
     if on then rectfill(4, y - 4, 170, 32, 2) rect(4, y - 4, 170, 32, 21) end
     text(it.name, 12, y, on and 22 or 28)
     local v = value_of(it)
-    if type(v) == "number" then
+    if it.key == "color" then
+      for k, c in ipairs(COLORS) do
+        rectfill(12 + (k - 1) * 11, y + 13, 9, 9, c)
+        if c == S.color then rect(11 + (k - 1) * 11, y + 12, 11, 11, 13) end
+      end
+    elseif type(v) == "number" then
       for k = 1, it.max do
         local c = k <= v and (on and 13 or 29) or 30
         rectfill(12 + (k - 1) * 13, y + 13, 10, 8, c)
       end
       text(tostring(v), 150, y + 13, on and 13 or 29)
     else
-      local s = (on and "< " or "") .. v .. (on and " >" or "")
-      text(s, 12, y + 13, on and 13 or 29)
+      local s = (on and not it.text and "< " or "") .. v .. (on and not it.text and " >" or "")
+      text(s, 12, y + 13, it.text and S[it.key] ~= "" and S.color or (on and 13 or 29))
     end
   end
-  test_card(184, 20, 128, 132)
-  local it = ITEMS[sel]
+  if page == 1 then test_card(184, 20, 128, 132) else name_card(184, 20, 128, 132) end
+  local it = items()[sel]
   local about = it.about or LOOK_ABOUT[S.look]
   rectfill(8, 160, 304, 1, 31)
   for k, line_ in ipairs(about or {}) do text(line_, 12, 168 + (k - 1) * 12, 29) end
   if flash > 0 then text("saved", 312 - 5 * 8, 206, 17) end
   rectfill(0, 222, 320, 18, 31)
-  text("UP DOWN choose   LEFT RIGHT change", 8, 227, 29)
+  text(page == 1 and "UP DOWN choose   LEFT RIGHT change" or (it.text and "A type   UP DOWN choose" or "LEFT RIGHT change"), 8, 227, 29)
+  kb_draw()
 end
 `;
 
@@ -932,7 +983,7 @@ end
   window.BK_APPS = [
     { name: 'Hexbeat', code: HEXBEAT, icon: HEXBEAT_ICON, saveKey: 'Music', sub: 'tracker', about: 'A tracker: rows of notes and hex effects, played with buttons.' },
     { name: 'Loopbox', code: LOOPBOX, icon: LOOPBOX_ICON, saveKey: 'Music', sub: 'loops and piano roll', about: 'Loops, a piano roll and a drum grid, played with buttons.' },
-    { name: 'Settings', code: SETTINGS, icon: SETTINGS_ICON, saveKey: 'Bit settings', sub: 'screen look, sound', settings: true,
-      about: 'The Bit itself: a retro screen look for every game, brightness and volume.' },
+    { name: 'Settings', code: SETTINGS, icon: SETTINGS_ICON, saveKey: 'Bit settings', sub: 'screen, sound, your name', settings: true,
+      about: 'The Bit itself: a retro screen look for every game, brightness, volume, and your name for linked play.' },
   ];
 })();

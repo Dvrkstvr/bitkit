@@ -262,13 +262,23 @@ A kart racer drawn SNES-style: the map becomes a floor seen in perspective, with
 | L / R | LB+LT / RB+RT (analog) | Q / W |
 | Start / Select | Start / Back | Enter / Shift |
 
+## 🎨 Make the Bit yours
+
+Every Bit can look, sound and start up its own way. A **theme** sets the home screen's colours (16 of them), the wallpaper (stars, rolling hills, waves, a neon grid, bubbles, rain, checks, an aurora, a plain colour, or an 80x60 picture you paint or make from a photo, still or drifting), the letters (classic, bold, slanted, slanted bold, with an outline if you like), the cards, the top and bottom bars, the sounds, the boot animation when the Bit switches on, and the screen look. Eight original themes come with it: Pocket, Meadow, Neon Drive, Deep Sea, Paper, Night Rain, Aurora and Pea Soup.
+
+- **On the Bit:** the **Themes** app on the Utilities row (press Down on the home screen). Browse the themes (each shows straight away), edit every part, mix colours, paint the wallpaper with the buttons and keep up to four of your own.
+- **In the studio:** the **My Bit** tab, with a live home screen preview, a wallpaper painter, "From a picture…", and **Export / Import** of `.bittheme` files to share.
+- **You:** **Settings › USER** on the Bit (or My Bit in the studio) has your name, your colour and the Bit's name. Linked Bits show each other's names, and games use them: `player_name(n)` and `player_color(n)`, and `net_name(id)` for network event games. Nothing else leaves the Bit.
+
+The theme file format and how the firmware draws it are in [docs/THEMES.md](docs/THEMES.md).
+
 ## 📚 Lua API at a glance
 
 | Area | Functions |
 |---|---|
 | Callbacks | `_init` `_update` `_draw` |
 | Game shell | `game{}` `checkpoint` `game_win` `setting` `mus` `game_play` `GAME.state` (title screen, pause menu, settings: see [GAME_RULES.md](GAME_RULES.md)) |
-| Graphics | `cls pset pget line rect rectfill circ circfill text spr map camera clip pal palt palette` |
+| Graphics | `cls pset pget line rect rectfill circ circfill text font spr sget sset map camera clip pal palt palette` |
 | Shaders | `tint shade fog dither remap wave ripple pixelate glitch raster` (screen), `sprfx{}` (sprites), `display()` (the whole screen's look) |
 | Tunables | `tune(name, default, min, max)` (a slider on the studio's Game tab, saved with the game) |
 | Map | `mget mset fget fset` |
@@ -279,8 +289,8 @@ A kart racer drawn SNES-style: the map becomes a floor seen in perspective, with
 | Stats & effects | `stat stat_set fx_apply fx_has fx_remove fx_clear` |
 | Sensors & events | `raycast circlecast on emit` |
 | Levels & cutscenes | `level LEVEL LEVELS cutscene cutscene_playing` |
-| Multiplayer | `btn(b, p) press(b, p) PLAYERS ME ents_players ents_player_pal` (lockstep, 2-4 Bits) |
-| Network events | `net_send net_recv NET_ID` (big games, up to 20 Bits over ESP-NOW) |
+| Multiplayer | `btn(b, p) press(b, p) PLAYERS ME ents_players ents_player_pal player_name player_color` (lockstep, 2-4 Bits) |
+| Network events | `net_send net_recv NET_ID net_name` (big games, up to 20 Bits over ESP-NOW) |
 | Save data | `save saved clock` |
 | Misc | `t time rnd srand print` |
 

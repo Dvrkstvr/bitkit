@@ -542,3 +542,30 @@ li.CodeMirror-hint-active { background: #3a2e5c; color: #fff; }
 .lb-padbtns { display: flex; flex-direction: column; gap: 4px; justify-content: center; }
 .pick-list { display: flex; flex-direction: column; gap: 4px; }
 .lb-sub { text-transform: none; letter-spacing: 0; }
+
+/* My Bit tab (studio/mybit.js) */
+#tab-mybit.active { overflow: auto; }
+.mb-page { display: flex; gap: 14px; padding: 8px; flex-wrap: wrap; align-items: flex-start; }
+.mb-left { flex: 0 0 auto; width: 480px; max-width: 100%; position: sticky; top: 0; }
+.mb-left canvas#mbScreen { width: 480px; max-width: 100%; aspect-ratio: 4 / 3; image-rendering: pixelated; border-radius: 8px; border: 1px solid var(--line); background: #000; display: block; }
+.mb-right { flex: 1; min-width: 290px; max-width: 640px; }
+.mb-page h4 { margin: 14px 0 6px; font-size: 12px; color: var(--dim); text-transform: uppercase; letter-spacing: .05em; }
+.mb-tools { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
+.mb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 6px 14px; }
+.mb-row { display: flex; align-items: center; gap: 8px; min-height: 28px; }
+.mb-row > span:first-child { width: 110px; flex: 0 0 110px; color: var(--dim); }
+.mb-row input:not([type]), .mb-row input[type=text] { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; flex: 1; min-width: 0; }
+.mb-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.mb-presets button { display: flex; align-items: center; gap: 6px; }
+.mb-strip { display: inline-flex; border-radius: 3px; overflow: hidden; border: 1px solid var(--line); }
+.mb-strip i { width: 6px; height: 14px; display: block; }
+.mb-colorgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 4px 10px; }
+.mb-colorgrid label { display: flex; align-items: center; gap: 6px; }
+.mb-colorgrid input[type=color] { width: 30px; height: 22px; padding: 0; border: 1px solid var(--line); border-radius: 4px; background: none; }
+.mb-colors { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.mb-pc { width: 20px; height: 20px; padding: 0; border-radius: 4px; border: 1px solid var(--line); }
+.mb-pc.on { outline: 2px solid var(--text); outline-offset: 1px; }
+.mb-paint { display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; margin-top: 6px; }
+.mb-paint canvas { width: 320px; height: 240px; image-rendering: pixelated; border: 1px solid var(--line); border-radius: 4px; cursor: crosshair; touch-action: none; }
+.mb-paint > div { flex: 1; min-width: 200px; }
+@media (max-width: 720px) { .mb-left, .mb-left canvas#mbScreen { width: 100%; } .mb-paint canvas { width: 100%; height: auto; } }

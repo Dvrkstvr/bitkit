@@ -169,6 +169,7 @@ extern bk_sprfx_t bk_sprfx;
 void bk_sprfx_reset(void);
 
 void bk_display_reset(void);
+void bk_font(int style, int outline);           /* text style: 0 classic 1 bold 2 slant 3 slant bold; outline colour or -1 */
 int  bk_display_preset(const char *name);         /* 0 = unknown name */
 void bk_to_rgba(uint32_t *out);       /* for hosts that want RGBA8888 */
 void bk_to_rgb565(uint16_t *out);     /* for the ST7789 on device */

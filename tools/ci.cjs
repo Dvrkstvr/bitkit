@@ -5,6 +5,7 @@ eval(fs.readFileSync(__dirname + '/../studio/demo.js', 'utf8'));
 eval(fs.readFileSync(__dirname + '/../studio/tracks.js', 'utf8'));
 eval(fs.readFileSync(__dirname + '/../studio/kart.js', 'utf8'));
 eval(fs.readFileSync(__dirname + '/../studio/entities.js', 'utf8'));
+eval(fs.readFileSync(__dirname + '/../studio/themes.js', 'utf8'));
 eval(fs.readFileSync(__dirname + '/../studio/home.js', 'utf8'));
 let errors = [], logs = [];
 const fail = m => { console.error('FAIL', m); process.exitCode = 1; };
@@ -36,7 +37,7 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
   }
 
   // home screen: lists games and asks the host to launch the selected one
-  if (M._bkw_load_ex(s('BIT = { games = {{name="A", file="a.bitkit", studio=false, color=3}, {name="B", file="b.bitkit", studio=false, color=8}}, sel = 1, studio = true, source = "" }'), s(window.BK_HOME)) !== 0) fail('home screen did not load');
+  if (M._bkw_load_ex(s('BIT = { games = {{name="A", file="a.bitkit", studio=false, color=3}, {name="B", file="b.bitkit", studio=false, color=8}}, sel = 1, studio = true, source = "" }'), s(window.BKThemes.LIB + window.BK_HOME)) !== 0) fail('home screen did not load');
   const sys = M._bkw_sys() >> 2;
   M._bkw_frame(0, 0); M._bkw_frame(1 << 1, 0); M._bkw_frame(0, 0);   // right: select game 2
   M._bkw_frame(1 << 4, 0);                                         // A: launch

@@ -40,6 +40,8 @@ jobs:
         run: node tools/partytest.cjs
       - name: Windrow
         run: node tools/windrowtest.cjs
+      - name: Themes and player names
+        run: node tools/themetest.cjs
 
   linked-bits:
     runs-on: ubuntu-latest
