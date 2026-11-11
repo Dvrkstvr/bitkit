@@ -138,6 +138,8 @@ end
 function _init()
   game{
     title = "Deepglow",
+    players = 1,
+    race = "time",                    -- linked Bits: each dives on their own, first to bring the pearls up wins
     title_draw = draw_title,          -- its own animated title screen (above)
     look = { title = 22, shadow = 1, panel = 1, edge = 21, hi = 19, text = 23, pick = 27, goal = 22, footer = 21 },
     goal = "Bring " .. GOAL .. " glowing pearls up from the deep cave to your boat.",

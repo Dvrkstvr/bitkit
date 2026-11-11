@@ -142,6 +142,28 @@ One sentence, shown on the title screen and in How to play, that says what winni
 
 ## Multiplayer
 
+### How many can play
+
+Say how many players your game takes in `game{}`, as a plain number or `{min, max}`:
+
+```lua
+game{ title = "Kart Lab", players = {1, 8}, ... }
+game{ title = "Windrow", players = 1, ... }
+```
+
+The home screen and the studio's Games menu show it on every game (`1 player`, `1-4 players`), and linked Bits use it: a game started on a Bit while other Bits are on their home screens starts on as many of them as it takes (Sprout Hop, 1-2 players, on 3 Bits: 2 play, the third stays home), and a one-player game plays on that Bit alone. Without `players = ...` a game is one-player, unless its code uses `PLAYERS` (then 1-8). The host reads the field from your code before the game runs, so write plain numbers there, not expressions.
+
+### Racing a one-player game
+
+A one-player game can still be played with friends: add `race = "time"` (or `"score"`) and, started on linked Bits, it starts on every Bit at the same moment, each player in their own run. The shell does the rest: a 3-2-1 countdown, a clock in the corner, a line at the top when someone finishes, and the standings when you finish. A race run never touches the save file; the pause menu and the standings have **Leave race**.
+
+- `race = "time"`: the fastest to `game_win()` wins. Sprout Hop, Deepglow and Tinwing race this way.
+- `race = "score"`: call `race_score(n)` with the run's score as it goes; the run ends at `game_win()` or `race_end()` (out of lives, out of time), and the highest score wins.
+
+While racing, `RACE` is `{kind, n, seat, names}` (your seat and how many race) and `GAME.race` holds the standings; `race_score()` and `race_end()` do nothing outside a race. A game with both `players = {1, 2}` and a race plays together by default; **Select** on the home screen switches it to a race (for more Bits than it takes, say). The Bits tell each other how their runs go with network events (reserved event `-7701`), so a race works with any number of Bits in reach, on PocketBits as in the studio.
+
+### Lockstep
+
 Linked Bits run the same game in lockstep, so the shell keeps every Bit identical: menus are driven by the players' buttons only, saved checkpoints, save files and game settings are ignored while linked (volume still applies on each Bit), and Continue, Delete save and Quit to title are hidden. Your game should do the same: when `ME > 0`, don't let one Bit's save change the game.
 
 Games for more Bits than lockstep can carry (10 to 20) use network events instead (`net_send`, `net_recv`, `NET_ID`; see the studio's Help tab). Those Bits aren't kept identical, so the shell treats them like single-player games: each Bit has its own menus, and the pause menu doesn't stop the match for the others. Sweep Storm is the example.
@@ -158,6 +180,8 @@ game{
   new_game = function() ... end,               -- reset such a game (optional)
   pause = {{"Back to checkpoint", fn}},        -- extra pause menu items (optional)
   menu = {{"Levels", fn}},                     -- extra title screen items, after New game / Continue (optional)
+  players = {1, 4},                            -- how many can play: a number or {min, max} (default 1)
+  race = "time",                               -- linked Bits race a one-player game: "time" or "score" (optional)
   settings = {                                 -- extra settings (optional)
     {key = "laps", name = "Laps", min = 1, max = 5, value = 3},
     {key = "ai", name = "Rivals", values = {"Easy", "Normal", "Hard"}, value = 2},

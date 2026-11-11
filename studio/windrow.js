@@ -739,6 +739,7 @@ function _init()
   build_world()
   game{
     title = "Windrow",
+    players = 1,                      -- your own farm (visits between farms come later)
     goal = "Rebuild the old windmill of Windrow.",
     title_draw = draw_title,
     look = { title = 27, shadow = 7, panel = 6, edge = 10, hi = 8, text = 12, pick = 27, goal = 12, footer = 11, menu = "left" },

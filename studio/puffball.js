@@ -23,6 +23,7 @@ KEYS = { "left", "right", "up", "down", "a", "b" }
 function _init()
   game{
     title = "Puffball",
+    players = {1, 8},
     goal = "Win a Match before the other side does, or pass the puffer " .. RALLY_GOAL .. " times in a row in a Rally.",
     help = {
       "Left / right: run. A: jump. B: dive.",

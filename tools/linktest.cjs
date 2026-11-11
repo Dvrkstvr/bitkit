@@ -178,9 +178,74 @@ const ok = m => console.log('ok  ', m);
     await wait(A, () => bkStudio.link.peers.size === 2);
   }
 
-  // ---- 10. a Bit closes mid-game: the host waits for it and can leave with Start+Select
+  // ---- 9c. player counts: a game never starts on more Bits than it takes
+  const homeOf = pg => pg.evaluate(() => bkStudio.bit.playing === 'home' && !bkStudio.link.s);
+  const allHome = async () => (await atHome(A)) && (await atHome(B)) && (await atHome(C));
+  const windrow = games.find(n => /windrow/i.test(n)), deep = games.find(n => /deepglow/i.test(n));
+  const pc = await A.evaluate(names => names.map(n => {
+    const i = bkStudio.bit.games.findIndex(g => g.name === n) + 1;
+    const t = bkStudio.lua(`local g = BIT.games[${i}] track(g.pmax or -1, (g.pmin or -1) * 10 + (g.race and 1 or 0))`);
+    return [n, t[1], t[2]];
+  }), [sprout, kart, windrow, deep].filter(Boolean));
+  const want = { [sprout]: [2, 11], [kart]: [8, 10], [windrow]: [1, 10], [deep]: [1, 11] };
+  if (pc.every(([n, mx, mn]) => want[n][0] === mx && want[n][1] === mn)) ok('home screen knows each game\'s player count and race: ' + pc.map(x => x.join(' ')).join(', '));
+  else fail('home player counts ' + JSON.stringify(pc));
+  // a one-player game without a race: only this Bit plays it
+  if (windrow) {
+    await launch(A, windrow, true);
+    const solo = await wait(A, () => !bkStudio.link.s && bkStudio.isRunning() && bkStudio.bit.playing !== 'home');
+    await A.waitForTimeout(600);
+    if (solo && await homeOf(B) && await homeOf(C)) ok(`${windrow} (1 player) plays on Bit 1 alone, the others stay home`);
+    else fail(`${windrow} did not play alone ` + JSON.stringify([await st(A), await st(B), await st(C)]));
+    await combo(A);
+    if (!(await allHome())) fail('not home after the one-player game');
+  }
+  // Sprout Hop takes 2: Bits 1 and 2 play together, Bit 3 stays home
   await launch(A, sprout, true);
-  if (!(await inGame(A) && await inGame(C))) fail('3-Bit sprout did not start');
+  if (await inGame(A) && await inGame(B)) {
+    sa = await st(A);
+    if (sa.s.np === 2 && await homeOf(C)) ok(`${sprout} (1-2 players) on 3 Bits: 2 play together, Bit 3 stays home`);
+    else fail('sprout np ' + JSON.stringify(sa.s));
+  } else fail('2-player sprout did not start');
+  await combo(A);
+  if (!(await allHome())) fail('not home after sprout');
+  // a race: a one-player game with game{race = "time"} starts on every Bit, each playing its own run
+  const racing = pg => wait(pg, () => bkStudio.bit.playing === 'race' && bkStudio.isRunning() && !bkStudio.link.s);
+  const raceInfo = pg => pg.evaluate(() => {
+    const r = bkStudio.lua('local R = GAME.race local n = 0 if R then for s = 1, R.n do if R.res[s] and R.res[s].done then n = n + 1 end end end track(R and R.n * 100 + R.seat or -1, R and (n * 100 + (function() local h = 0 for s = 1, R.n do if R.res[s] then h = h + 1 end end return h end)()) or -1)');
+    return { np: Math.floor(r[1] / 100), seat: r[1] % 100, done: Math.floor(r[2] / 100), heard: r[2] % 100 };
+  });
+  if (deep) {
+    await launch(A, deep, true);
+    if (await racing(A) && await racing(B) && await racing(C)) ok(`${deep} (1 player, race) races on all 3 Bits`);
+    else fail('race did not start on all 3');
+    await A.waitForTimeout(4500);   // past the 3-2-1, and long enough to hear each other
+    const ri = [await raceInfo(A), await raceInfo(B), await raceInfo(C)];
+    if (ri.every(r => r.np === 3 && r.heard === 3) && new Set(ri.map(r => r.seat)).size === 3) ok('every Bit hears the other two runs: ' + JSON.stringify(ri));
+    else fail('race info ' + JSON.stringify(ri));
+    await snap(A, 'race-run');
+    await A.evaluate(() => bkStudio.lua('game_win("test")'));
+    if (await wait(B, () => { const t = bkStudio.lua('local R = GAME.race track(R.res[1] and R.res[1].done and 1 or 0, 0)'); return t[1] === 1; }, null, 6000))
+      ok('Bit 1 finished, and Bit 2 sees it in the standings');
+    else fail('Bit 2 did not hear that Bit 1 finished');
+    await A.waitForTimeout(400);
+    await snap(A, 'race-standings');
+    for (const pg of [A, B, C]) await combo(pg);
+    if (await allHome()) ok('all home after the race'); else fail('not home after the race');
+    // Sprout Hop can do both: Select on the home screen picks the race, for all 3
+    await A.bringToFront();
+    await A.evaluate(() => { bkStudio.bit.racePick = true; });
+    await launch(A, sprout, true);
+    if (await racing(A) && await racing(B) && await racing(C)) ok(`${sprout} with race picked: all 3 race`); else fail('sprout race did not start on all 3');
+    for (const pg of [A, B, C]) await combo(pg);
+    await A.evaluate(() => { bkStudio.bit.racePick = false; });
+    if (!(await allHome())) fail('not home after the sprout race');
+  }
+
+  // ---- 10. a Bit closes mid-game: the host waits for it and can leave with Start+Select
+  const many = beacon || kart;
+  await launch(A, many, true);
+  if (!(await inGame(A) && await inGame(C))) fail('3-Bit game did not start');
   await B.close();
   if (await wait(A, () => /Waiting for Bit 2/.test(document.getElementById('linkStatus').textContent), null, 8000)) ok('Bit 1 waits for the closed Bit 2');
   else fail('no waiting message for the closed Bit');
@@ -193,7 +258,7 @@ const ok = m => console.log('ok  ', m);
   if (await atHome(A) && await atHome(B2) && await atHome(C)) ok('all home after the new Bit took over'); else fail('not all home');
 
   // ---- 11. a Bit that leaves while the others wait for it: Start+Select on the host leaves the game
-  await launch(A, sprout, true);
+  await launch(A, many, true);
   await inGame(A);
   await C.close(); await B2.close();
   await A.waitForTimeout(1500);

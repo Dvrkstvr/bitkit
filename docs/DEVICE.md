@@ -70,6 +70,11 @@ screen), and the home screen shows every Bit in reach. A Bit not heard for 4 sec
   same frame. Each Bit keeps its copy in PSRAM; picking the game again with the same Bits carries on together.
 - **Same game, same file.** The Bits check that they have the very same `.bitkit` file (a hash of it). A Bit
   without it says so and the game doesn't start (the studio sends the cart along; over ESP-NOW that is not done yet).
+- **Player counts.** A game starts on no more Bits than its `game{players = ...}` takes (read from the cart's code
+  when the memory card is scanned, `bk_cart_players`, the same rules as the studio). A one-player game plays alone,
+  unless it has `race = "time"` or `"score"`: then START (flagged as a race, sent three times) starts it on every Bit
+  on its home screen, each Bit playing its own run with `RACE` set, and the game shell sends its progress as `net_send`
+  events under the race's own key. Leaving a race ends that Bit's run (it isn't kept paused).
 - **`net_send` games** (Sweep Storm) never run in lockstep: each Bit plays its own copy, and the events go out
   as broadcasts, many to a packet, to every Bit playing a game with the same name.
 

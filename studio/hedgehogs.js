@@ -27,6 +27,7 @@ RING = 2 * W + 2 * H - 4
 function _init()
   game{
     title = "Hedge Hogs",
+    players = {1, 8},
     goal = "Fence off " .. NEED .. "% of all " .. GARDENS .. " gardens together, or end a Land Grab with the most land.",
     help = {
       "D-pad: walk. Off your own land you keep walking.",

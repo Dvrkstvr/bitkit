@@ -78,6 +78,8 @@ function _init()
   -- title screen, pause menu (Start), settings and Continue: the game shell (see GAME_RULES.md)
   game{
     title = "Sprout Hop",
+    players = {1, 2},                 -- two on one screen, or two linked Bits
+    race = "time",                    -- more linked Bits: everyone runs their own Sprout Hop, fastest to the flag wins
     title_draw = draw_title,          -- its own animated title screen (above)
     look = { title = 18, shadow = 14, panel = 14, edge = 17, hi = 15, text = 12, pick = 27, goal = 18, footer = 18, menu = "right" },
     goal = "Hop through Sunny Meadow and Mossy Cave and reach the red flag.",

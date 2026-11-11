@@ -1570,10 +1570,10 @@ display()                                   -- off</pre><p class="dim">The Help 
     lsSet('bitkit.save.' + saveKey, str);
     return true;
   }
-  function loadCode(code, data, key, players, me) {
+  function loadCode(code, data, key, players, me, netKey) {
     putSave(key || null);
     RT._bkw_players(players || 1, me || 0);
-    BKNet.reset(RT, me ? null : key);      // network events (net_send) for games that don't run in lockstep
+    BKNet.reset(RT, netKey || (me ? null : key));   // network events (net_send) for games that don't run in lockstep (a race: its own key)
     const p = RT.stringToNewUTF8(code), d = RT.stringToNewUTF8(namesLua() + (data || ''));
     const rc = RT._bkw_load_ex(d, p);
     RT._free(p); RT._free(d);
@@ -1592,9 +1592,14 @@ display()                                   -- off</pre><p class="dim">The Help 
     if (typeof startLevel === 'number' && !/GAME_BOOT/.test(extraLua || '')) extraLua = 'GAME_BOOT = 3\n' + (extraLua || '');
     syncLevel();
     if (BKTracks.beforeRun(cart)) atlasDirty = true;   // track carts: edge tiles come from the road segment tiles
-    if (linkWanted() && !isNetGame(getCode())) {        // other Bits are linked: they all play it too
+    const plan = linkPlan(getCode());
+    if (plan.mode === 'together') {        // other Bits are linked: they all play it too
       linkLaunch({ cart: decodeCart(serialize()), level: start, extra: extraLua, saveKey: cart.name || 'untitled',
-        key: gameKey(bit.games.find(g => g.studio) || { studio: true }), studio: true });
+        key: gameKey(bit.games.find(g => g.studio) || { studio: true }), studio: true, np: plan.np });
+      return;
+    }
+    if (plan.mode === 'race') {
+      raceLaunch({ cart: decodeCart(serialize()), race: plan.p.race, key: gameKey(bit.games.find(g => g.studio) || { studio: true }) });
       return;
     }
     newRouteSegment(start);
@@ -1707,6 +1712,7 @@ display()                                   -- off</pre><p class="dim">The Help 
         if (bit.playing === 'home' && tr[ptr.track + 2] && tr[ptr.track] < 0) {   // home screen: -1 = start game n over, -2 = n is selected
           const k = tr[ptr.track], n = tr[ptr.track + 1]; tr[ptr.track + 2] = 0;
           if (k === -2) bit.sel = n; else if (k === -1) { bitRestart(n); break; }
+          else if (k === -3) bit.racePick = n === 1;   // Select on the home screen: race or play together
         }
         if (tr[ptr.sys]) { const cmd = tr[ptr.sys], arg = tr[ptr.sys + 1]; tr[ptr.sys] = 0; bitRequest(cmd, arg); break; }
         if (acc >= STEP) acc -= STEP;
@@ -1839,6 +1845,26 @@ display()                                   -- off</pre><p class="dim">The Help 
   // games that talk with net_send (Sweep Storm) aren't run in lockstep: every Bit runs its own copy and they
   // meet in the game's own lobby (studio/net.js), which works for far more Bits than lockstep
   function isNetGame(code) { return /\bnet_send\s*\(/.test(code || ''); }
+  // how many can play a game: game{players = ..., race = ...} (studio/rules.js BKPlayers)
+  const playersCache = new Map();
+  function playersOf(code) {
+    code = code || '';
+    let p = playersCache.get(code);
+    if (!p) { p = BKPlayers.of(code); if (playersCache.size > 64) playersCache.clear(); playersCache.set(code, p); }
+    return p;
+  }
+  // how a game starts while other Bits are linked and on their home screens:
+  //   together: in lockstep, as many Bits as the game takes (players max)
+  //   race: a one-player game with game{race = ...}: every Bit plays its own run and the shell compares them
+  //   alone: only this Bit (a one-player game, or a net_send game whose own lobby finds the others)
+  // A game that can do both plays together, unless Select on the home screen picked the race (bit.racePick).
+  function linkPlan(code) {
+    const p = playersOf(code), ready = link.ch ? linkRoster().length : 1;
+    if (ready < 2 || isNetGame(code)) return { mode: 'alone', np: 1, p };
+    if (p.max >= 2 && !(p.race && bit.racePick)) return { mode: 'together', np: Math.min(ready, p.max, MAXP), p };
+    if (p.race) return { mode: 'race', np: Math.min(ready, MAXP), p };
+    return { mode: 'alone', np: 1, p };
+  }
   const linkSnapId = (np, id, slot) => `link${np}:${id}#${slot}`;
   // the runtime memory without its unused (zero) end, and back
   function heapCopy() {
@@ -1939,7 +1965,7 @@ display()                                   -- off</pre><p class="dim">The Help 
   // this Bit starts a game for every Bit in linkRoster()
   // o: { cart (decoded), level, extra (Lua), saveKey, key {id, fp}, studio, resume (token), nums (seats when paused) }
   function linkLaunch(o) {
-    let roster = linkRoster();
+    let roster = linkRoster().slice(0, o.np || MAXP);   // as many as the game takes
     const np = roster.length;
     if (o.resume && o.nums) {   // carry on with the same Bits in the same seats where they are all here
       const byNum = new Map(roster.map(id => [peerNum(id), id]));
@@ -1956,10 +1982,9 @@ display()                                   -- off</pre><p class="dim">The Help 
   function linkRelaunch(extra) {   // (the names come with the roster again)
     const st = link.s.start;
     linkLaunch({ cart: st.cart, level: st.level, extra: extra + (st.extra || '').replace(/^GAME_BOOT = \d+\n/, ''), saveKey: st.saveKey,
-      key: { id: st.gameId, fp: st.fp }, studio: st.studio });
+      key: { id: st.gameId, fp: st.fp }, studio: st.studio, np: st.np });
   }
-  async function linkFromHome(g, c, key, fresh) {
-    const np = linkRoster().length;
+  async function linkFromHome(g, c, key, fresh, np) {
     let resume = null, nums = null;
     if (!fresh) {             // paused before with this many Bits? every seat must still have its copy
       bit.busy = true;
@@ -1967,13 +1992,47 @@ display()                                   -- off</pre><p class="dim">The Help 
         const snaps = await Promise.all(Array.from({ length: np }, (_, i) => BKSnap.get(linkSnapId(np, key.id, i + 1), key.fp)));
         if (snaps.every(x => x && x.meta.token && x.meta.token === snaps[0].meta.token)) { resume = snaps[0].meta.token; nums = snaps[0].meta.nums; }
       } catch (e) { /* start fresh */ } finally { bit.busy = false; }
-      if (bit.playing !== 'home' || linkRoster().length !== np) return;
+      if (bit.playing !== 'home' || linkPlan(c.code).np !== np) return;
     }
     linkLaunch({ cart: g.studio ? decodeCart(serialize()) : c, level: 0, saveKey: g.studio ? (cart.name || 'untitled') : (c.name || g.name),
-      key, studio: !!g.studio, resume, nums });
+      key, studio: !!g.studio, resume, nums, np });
+  }
+  // a race: every Bit on its home screen starts its own run of a one-player game at the same moment.
+  // Nothing runs in lockstep: each Bit plays alone (PLAYERS 1), with RACE set for the game shell, which tells
+  // the others how the run is going over network events (net_send, key "race:<sid>") and shows the standings.
+  function raceLaunch(o) {
+    const roster = linkRoster().slice(0, MAXP);
+    const who = id => id === link.id ? { name: myName(), ncol: myColor() } : (link.peers.get(id) || {});
+    const st = { t: 'start', race: o.race, sid: Date.now().toString(36) + '-' + link.id, roster, nums: roster.map(peerNum), np: roster.length,
+      cart: o.cart, names: roster.map(id => who(id).name || ''), ncols: roster.map(id => who(id).ncol || 27), gameId: o.key.id, fp: o.key.fp };
+    linkSend(st);
+    raceEnter(st);
+  }
+  let raceRun = null;            // the race this Bit is running: its start, for a restart
+  function raceLua(st, slot) {
+    const names = st.names.map(n => luaStr(n || '')).join(', ');
+    return `GAME_BOOT = 3\nRACE = { kind = ${luaStr(st.race === 'score' ? 'score' : 'time')}, n = ${st.np | 0}, seat = ${slot | 0}, names = {${names}} }\n`;
+  }
+  function raceEnter(st) {
+    const slot = st.roster.indexOf(link.id) + 1;
+    if (!slot) return;
+    if (st.from !== link.id && (link.s || myState() === 'game')) return;   // busy with a game
+    clearForSession();
+    const c = st.cart;
+    raceRun = st;
+    startAudio(); overlay.classList.add('hidden'); clearErrLine();
+    RT.HEAPU8.set(c.palette, ptr.pal); RT.HEAPU8.set(c.tiles, ptr.tiles); RT.HEAPU8.set(c.flags, ptr.flags);
+    RT.HEAPU16.set(c.levels[0].map, ptr.map >> 1);
+    gfxDirtyRT = true; mapDirtyRT = false; playingEditor = false; playingLevels = c.levels; playingLevel = 0;
+    bit.playing = 'race'; bit.cur = null; bit.hold = false; lastPlayed = null;
+    log(`🏁 racing "${c.name}" on ${st.np} Bits: everyone plays their own run`, 'sys');
+    running = loadCode(c.code, BKEntities.toLua(c.entities, levelsMeta(c.levels), 0, raceLua(st, slot)), null, 1, 0, 'race:' + st.sid) === 0;
+    acc = 0; last = performance.now();
+    linkUI(); linkHi(); screen.focus();
   }
   // a start: every Bit in its roster (the starter too) begins the game
   async function linkEnter(st) {
+    if (st.race) { raceEnter(st); return; }
     const slot = st.roster.indexOf(link.id) + 1, cur = link.s;
     if (!slot || (cur && cur.sid === st.sid)) return;
     if (st.from !== link.id) {
@@ -2285,7 +2344,7 @@ display()                                   -- off</pre><p class="dim">The Help 
     el.textContent = cartFile ? `💾 ${cartFile}` : '';
     el.title = cartFile ? `Saves to ${cartFile} on the Bit (${BKStore.label()}). Ctrl+S saves.` : '';
   }
-  const bit = { on: false, playing: null, games: [], sel: 1, cur: null, hold: false, busy: false };
+  const bit = { on: false, playing: null, games: [], sel: 1, cur: null, hold: false, busy: false, racePick: false };
   const NO_PRESS = new Uint8Array(12);
   let comboHeld = false;
   const START = 1 << 10, SELECT = 1 << 11;
@@ -2407,7 +2466,7 @@ display()                                   -- off</pre><p class="dim">The Help 
     // the Bit's own apps (studio/bitapps.js) go on the shelf under the games
     const apps = (window.BK_APPS || []).map(a => ({ name: a.name, app: a }));
     bit.games = [{ name: cart.name, studio: true, cart: null }].concat(libGames, demos, apps);
-    const paused = await BKSnap.list(), np = linkRoster().length;   // linked: a game is paused when every player's Bit kept it
+    const paused = await BKSnap.list();   // linked: a game is paused when every player's Bit kept it
     const tiles = new Uint8Array(TILES * 64);
     const COLORS = [3, 8, 15, 20, 25, 4, 9, 16];
     const rows = bit.games.slice(0, 96).map((g, i) => {
@@ -2416,12 +2475,14 @@ display()                                   -- off</pre><p class="dim">The Help 
       if (g.app) { appIcon(g.app, slot, tiles); c = null; }
       else if (g.studio) c = cart; else if (g.demo) { try { c = demoCart(g.demo); } catch (e) { c = null; } } else { try { c = decodeCart(g.data); } catch (e) { c = null; } }
       const has = c && iconFor(c, slot, tiles);
+      const plan = c && !g.app ? linkPlan(c.code) : null, np = plan && plan.mode === 'together' ? plan.np : 1;
+      const pl = plan ? `, pmin=${plan.p.min}, pmax=${plan.p.max}, race=${plan.p.race ? luaStr(plan.p.race) : 'nil'}, net=${isNetGame(c.code)}` : '';
       const k = gameKey(g), p = np > 1 ? Array.from({ length: np }, (_, j) => paused.get(linkSnapId(np, k.id, j + 1)) === k.fp).every(Boolean) : paused.get(k.id) === k.fp;
-      return `{name=${luaStr(g.name)}, file=${luaStr(g.file || '')}, studio=${g.studio ? 'true' : 'false'}, paused=${p}, ${has || g.app ? `icon=${slot}` : `color=${COLORS[i % COLORS.length]}`}${g.app ? `, app=true, sub=${luaStr(g.app.sub || '')}` : ''}}`;
+      return `{name=${luaStr(g.name)}, file=${luaStr(g.file || '')}, studio=${g.studio ? 'true' : 'false'}, paused=${p}, ${has || g.app ? `icon=${slot}` : `color=${COLORS[i % COLORS.length]}`}${g.app ? `, app=true, sub=${luaStr(g.app.sub || '')}` : ''}${pl}}`;
     });
     if (bit.sel > bit.games.length) bit.sel = 1;
     const me = { name: myName(), color: myColor(), bit: String(bitSet.bit || '').slice(0, 14) };
-    const data = `BIT = { games = {${rows.join(',')}}, sel = ${bit.sel}, studio = ${!IS_BIT2}, link = true, source = ${luaStr(BKStore.state === 'folder' ? BKStore.label() : '')},
+    const data = `BIT = { games = {${rows.join(',')}}, sel = ${bit.sel}, studio = ${!IS_BIT2}, link = true, race_pick = ${!!bit.racePick}, source = ${luaStr(BKStore.state === 'folder' ? BKStore.label() : '')},
       theme = ${BKThemes.toLua(bitTheme)}, me = ${BKThemes.toLua(me)} }`;
     startAudio();
     overlay.classList.add('hidden');
@@ -2430,6 +2491,7 @@ display()                                   -- off</pre><p class="dim">The Help 
     gfxDirtyRT = true; playingEditor = false; bit.playing = 'home';
     running = loadCode(BKThemes.LIB + window.BK_HOME, data) === 0;
     acc = 0; last = performance.now();
+    if (link.ch) linkHi();   // the other Bits learn straight away that this one is home (it would join a game)
     screen.focus();
   }
   function appIcon(a, slotTile, tiles) {   // an app's 16x16 icon into the home screen's tile sheet
@@ -2459,6 +2521,7 @@ display()                                   -- off</pre><p class="dim">The Help 
   // _restart(mode) from the game shell: load the playing game again (GAME_BOOT: 1 title, 2 new game, 3 play)
   function restartGame(mode) {
     if (link.s) { if (link.s.host === link.id) linkRelaunch(`GAME_BOOT = ${mode | 0}\n`); return; }   // linked: the Bit that started it starts it again for all
+    if (bit.playing === 'race' && raceRun) { stop(true); raceEnter(Object.assign({}, raceRun, { from: link.id })); return; }   // a race run starts over, still in the race
     const extra = `GAME_BOOT = ${mode | 0}\n`;
     const onBit = bit.on && bit.cur && bit.playing && bit.playing !== 'home' && bit.playing !== 'studio' && lastPlayed;
     if (onBit) {
@@ -2488,7 +2551,9 @@ display()                                   -- off</pre><p class="dim">The Help 
       key.name = g.name;
       let c = null;
       try { c = g.app ? appCart(g.app) : g.studio ? cart : g.demo ? demoCart(g.demo) : decodeCart(g.data); } catch (e) { log(`Could not start ${g.name}: ${e.message}`, 'err'); return; }
-      if (linkWanted() && !isNetGame(c.code) && !g.app) { linkFromHome(g, c, key, fresh); return; }   // other Bits are on their home screens: play it together
+      const plan = g.app ? null : linkPlan(c.code);   // other Bits are on their home screens: play it together, or race
+      if (plan && plan.mode === 'together') { linkFromHome(g, c, key, fresh, plan.np); return; }
+      if (plan && plan.mode === 'race') { raceLaunch({ cart: g.studio ? decodeCart(serialize()) : c, race: plan.p.race, key }); return; }
       if (!fresh) {
         bit.busy = true;
         let snap = null;
@@ -2558,12 +2623,14 @@ display()                                   -- off</pre><p class="dim">The Help 
     const st = BKStore.state;
     const tag = (t, cls) => ` <span class="lib-tag ${cls || ''}">${t}</span>`;
     const openTag = k => (k === gid ? tag('open in the editor') : '');
+    // how many can play it (game{players = ...}), and whether linked Bits can race it
+    const playTag = code => { const p = playersOf(code); return tag('👤 ' + BKPlayers.label(p), 'players') + (p.race ? tag('🏁 race on linked Bits', 'players') : ''); };
     const mine = lib.map(g => ({ key: 'file:' + g.file, name: g.data ? (g.data.name || g.file) : g.file, sub: g.file, bad: !g.data,
       data: (dmap.get('file:' + g.file) || {}).data || g.data, ref: { file: g.file, data: g.data }, file: g.file, edited: dmap.has('file:' + g.file) || ('file:' + g.file === gid && cartChanged) }));
     drafts.filter(d => d.key.startsWith('new:')).forEach(d => mine.push({ key: d.key, name: d.name, sub: 'not saved as a file yet', data: d.data, ref: { draft: d.key }, draft: true }));
     if (gid.startsWith('new:') && !dmap.has(gid)) mine.push({ key: gid, name: cart.name, sub: 'not saved as a file yet', data: serialize(), ref: { draft: gid }, draft: true });
     const rows = mine.map((g, i) => `<div class="lib-row${g.key === gid ? ' cur' : ''}"><canvas width="16" height="16" data-mine="${i}"></canvas>
-        <div class="lib-name">${g.bad ? `<span class="err">${escapeHtml(g.name)} (unreadable)</span>` : escapeHtml(g.name)}${openTag(g.key)}${g.edited ? tag('unsaved changes', 'warn') : ''}<div class="dim small">${escapeHtml(g.sub)}</div></div>
+        <div class="lib-name">${g.bad ? `<span class="err">${escapeHtml(g.name)} (unreadable)</span>` : escapeHtml(g.name)}${g.data && g.data.code != null ? playTag(g.data.code) : ''}${openTag(g.key)}${g.edited ? tag('unsaved changes', 'warn') : ''}<div class="dim small">${escapeHtml(g.sub)}</div></div>
         ${g.bad ? '' : `<button class="tiny" data-open="${i}" title="Edit this game">Edit</button>`}${g.bad || g.draft && g.key !== gid ? '' : `<button class="tiny" data-play="${i}" title="Play it on the Bit">Play</button>`}
         ${g.key === gid && g.draft ? '' : `<button class="tiny danger" data-del="${i}" title="Delete this game">✕</button>`}</div>`).join('')
       || '<div class="dim">Nothing here yet. Start a new game, or edit one of the built-in games: your version is kept for you.</div>';
@@ -2571,7 +2638,7 @@ display()                                   -- off</pre><p class="dim">The Help 
     const cards = demos.map((d, i) => {
       const key = 'demo:' + d.name, edited = dmap.has(key) || (key === gid && cartChanged);
       return `<div class="game-card${key === gid ? ' cur' : ''}"><canvas width="16" height="16" data-demo="${i}"></canvas>
-        <div class="gc-text"><div><b>${escapeHtml(d.name)}</b>${openTag(key)}${edited ? tag('your version', 'warn') : ''}</div><div class="dim small">${escapeHtml(d.about || '')}</div>
+        <div class="gc-text"><div><b>${escapeHtml(d.name)}</b>${playTag(d.code)}${openTag(key)}${edited ? tag('your version', 'warn') : ''}</div><div class="dim small">${escapeHtml(d.about || '')}</div>
         <div class="gc-btns"><button class="tiny" data-dopen="${i}" title="Look inside and change it. Your changes are kept as your own version">Edit</button><button class="tiny" data-dplay="${i}" title="Play it on the Bit">Play</button>${edited ? `<button class="tiny danger" data-dreset="${i}" title="Throw away your changes and go back to the original">Reset</button>` : ''}</div></div></div>`;
     }).join('');
     const where = st === 'folder' ? `the folder 📁 <b>${escapeHtml(BKStore.label())}</b> on this computer`
@@ -3043,6 +3110,8 @@ display()                                   -- off</pre><p class="dim">The Help 
       ['2 players on this screen', 'Pick it in the list under the game screen: both play on one screen. Player 2 uses the second controller, or I J K L to move, N = A, M = B, H = X, U = Y, Y = L, O = R. The keys are shown under the screen.'],
       ['Linked Bits', 'Play (at the top) with "2 Bits side by side" shows two Bits next to each other, each with its own screen and controls. "+ Bit in a new window" opens more. Bits link by themselves like PocketBits over ESP-NOW and the home screen shows them. A game started on one Bit starts on every Bit on its home screen (up to 8 players), each with its own camera. Start+Select (or home()) on any Bit takes all of them home, paused; picking the game again carries on together. A Bit that reloads gets its seat back.'],
       ['btn(b, [p]) / btnp / btnr / press', 'The last argument picks the player (1-8, default 1). Player entities read their own player\'s buttons by themselves.'],
+      ['game{players = {1, 4}}', 'How many can play. The home screen shows it, and linked Bits start a game on no more Bits than it takes; a one-player game plays alone. Without it a game is 1 player (1-8 when the code uses PLAYERS).'],
+      ['game{race = "time"}', 'Lets linked Bits race a one-player game: each plays its own run after a 3-2-1, fastest to game_win() wins ("score": highest race_score(n) at game_win() or race_end()). RACE is set while racing.'],
       ['PLAYERS / ME', 'How many play, and which player this screen belongs to (0 when everyone shares this screen). Use ME only for what you draw, never for game logic, or linked Bits drift apart.'],
       ['ents_players()', 'The player entities, player 1 first. PLAYER is player 1. Extra players start next to player 1 as copies of its entity; e.pnum is the player number.'],
       ['ents_player_pal(n, {from = to})', 'Recolour player n\'s sprite. Players 2-8 get their own leaf colours by default.'],
@@ -3188,7 +3257,9 @@ display()                                   -- off</pre><p class="dim">The Help 
     setMode, setBits, openGame, embed, mode: () => mode, gid: () => gid, label: screenText, showTab, undoHere,
     // for the studio window, when this Bit is the one shown next to it
     embedReady: true, extInput(m, p) { ext.mask = m; ext.press.set(p); }, bye() { linkSend({ t: 'bye' }); },
-    playData(o) { try { stop(true); playCart(decodeCart(o), 'studio-copy'); } catch (e) { log(e.message, 'err'); } } };
+    playData(o) { try { stop(true); playCart(decodeCart(o), 'studio-copy'); } catch (e) { log(e.message, 'err'); } },
+    // tests: run Lua in the playing cart; returns [error code, track x, track y] (the Lua can report with track(x, y))
+    lua(code) { const p = RT.stringToNewUTF8(code), r = RT._bkw_eval(p); RT._free(p); const t = RT.HEAP32; return [r, t[ptr.track], t[ptr.track + 1]]; } };
 })().catch(e => {
   document.body.innerHTML = `<pre style="color:#ff6b5e;padding:20px">Studio failed to start: ${e && e.stack || e}</pre>`;
 });

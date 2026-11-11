@@ -18,7 +18,17 @@
 --     music = true,                                -- adds a Music level for notes played with mus()
 --     title_draw = function(t) ... end,            -- optional: the game's own animated title screen art
 --     look = {title = 27, panel = 1, edge = 13, ...},   -- optional: the menus' colours and layout
+--     players = {1, 4},                            -- how many can play: 1 (the default), 4, or {min, max}
+--     race = "time",                               -- one-player games: linked Bits race ("time" or "score")
 --   }
+--
+-- players and race are read by the host from the code before the game runs (the home screen shows the count,
+-- and a one-player game never starts in lockstep on linked Bits), so write them as plain numbers and strings.
+-- Race: a one-player game with race = "time" or "score" started on linked Bits starts on every Bit at once,
+-- each playing its own run (RACE is set: {kind, n, seat, names}). After a 3-2-1 countdown the shell times
+-- the run; "time" ranks by who reaches game_win() first, "score" by the highest race_score(n) when the run
+-- ends (game_win() or race_end()). The Bits tell each other how they are doing and the shell shows the
+-- standings. race_score(n) and race_end() do nothing when not racing.
 --
 -- Title screen art: without title_draw the title screen is the game's first frame, darkened. With it, the
 -- shell calls title_draw(t) every frame on the title screen (and behind Settings / How to play opened from
@@ -70,12 +80,87 @@ do
 
   GAME = { state = "off", won = false, items = {} }
 
-  local function linked() return (ME or 0) > 0 end
+  -- linked: lockstep with other Bits, or racing them (a race run is a fresh run that never touches the save)
+  local function linked() return (ME or 0) > 0 or type(RACE) == "table" end
   local function players() return math.max(1, math.min(PLAYERS or 1, 8)) end
   local function any_btnp(b)
     for p = 1, players() do if btnp(b, p) then return true end end
     return false
   end
+
+  -- ------------------------------------------------ linked race (RACE is set by the host)
+  local R = nil                    -- the race: {kind, n, seat, cd, t, score, done, val, res = {[seat] = {done, v, at}}}
+  local RACE_CD = 180              -- frames of 3-2-1 before the run starts
+  local function race_name(seat)
+    local nm = type(RACE) == "table" and type(RACE.names) == "table" and RACE.names[seat] or nil
+    if type(nm) ~= "string" or nm == "" then nm = "Bit " .. seat end
+    return string.upper(string.sub(nm, 1, 10))
+  end
+  local function race_fmt(v)
+    if R and R.kind == "score" then return tostring(math.floor(v)) end
+    local s = math.max(0, v) / 60
+    return string.format("%d:%04.1f", math.floor(s / 60), s % 60)
+  end
+  local function nth(n)
+    local k = n % 100
+    local suf = (k >= 11 and k <= 13) and "th" or ({ "st", "nd", "rd" })[n % 10] or "th"
+    return n .. suf
+  end
+  local function race_send()
+    local v = R.done and R.val or (R.kind == "score" and R.score or R.t)
+    R.res[R.seat] = { done = R.done, v = v, at = R.f }
+    net_send(-7701, R.seat, R.done and 1 or 0, v)
+    R.sent = R.f
+  end
+  -- (bk_entities.lua's net pump hands these over: another Bit's progress)
+  function _bk_race_heard(from, seat, done, v)
+    if not R or math.type(seat) ~= "integer" or seat == R.seat or seat < 1 or seat > R.n then return end
+    local e = R.res[seat]
+    local was = e and e.done
+    R.res[seat] = { done = done == 1, v = v or 0, at = R.f }
+    if done == 1 and not was then R.news = race_name(seat) .. " FINISHED  " .. race_fmt(v or 0); R.newst = 180 end
+  end
+  local function race_init()
+    if type(RACE) ~= "table" then return end
+    R = { kind = RACE.kind == "score" and "score" or "time", n = math.max(1, math.min(math.floor(tonumber(RACE.n) or 1), 32)),
+          seat = math.floor(tonumber(RACE.seat) or 1), cd = RACE_CD, t = 0, score = 0, done = false, val = 0,
+          res = {}, f = 0, sent = -999, news = nil, newst = 0 }
+    GAME.race = R                  -- (for tests and curious games: read it, don't change it)
+  end
+  local function race_tick()       -- every frame: in play and in the menus (the clock doesn't stop for a pause)
+    if not R then return end
+    R.f = R.f + 1
+    if _bk_net_pump then _bk_net_pump() end
+    if R.cd > 0 then R.cd = R.cd - 1 elseif not R.done then R.t = R.t + 1 end
+    if R.newst > 0 then R.newst = R.newst - 1 end
+    if R.f - R.sent >= (R.done and 30 or 20) then race_send() end
+  end
+  local function race_finish()
+    if not R or R.done then return end
+    R.done = true
+    R.val = R.kind == "score" and R.score or R.t
+    race_send()
+  end
+  -- the standings: finished runs first (fastest, or highest score), then the ones still going
+  local function race_rows()
+    local rows = {}
+    for s = 1, R.n do
+      local e = R.res[s]
+      local done = (e and e.done) and true or false
+      rows[#rows + 1] = { seat = s, done = done, v = e and e.v or 0, heard = e ~= nil,
+        gone = (not done) and ((e and R.f - e.at > 240) or (not e and R.f > 300)) or false }
+    end
+    table.sort(rows, function(a, b)
+      if a.done ~= b.done then return a.done end
+      if a.v ~= b.v and (a.done or R.kind == "score") then
+        if R.kind == "score" then return a.v > b.v end
+        return a.v < b.v
+      end
+      return a.seat < b.seat
+    end)
+    return rows
+  end
+  function race_score(n) if R and not R.done then R.score = math.floor(tonumber(n) or 0) end end
 
   -- ------------------------------------------------ save: {_g = shell data, _c = the cart's own value}
   local function unwrap(d)
@@ -190,10 +275,12 @@ do
       for _, it in ipairs(CFG.pause or {}) do add(it[1], function() set_state("play"); it[2]() end) end
       add("Settings", function() set_state("settings") end)
       if CFG.help then add("How to play", function() set_state("help") end) end
-      if not linked() then add("Quit to title", function() set_state("title") end) end
+      if R then add("Leave race", function() home() end)
+      elseif not linked() then add("Quit to title", function() set_state("title") end) end
     elseif ST == "won" then
       add("Keep playing", function() set_state("play") end)
-      if not linked() then add("Back to title", function() set_state("title") end) end
+      if R then add("Leave race", function() home() end)
+      elseif not linked() then add("Back to title", function() set_state("title") end) end
     elseif ST == "settings" then
       add("Volume", nil)
       if CFG.music then add("Music", nil) end
@@ -338,6 +425,29 @@ do
       draw_items(my + 8, 160, mx)
       if GAME.won then text("* goal done *", 8, 228, lk("pick", 17)) end
       footer("A: choose")
+    elseif ST == "won" and R then
+      local rows = race_rows()
+      local shown = math.min(#rows, 8)
+      local h = shown * 11 + #ITEMS * 14 + 46
+      local y = 120 - h // 2
+      panel(50, y, 220, h)
+      local mine = 1
+      for i, r in ipairs(rows) do if r.seat == R.seat then mine = i end end
+      local all = true
+      for _, r in ipairs(rows) do if not r.done and not r.gone then all = false end end
+      shadow(all and (nth(mine) .. " OF " .. R.n .. "!") or "FINISHED!", y + 8, lk("goal", 17), 2)
+      for i = 1, shown do
+        local r = rows[i]
+        local yy = y + 28 + (i - 1) * 11
+        local me = r.seat == R.seat
+        local c = me and lk("pick", 27) or lk("text", 13)
+        text((r.done and (i .. ".") or "-"), 60, yy, c)
+        text(race_name(r.seat) .. (me and " (YOU)" or ""), 80, yy, c)
+        local v = r.done and race_fmt(r.v) or (r.gone and "left" or (R.kind == "score" and r.heard and (race_fmt(r.v) .. "..") or "racing"))
+        text(v, 260 - #v * 8, yy, r.done and c or lk("footer", 29))
+      end
+      draw_items(y + 34 + shown * 11, 220)
+      footer(all and "A: choose" or "waiting for the others...   A: choose")
     elseif ST == "pause" or ST == "won" then
       local h = #ITEMS * 14 + 34
       local extra = 0
@@ -386,6 +496,8 @@ do
     if d ~= k_draw then CART_DRAW = d; _G._draw = k_draw end
   end
   k_update = function()
+    race_tick()
+    if R and R.cd > 0 and ST == "play" then adopt() return end   -- 3, 2, 1: the run hasn't started yet
     if ST == "screen" then           -- the game's own menu screen: no pause menu, and not gameplay yet
       if CART_UPDATE then CART_UPDATE() end
     elseif ST == "play" then
@@ -427,6 +539,24 @@ do
       if ST ~= "confirm" then build() end
       draw_menu()
     end
+    if R and (ST == "play" or ST == "pause") then
+      camera() clip()
+      if R.cd > 0 or R.t < 45 then
+        local s = R.cd > 0 and tostring((R.cd + 59) // 60) or "GO!"
+        rectfill(160 - #s * 16 - 10, 88, #s * 32 + 20, 48, lk("panel", 1) or 1)
+        shadow(s, 96, lk("title", 27), 4)
+        if R.cd > 0 then center("RACE ON " .. R.n .. " BITS", 142, lk("text", 13)) end
+      end
+      local nd = 0
+      for s = 1, R.n do local e = R.res[s] if e and e.done then nd = nd + 1 end end
+      local hud = "RACE " .. race_fmt(R.done and R.val or (R.kind == "score" and R.score or R.t)) .. "  " .. nd .. "/" .. R.n .. " IN"
+      rectfill(320 - #hud * 8 - 6, 228, #hud * 8 + 6, 12, 1)
+      text(hud, 320 - #hud * 8 - 3, 230, R.done and 27 or 13)
+      if R.newst > 0 and R.news then
+        rectfill(160 - #R.news * 4 - 4, 2, #R.news * 8 + 8, 12, 1)
+        center(R.news, 4, 27)
+      end
+    end
   end
 
   -- ------------------------------------------------ the cart's calls
@@ -451,6 +581,7 @@ do
         if KIT.set[s.key] == nil then KIT.set[s.key] = s.value or (s.values and 1) or s.min or 0 end
       end
       adopt()
+      race_init()
       local boot = GAME_BOOT
       GAME_BOOT = nil
       TRIAL = boot == 3
@@ -460,6 +591,12 @@ do
     end
   end
 
+  -- a score race ends here too (out of lives, out of time): the standings come up like at the goal
+  function race_end()
+    if not R or R.done or not CFG then return end
+    race_finish()
+    WIN_PENDING = true
+  end
   function game_play() if CFG then play() end end
   function game_screen() if CFG then set_state("screen") end end
   function game_title() if CFG then set_state("title") end end
@@ -471,6 +608,7 @@ do
 
   function game_win(s)
     if not CFG then return end
+    race_finish()
     WIN_TEXT = s
     if not KIT.won then KIT.won = true; GAME.won = true; persist() end
     WIN_PENDING = true

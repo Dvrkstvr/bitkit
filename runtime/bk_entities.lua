@@ -668,17 +668,39 @@ function player_color(n, default)
 end
 -- network event games (net_send): every Bit tells the others its owner's name now and then, as a reserved
 -- event (-7700) that net_recv() keeps to itself. net_name(id, [max]) is the name of the Bit with that NET_ID.
+-- -7701 is the game shell's linked race (bk_game.lua): _bk_net_pump() reads everything waiting each frame,
+-- hands race events to the shell and keeps the rest for the game's own net_recv().
 NET_NAMES, NET_COLORS = {}, {}
 do
   local raw_send, raw_recv, said = net_send, net_recv, -1000
+  local held = {}
+  local function reserved(r)
+    if r[2] == -7700 then
+      local out = {}
+      for k = 3, 6 do
+        local v = r[k] or 0
+        for _, x in ipairs({ v // 65536 % 256, v // 256 % 256, v % 256 }) do if x >= 32 and x < 127 then out[#out + 1] = string.char(x) end end
+      end
+      NET_NAMES[r[1]] = table.concat(out); NET_COLORS[r[1]] = r[7]
+      return true
+    end
+    if r[2] == -7701 then
+      if _bk_race_heard then _bk_race_heard(r[1], r[3], r[4], r[5]) end
+      return true
+    end
+    return false
+  end
+  function _bk_net_pump()
+    while true do
+      local r = table.pack(raw_recv())
+      if r[1] == nil then return end
+      if not reserved(r) and #held < 256 then held[#held + 1] = r end
+    end
+  end
   local function pack(s, i)
     local v = 0
     for k = 0, 2 do v = v * 256 + (s:byte(i + k) or 0) end
     return v
-  end
-  local function unpack3(v, out)
-    local a, b, c = v // 65536 % 256, v // 256 % 256, v % 256
-    for _, x in ipairs({a, b, c}) do if x >= 32 and x < 127 then out[#out + 1] = string.char(x) end end
   end
   function net_send(...)
     local me = type(NAMES) == "table" and NAMES[1] or ""
@@ -689,13 +711,11 @@ do
     return raw_send(...)
   end
   function net_recv()
+    if #held > 0 then local r = table.remove(held, 1) return table.unpack(r, 1, r.n) end
     while true do
       local r = table.pack(raw_recv())
       if r[1] == nil then return nil end
-      if r[2] ~= -7700 then return table.unpack(r, 1, r.n) end
-      local out = {}
-      for k = 3, 6 do unpack3(r[k] or 0, out) end
-      NET_NAMES[r[1]] = table.concat(out); NET_COLORS[r[1]] = r[7]
+      if not reserved(r) then return table.unpack(r, 1, r.n) end
     end
   end
 end

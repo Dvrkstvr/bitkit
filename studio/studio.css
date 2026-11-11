@@ -408,6 +408,7 @@ body.bit-embed { background: #000; }
 .games .lib-list { max-height: none; }
 .lib-row.cur, .game-card.cur { border-color: #4fa04a; }
 .lib-tag.warn { background: #6b5a1f; }
+.lib-tag.players { background: #2d4f6b; }
 .game-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 6px; }
 .game-card { display: flex; gap: 10px; padding: 8px; background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; }
 .game-card canvas { width: 48px; height: 48px; image-rendering: pixelated; background: #000; border-radius: 6px; flex: none; }

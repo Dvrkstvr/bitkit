@@ -93,6 +93,7 @@ end
 function _init()
   game{
     title = "Sweep Storm",
+    players = {1, 20},                -- net_send: every Bit plays its own copy
     title_draw = draw_title,          -- its own animated title screen (above)
     look = { title = 27, shadow = 1, panel = 1, edge = 5, hi = 3, text = 13, pick = 27, goal = 22, footer = 29 },
     goal = "Dig the most ground before the storm closes in. The middle is worth more.",

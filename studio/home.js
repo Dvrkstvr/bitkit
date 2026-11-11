@@ -4,7 +4,11 @@
    when launched; track(-1, n) is the host's private signal to forget game n's pause and start it over,
    track(-2, n) tells the host game n is selected. With BIT.link the host keeps the linked Bits in map rows 0-1:
    mget(0,0) how many, mget(1,0) which one is this Bit, mget(1+i,0) Bit i's number, mget(1+i,1) 1 home 2 in a game 3 idle.
-   A game started here starts on every linked Bit that is on its home screen.
+   A game started here starts on every linked Bit that is on its home screen, as many as it takes: each game entry
+   carries pmin/pmax (how many can play, from its game{players = ...}), race ("time"/"score" when a one-player game
+   can be raced on linked Bits) and net (net_send games meet in their own lobby). plan() below mirrors the host's
+   linkPlan (studio.js) and link_plan (bk_host.c): together in lockstep, a race, or alone. Select flips a game that
+   can do both between together and race (track(-3, 1 race / 0 together); BIT.race_pick is the last choice).
    Entries with app = true (utilities such as Hexbeat and Loopbox: studio/bitapps.js) are a second row below the games: Down scrolls to it.
    It is drawn with the Bit's theme (studio/themes.js, whose Lua LIB is loaded in front of this cart): BIT.theme is the theme,
    BIT.me = {name, color, bit} the owner's profile from the Settings app.
@@ -16,6 +20,7 @@ local GAMES, APPS = {}, {}     -- games and apps, as indexes into BIT.games
 local row, asel = 0, 1         -- 0 the games, 1 the utilities (Down / Up)
 local aslide, vy = 0, 0        -- the utilities' sideways slide; how far the screen has scrolled down
 local ROWH = 200               -- the utilities row sits one screen below the games
+local rpick = false            -- Select: race instead of playing together (games that can do both)
 
 function _init()
   for i, g in ipairs(BIT.games) do if g.app then APPS[#APPS + 1] = i else GAMES[#GAMES + 1] = i end end
@@ -24,6 +29,7 @@ function _init()
   for k, i in ipairs(APPS) do if i == want then asel = k; row = 1 end end
   if #GAMES == 0 and #APPS > 0 then row = 1 end
   vy = row * ROWH
+  rpick = BIT.race_pick and true or false
   T = theme_fix(BIT.theme)
   theme_apply(T)
 end
@@ -39,6 +45,23 @@ local function linked()
   local n, ready = mget(0, 0), 0
   for i = 1, n do if mget(1 + i, 1) ~= 2 then ready = ready + 1 end end
   return n, ready
+end
+
+-- how game g starts now: "together" on n Bits, "race" on n Bits, or "alone" (see the note at the top)
+local function plan(g)
+  local _, ready = linked()
+  if ready < 2 or g.app or g.net or not g.pmax then return "alone", 1 end
+  if g.pmax >= 2 and not (g.race and rpick) then return "together", math.min(ready, g.pmax, 8) end
+  if g.race then return "race", math.min(ready, 8) end
+  return "alone", 1
+end
+local function both_modes(g) return g.race and (g.pmax or 1) >= 2 end
+
+-- "1 player", "1-8 players"
+local function plabel(g)
+  if not g.pmax then return nil end
+  if g.pmax == 1 then return "1 player" end
+  return (g.pmin == g.pmax and tostring(g.pmax) or (g.pmin .. "-" .. g.pmax)) .. " players"
 end
 
 local function draw_linked()
@@ -106,6 +129,25 @@ function _update()
   if btnp("a") or btnp("start") then theme_sfx(T, "open"); launch(i) end
   if BIT.games[i].paused and btnp("x") then theme_sfx(T, "back"); track(-1, i) end
   if BIT.studio and btnp("y") then theme_sfx(T, "row"); launch(i, true) end
+  if btnp("select") and both_modes(BIT.games[i]) then
+    rpick = not rpick; theme_sfx(T, "row"); track(-3, rpick and 1 or 0)
+  end
+end
+
+-- the card's player count: a little person and "1-8", and a flag for games that can be raced
+local function draw_players(g, x, y)
+  if not g.pmax then return end
+  local s = g.pmax == 1 and "1" or (g.pmin == g.pmax and tostring(g.pmax) or (g.pmin .. "-" .. g.pmax))
+  local w = #s * 8 + 14
+  rectfill(x, y, w, 12, TC.accent)
+  rectfill(x + 4, y + 2, 3, 3, TC.card) rectfill(x + 3, y + 6, 5, 4, TC.card)
+  text(s, x + 11, y + 2, TC.card)
+  if g.race then
+    local rx = x + w + 3
+    rectfill(rx, y, 44, 12, TC.card) rect(rx, y, 44, 12, TC.accent)
+    rectfill(rx + 3, y + 2, 1, 8, TC.text) rectfill(rx + 4, y + 2, 4, 3, TC.accent)
+    text("RACE", rx + 10, y + 2, TC.text)
+  end
 end
 
 -- one row of the home screen: the picked card in the middle, its neighbours as silhouettes, page dots
@@ -119,6 +161,7 @@ local function draw_row(list, s, sl, dy, label, sub)
   local cx, cy = 120 + math.floor(sl), 48 + bob + dy
   theme_card(T, cx - 4, cy - 4, 88, 88)
   icon(g, cx + 8, cy + 8, 4)
+  if not g.app then draw_players(g, cx - 2, cy + 71) end
   if g.paused then   -- pause badge on the card's corner
     rectfill(cx + 64, cy - 2, 16, 14, TC.accent)
     rectfill(cx + 68, cy + 1, 3, 8, TC.card) rectfill(cx + 73, cy + 1, 3, 8, TC.card)
@@ -147,7 +190,13 @@ function _draw()
     ctext("Save a cart to the Bit from the studio,", 116 + dy, TC.dim)
     ctext("or choose a folder in the Library.", 128 + dy, TC.dim)
   else
-    draw_row(GAMES, sel, slide, dy, #APPS > 0 and "GAMES" or "", function(g) return g.file or "" end)
+    draw_row(GAMES, sel, slide, dy, #APPS > 0 and "GAMES" or "", function(g)
+      local s = plabel(g) or ""
+      if g.race then s = s .. (g.pmax > 1 and ", or race" or ", race when linked") end
+      if g.file and g.file ~= "" then s = s .. (s ~= "" and "   " or "") .. g.file end
+      if #s > 38 then s = string.sub(s, 1, 37) .. "." end
+      return s
+    end)
   end
   if #APPS > 0 then
     draw_row(APPS, asel, aslide, dy + ROWH, "UTILITIES", function(g) return g.sub or "utility" end)
@@ -172,7 +221,16 @@ function _draw()
   -- bottom bar
   theme_bar(T, 222, 18, false)
   local _, ready = linked()
-  local hint = n > 0 and (ready > 1 and ("A play on " .. math.min(ready, 8) .. " Bits") or "A play   < > choose") or ""
+  local hint = n > 0 and "A play   < > choose" or ""
+  if n > 0 and ready > 1 then
+    local g = BIT.games[GAMES[sel]]
+    local how, np = plan(g)
+    if how == "together" then hint = "A play on " .. np .. " Bits"
+    elseif how == "race" then hint = "A race on " .. np .. " Bits"
+    elseif g.net then hint = "A play   the others join in the game"
+    else hint = "A play alone (1 player)" end
+    if both_modes(g) then hint = hint .. (how == "race" and "   SEL together" or "   SEL race") end
+  end
   if n > 0 and BIT.games[GAMES[sel]].paused then hint = "A continue   X restart" end
   if BIT.studio and n > 0 then hint = hint .. "   Y edit" end
   if row == 1 then
