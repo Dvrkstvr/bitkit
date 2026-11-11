@@ -19,4 +19,4 @@ jobs:
       - name: Runtime and demo checks
         run: node tools/ci.cjs
       - name: Beacon Keeper checks
-        run: node tools/beacontest.cjs
+        run: node tools/harbourtest.cjs
