@@ -31,3 +31,11 @@ CONFIG_FREERTOS_HZ=1000
 # the game loop runs flat out on core 1; a long frame must not trip the idle watchdog
 CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU1=n
 CONFIG_ESP_TASK_WDT_TIMEOUT_S=10
+
+# radio (linked Bits over ESP-NOW): Wi-Fi and lwIP buffers in PSRAM where they can be, internal RAM stays for DMA
+CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
+# keep Wi-Fi's code in flash: internal RAM is needed for the screen's DMA bands and the game loop's stack
+CONFIG_ESP_WIFI_IRAM_OPT=n
+CONFIG_ESP_WIFI_RX_IRAM_OPT=n
+CONFIG_ESP_WIFI_EXTRA_IRAM_OPT=n
+CONFIG_LWIP_IRAM_OPTIMIZATION=n

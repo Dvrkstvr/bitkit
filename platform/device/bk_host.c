@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #define MAXSLOT 12
 #define MAXGAMES 96
@@ -18,6 +19,8 @@ static const uint16_t START = 1u << BK_START, SELECT = 1u << BK_SELECT;
 typedef struct {
   char path[200], name[64], sub[48], save_key[64];
   int is_app, has_icon, builtin;
+  int info, net;                 /* info: fp and net worked out (lazily, from the file) */
+  uint32_t fp;                   /* hash of the .bitkit file: linked Bits only play the very same game */
   uint8_t icon[256];
 } entry;
 
@@ -30,6 +33,8 @@ typedef struct {
   char save_key[64];
   size_t mem, peak, limit;
   uint32_t stamp;
+  int link_np;                   /* paused in a linked game of this many players (0 = played alone) */
+  uint32_t link_token, link_ids[BK_MAX_PLAYERS];   /* that game's session, and who sat where */
 } slot;
 
 static bk_host_config C;
@@ -45,8 +50,25 @@ static char errmsg[600];
 static bk_bit_settings bs;
 static char *theme_raw;   /* the "Bit theme" save, checked to be a Lua table, for the home screen and boot */
 static char *boot_code;
-static float abuf[2 * 2048];
+static BK_BIG_BSS float abuf[2 * 2048];
 static uint16_t err_last;
+
+/* linked Bits (the section "linked Bits" below) */
+static void link_home_rows(void);
+static int  link_roster_n(void);
+static int  link_launch(int n, int fresh);
+static void link_end(int why);
+static void link_leave(int pause);
+static void link_frame(uint16_t mask, const uint8_t *press);
+static void link_tick(void);
+static void net_after_frame(void);
+static int  link_wanted(int n);
+static void link_start_info(int *players, int *me, const char **names, int *keep_save);
+static int  link_on(void);
+static uint32_t my_net_id(int n);
+static void handle_requests(void);
+static void capture_after_frame(uint16_t mask);
+static void restart_game(int how);
 
 /* ------------------------------------------------------------ memory */
 static void *mrealloc(void *p, size_t n) {
@@ -89,10 +111,13 @@ static void slot_close(slot *s) {
   memset(s, 0, sizeof(*s));
 }
 
-static slot *paused_slot(int game) {
-  for (int i = 0; i < nslots; i++) if (S[i].used && S[i].paused && S[i].game == game) return &S[i];
+/* game's paused copy: played alone (np 0 or 1), or linked with np players */
+static slot *paused_slot_np(int game, int np) {
+  if (np < 2) np = 0;
+  for (int i = 0; i < nslots; i++) if (S[i].used && S[i].paused && S[i].game == game && S[i].link_np == np) return &S[i];
   return NULL;
 }
+static slot *paused_slot(int game) { return paused_slot_np(game, 0); }
 static int paused_count(void) { int n = 0; for (int i = 0; i < nslots; i++) n += S[i].used && S[i].paused; return n; }
 static slot *oldest_paused(void) {
   slot *o = NULL;
@@ -286,6 +311,7 @@ static void scan_dir(const char *dir, int apps) {
 static void show_error(const char *msg) {
   snprintf(errmsg, sizeof(errmsg), "%s", msg && msg[0] ? msg : "the game stopped");
   say(errmsg, 1);
+  if (link_on()) link_end(3);  /* the other Bits can't go on without this one */
   if (cur) slot_close(cur);   /* a broken game is not kept paused */
   cur = NULL;
   err_last = 0xFFFF;          /* the button that was down when it broke has to be let go first */
@@ -338,7 +364,7 @@ static void boot_home(void) {
     const char *base = strrchr(e->path, '/');
     lua_str(file, sizeof(file), e->builtin ? "" : base ? base + 1 : e->path);
     lua_str(sub, sizeof(sub), e->sub);
-    len += (size_t)snprintf(bit + len, cap - len, "%s{name=%s, file=%s, studio=false, paused=%s, ", i ? "," : "", nm, file, paused_slot(i + 1) ? "true" : "false");
+    len += (size_t)snprintf(bit + len, cap - len, "%s{name=%s, file=%s, studio=false, paused=%s, ", i ? "," : "", nm, file, paused_slot_np(i + 1, e->is_app ? 0 : link_roster_n()) ? "true" : "false");
     if (e->has_icon || e->is_app) len += (size_t)snprintf(bit + len, cap - len, "icon=%d", slotTile);
     else len += (size_t)snprintf(bit + len, cap - len, "color=%d", COLORS[i % 8]);
     if (e->is_app) len += (size_t)snprintf(bit + len, cap - len, ", app=true, sub=%s", sub);
@@ -350,12 +376,13 @@ static void boot_home(void) {
   char nm[40], bn[48];
   lua_str(nm, sizeof(nm), bs.name); lua_str(bn, sizeof(bn), bs.bit);
   len += (size_t)snprintf(bit + len, cap - len, "}, sel = %d, studio = false, link = %s, source = %s, me = {name = %s, color = %d, bit = %s}, theme = ",
-    sel < 1 ? 1 : sel, C.link ? "true" : "false", src, nm, bs.color, bn);
+    sel < 1 ? 1 : sel, C.radio_send ? "true" : "false", src, nm, bs.color, bn);
   theme_lua(bit + len, cap - len);
   len += strlen(bit + len);
   snprintf(bit + len, cap - len, " }");
   bk_lua_set_alloc(lua_alloc, s);
   BK->players = 1; BK->me = 0;
+  link_home_rows();
   int rc = bk_lua_load_ex(bit, home_code ? home_code : "function _draw() cls(1) text(\"no home screen\", 8, 8, 7) end");
   free_(bit);
   if (rc) show_error(bk_lua_error());
@@ -397,13 +424,20 @@ static int start_game(int n, const char *extra) {
   memcpy(BK->tiles, s->cart.tiles, sizeof(BK->tiles));
   memcpy(BK->flags, s->cart.flags, sizeof(BK->flags));
   memcpy(BK->map, s->cart.maps[0], sizeof(BK->map));
-  BK->players = 1; BK->me = 0; BK->net.id = 0;
-  snprintf(s->save_key, sizeof(s->save_key), "%s", e->save_key[0] ? e->save_key : s->cart.name);
+  /* alone: one player, this Bit's owner. Linked: every Bit runs every player, draws its own (me), and only
+     player 1's Bit keeps the save file (the others play from it but don't write it), like the studio. */
+  int players = 1, me = 0, keep_save = 1;
+  const char *link_names = NULL;
+  link_start_info(&players, &me, &link_names, &keep_save);
+  BK->players = players; BK->me = me; BK->net.id = (int32_t)my_net_id(n);
+  BK->net.out_n = BK->net.in_n = BK->net.in_r = 0;
+  snprintf(s->save_key, sizeof(s->save_key), "%s", !keep_save ? "" : e->save_key[0] ? e->save_key : s->cart.name);
   put_save(s->save_key);
-  /* NAMES / NAME_COLORS (player_name()): on one Bit, player 1 is the owner */
-  char names[96], nm[40];
+  /* NAMES / NAME_COLORS (player_name()): on one Bit, player 1 is the owner; linked, every seat's owner */
+  char names[400], nm[40];
   lua_str(nm, sizeof(nm), bs.name);
-  snprintf(names, sizeof(names), "NAMES = {%s}\nNAME_COLORS = {%d}\n", nm, bs.color);
+  if (link_names) snprintf(names, sizeof(names), "%s", link_names);
+  else snprintf(names, sizeof(names), "NAMES = {%s}\nNAME_COLORS = {%d}\n", nm, bs.color);
   size_t el = strlen(s->cart.entities_lua), xl = extra ? strlen(extra) : 0, nl = strlen(names);
   char *data = malloc_(el + xl + nl + 1);
   if (!data) { show_error("not enough memory to start the game"); return 1; }
@@ -427,6 +461,7 @@ static void pause_current(void) {
 }
 
 void bk_host_go_home(void) {
+  if (link_on()) { link_end(0); link_leave(0); return; }
   if (mode == MODE_GAME) pause_current();
   else if (cur && cur != home_slot) slot_close(cur);
   boot_home();
@@ -436,6 +471,7 @@ void bk_host_go_home(void) {
 int bk_host_launch(int n) {
   if (n < 1 || n > nE) return 1;
   sel = n;
+  if (link_wanted(n)) return link_launch(n, 0);   /* other Bits are on their home screens: play it together */
   if (home_slot) slot_close(home_slot);
   slot *p = paused_slot(n);
   if (p) {
@@ -515,9 +551,513 @@ static void capture_after_frame(uint16_t mask) {
 }
 int bk_host_recording(void) { return cap.rec; }
 
+/* ------------------------------------------------------------ linked Bits (radio: ESP-NOW on the device) */
+/* The same game plan as the studio's linked windows (studio.js, "multiplayer: linked Bits"):
+   - every Bit says hello (HI) once a second with its number, name and what it is doing; a Bit not heard for 4 s is gone
+   - the home screen shows them (map rows 0-1, see home.js); starting a game there starts it on every Bit that is on
+     its home screen too, up to 8 (START, with the seats). The game must be the very same file on every Bit (fp).
+   - lockstep: a frame runs only once every player's buttons for it are here. Each Bit sends its own DELAY frames
+     ahead (IN, with the last few frames in every packet, so a lost packet costs nothing) and sends them again
+     while it waits. Start+Select or home() by anyone pauses the game on every Bit on the same frame; picking it
+     again with the same Bits carries on together (each Bit keeps its copy, matched by the session it was paused in).
+   - games that use net_send() don't run in lockstep: each Bit plays on its own and the events go out as NET packets.
+   Packets: 'B' 'K' version type, from id (u32), then the type's fields, little endian, at most 250 bytes. */
+#define LK_VER 1
+enum { LK_HI = 1, LK_START, LK_IN, LK_END, LK_NET };
+#define LK_PEERS 16
+#define LK_RING 32                     /* frames of buttons kept per player */
+#define LK_SEND 10                     /* frames in each IN packet */
+#define LK_DELAY 3                     /* frames of input delay (hides the radio's lag) */
+#define LK_GONE_MS 4000
+#define LK_PRESS BK_NUM_BUTTONS
+
+typedef struct { uint32_t id, seen; uint8_t num, st, color; char name[11]; } lk_peer;
+typedef struct { uint32_t f1; uint16_t m; uint8_t p[LK_PRESS]; } lk_in;   /* f1 = frame + 1 (0 = empty) */
+
+static struct {
+  uint32_t id, ticks, last_hi, sids;
+  int last_st, hi_rep;                 /* what the last hello said; hellos still to repeat after a change */
+  int npeers, home_n;
+  lk_peer peer[LK_PEERS];
+  /* the session: a linked game running now */
+  int on, np, slot, game, waiting, banner, rep, hold;
+  uint32_t sid, host, resume, at, f, sent, hash;
+  uint32_t ids[BK_MAX_PLAYERS];
+  uint8_t combo[BK_MAX_PLAYERS];
+  char names[400];
+  uint8_t heard_seat[BK_MAX_PLAYERS];  /* buttons came from this seat (it has the game running) */
+  lk_in in[BK_MAX_PLAYERS][LK_RING];
+  uint8_t under[BK_W * 12];            /* the game's pixels under the "waiting" bar */
+  int heard;
+  struct { uint8_t b[250]; int n; } start_pkt;   /* the START this Bit sent, again until every seat answers */
+} BK_BIG_BSS LK;                        /* PSRAM on the device */
+
+static uint32_t lk_now(void) { return C.millis ? C.millis() : LK.ticks * 1000u / BK_FPS; }
+static uint32_t fnv(uint32_t h, const void *d, size_t n) {
+  const uint8_t *p = d;
+  for (size_t i = 0; i < n; i++) { h ^= p[i]; h *= 16777619u; }
+  return h;
+}
+static uint8_t my_num(void) { return (uint8_t)(1 + LK.id % 99); }
+static int link_on(void) { return LK.on; }
+
+/* packets */
+typedef struct { uint8_t b[250]; int n; } lk_w;
+static void w8(lk_w *w, uint32_t v) { if (w->n < 250) w->b[w->n++] = (uint8_t)v; }
+static void w16(lk_w *w, uint32_t v) { w8(w, v); w8(w, v >> 8); }
+static void w32(lk_w *w, uint32_t v) { w16(w, v); w16(w, v >> 16); }
+static void wstr(lk_w *w, const char *s, int max) { int n = (int)strlen(s); if (n > max) n = max; w8(w, (uint32_t)n); for (int i = 0; i < n; i++) w8(w, (uint8_t)s[i]); }
+static void whead(lk_w *w, int type) { w->n = 0; w8(w, 'B'); w8(w, 'K'); w8(w, LK_VER); w8(w, (uint32_t)type); w32(w, LK.id); }
+static void wsend(lk_w *w) { if (C.radio_send && w->n <= 250) C.radio_send(w->b, w->n); }
+typedef struct { const uint8_t *b; int n, i, bad; } lk_r;
+static uint32_t r8(lk_r *r) { if (r->i >= r->n) { r->bad = 1; return 0; } return r->b[r->i++]; }
+static uint32_t r16(lk_r *r) { uint32_t a = r8(r); return a | r8(r) << 8; }
+static uint32_t r32(lk_r *r) { uint32_t a = r16(r); return a | r16(r) << 16; }
+static void rstr(lk_r *r, char *out, int cap) {
+  int n = (int)r8(r), j = 0;
+  for (int i = 0; i < n; i++) { char c = (char)r8(r); if (j < cap - 1 && c >= 32 && c < 127) out[j++] = c; }
+  out[j] = 0;
+}
+
+/* this Bit's state for the others: 1 on its home screen, 2 in a game, 3 neither (error screen) */
+static uint8_t my_state(void) { return mode == MODE_HOME || mode == MODE_BOOT ? 1 : mode == MODE_GAME ? 2 : 3; }
+static void send_hi(void) {
+  lk_w w; whead(&w, LK_HI);
+  w8(&w, my_num()); w8(&w, my_state()); w8(&w, (uint32_t)bs.color); wstr(&w, bs.name, 10);
+  wsend(&w);
+  LK.last_hi = lk_now();
+}
+static lk_peer *find_peer(uint32_t id) { for (int i = 0; i < LK.npeers; i++) if (LK.peer[i].id == id) return &LK.peer[i]; return NULL; }
+
+/* every Bit (this one too), in number order: ids[], and which one is this Bit */
+static int bits_sorted(uint32_t *ids, uint8_t *nums, uint8_t *st, int *mine) {
+  int n = 0;
+  ids[n] = LK.id; nums[n] = my_num(); st[n] = my_state(); n++;
+  for (int i = 0; i < LK.npeers && n < LK_PEERS + 1; i++) { ids[n] = LK.peer[i].id; nums[n] = LK.peer[i].num; st[n] = LK.peer[i].st; n++; }
+  for (int i = 1; i < n; i++)                       /* insertion sort by number, then id */
+    for (int j = i; j > 0 && (nums[j] < nums[j - 1] || (nums[j] == nums[j - 1] && ids[j] < ids[j - 1])); j--) {
+      uint32_t t = ids[j]; ids[j] = ids[j - 1]; ids[j - 1] = t;
+      uint8_t u = nums[j]; nums[j] = nums[j - 1]; nums[j - 1] = u;
+      u = st[j]; st[j] = st[j - 1]; st[j - 1] = u;
+    }
+  for (int i = 0; i < n; i++) if (ids[i] == LK.id) *mine = i;
+  return n;
+}
+/* who plays when this Bit starts a game: itself first, then every Bit on its home screen (or idle) */
+static int roster(uint32_t *out) {
+  uint32_t ids[LK_PEERS + 1]; uint8_t nums[LK_PEERS + 1], st[LK_PEERS + 1]; int mine = 0;
+  const int n = bits_sorted(ids, nums, st, &mine);
+  int k = 0;
+  out[k++] = LK.id;
+  for (int i = 0; i < n && k < BK_MAX_PLAYERS; i++) if (ids[i] != LK.id && st[i] != 2) out[k++] = ids[i];
+  return k;
+}
+static int link_roster_n(void) { uint32_t r[BK_MAX_PLAYERS]; return C.radio_send ? roster(r) : 1; }
+
+/* the home screen reads the linked Bits from map rows 0-1: (0,0) how many, (1,0) which one is this Bit,
+   (1+i,0) Bit i's number, (1+i,1) 1 home, 2 in a game, 3 idle */
+static void link_home_rows(void) {
+  if (!C.radio_send || mode != MODE_HOME) return;
+  uint32_t ids[LK_PEERS + 1]; uint8_t nums[LK_PEERS + 1], st[LK_PEERS + 1]; int mine = 0;
+  const int n = bits_sorted(ids, nums, st, &mine);
+  BK->map[0] = (uint16_t)n; BK->map[1] = (uint16_t)(mine + 1);
+  for (int i = 0; i < n; i++) { BK->map[2 + i] = nums[i]; BK->map[BK_MAP_W + 2 + i] = st[i]; }
+}
+
+/* a game's fingerprint (the file's bytes) and whether it talks with net_send(): worked out when first needed */
+static void entry_info(entry *e) {
+  if (e->info) return;
+  e->info = 1;
+  size_t len = 0;
+  char *d = read_file(e->path, &len);
+  if (!d) return;
+  e->fp = fnv(2166136261u, d, len) | 1u;
+  e->net = strstr(d, "net_send(") != NULL;
+  free_(d);
+}
+static int link_wanted(int n) {
+  if (!C.radio_send || n < 1 || n > nE || E[n - 1].is_app || link_roster_n() < 2) return 0;
+  entry_info(&E[n - 1]);
+  return !E[n - 1].net;   /* net_send games meet in their own lobby, like the studio's */
+}
+static uint32_t my_net_id(int n) {
+  if (!C.radio_send || LK.on || n < 1 || n > nE) return 0;
+  entry_info(&E[n - 1]);
+  return E[n - 1].net ? 1 + LK.id % 65534 : 0;
+}
+
+static void link_start_info(int *players, int *me, const char **names, int *keep_save) {
+  if (!LK.on) return;
+  *players = LK.np; *me = LK.slot; *names = LK.names; *keep_save = LK.slot == 1;
+}
+
+/* START: sid, np, fp, resume, game name, then per seat: id, number, colour, name */
+static void send_start(uint32_t sid, int np, const uint32_t *ids, uint32_t fp, uint32_t resume, const char *game) {
+  lk_w w; whead(&w, LK_START);
+  w32(&w, sid); w8(&w, (uint32_t)np); w32(&w, fp); w32(&w, resume); wstr(&w, game, 40);
+  for (int k = 0; k < np; k++) {
+    const lk_peer *p = find_peer(ids[k]);
+    w32(&w, ids[k]);
+    w8(&w, ids[k] == LK.id ? my_num() : p ? p->num : 0);
+    w8(&w, ids[k] == LK.id ? (uint32_t)bs.color : p ? p->color : 27);
+    wstr(&w, ids[k] == LK.id ? bs.name : p ? p->name : "", 10);
+  }
+  wsend(&w);
+  memcpy(LK.start_pkt.b, w.b, (size_t)w.n); LK.start_pkt.n = w.n;
+}
+static void link_end(int why) {   /* 0 left, 1 doesn't have the game, 2 no paused copy, 3 the game stopped */
+  if (!LK.sid) return;
+  lk_w w; whead(&w, LK_END); w32(&w, LK.sid); w8(&w, (uint32_t)why);
+  for (int i = 0; i < 3; i++) wsend(&w);   /* nothing answers an END: three times against a lost packet */
+}
+
+static void enter(uint32_t from, uint32_t sid, int np, const uint32_t *ids, const uint8_t *cols, char names[][11], uint32_t fp, uint32_t resume, const char *game);
+/* this Bit starts game n for itself and every Bit on its home screen */
+static int link_launch(int n, int fresh) {
+  uint32_t ids[BK_MAX_PLAYERS];
+  int np = roster(ids);
+  entry *e = &E[n - 1];
+  entry_info(e);
+  uint32_t resume = 0;
+  slot *p = paused_slot_np(n, np);
+  if (p && !fresh) {   /* carry on with the same Bits in the same seats, if they are all here */
+    int all = 1;
+    for (int k = 0; k < np && all; k++) {
+      int found = 0;
+      for (int j = 0; j < np; j++) found |= p->link_ids[k] == ids[j];
+      all = found;
+    }
+    if (all) { memcpy(ids, p->link_ids, sizeof(uint32_t) * (size_t)np); resume = p->link_token; }
+  } else if (p && fresh) slot_close(p);
+  const uint32_t sid = fnv(fnv(2166136261u, &LK.id, 4), &(uint32_t){ lk_now() ^ ++LK.sids << 20 }, 4) | 1u;
+  send_start(sid, np, ids, e->fp, resume, e->name);
+  uint8_t cols[BK_MAX_PLAYERS]; char nm[BK_MAX_PLAYERS][11];
+  for (int k = 0; k < np; k++) {
+    const lk_peer *q = find_peer(ids[k]);
+    cols[k] = ids[k] == LK.id ? (uint8_t)bs.color : q ? q->color : 27;
+    snprintf(nm[k], 11, "%.10s", ids[k] == LK.id ? bs.name : q ? q->name : "");
+  }
+  enter(LK.id, sid, np, ids, cols, nm, e->fp, resume, e->name);
+  return 0;
+}
+
+/* a START (from another Bit, or this one): every Bit in its seats begins the game */
+static void enter(uint32_t from, uint32_t sid, int np, const uint32_t *ids, const uint8_t *cols, char names[][11], uint32_t fp, uint32_t resume, const char *game) {
+  int me = 0;
+  for (int k = 0; k < np; k++) if (ids[k] == LK.id) me = k + 1;
+  if (!me || np < 2 || np > BK_MAX_PLAYERS) return;
+  if (from != LK.id) {
+    if (LK.on && LK.sid == sid) return;
+    if (LK.on) {
+      int in = 0;
+      for (int k = 0; k < LK.np; k++) in |= LK.ids[k] == from;
+      if (!in) return;                                                     /* a Bit from outside this game */
+      if (LK.host != from && lk_now() - LK.at < 300 && sid > LK.sid) return;   /* two Bits started at once: one wins */
+    } else if (mode == MODE_GAME) return;                                  /* busy with a game of its own */
+  }
+  int n = 0;
+  for (int i = 0; i < nE && !n; i++) if (!E[i].is_app) { entry_info(&E[i]); if (E[i].fp == fp) n = i + 1; }
+  char m[160];
+  /* leave whatever this Bit was doing */
+  if (LK.on && mode == MODE_GAME) { if (cur) slot_close(cur); cur = NULL; }
+  else if (mode == MODE_GAME) pause_current();
+  LK.on = 0;
+  if (!n) {
+    snprintf(m, sizeof(m), "this Bit doesn't have \"%s\" (the same version), so the linked game can't start", game);
+    say(m, 1);
+    LK.sid = sid; link_end(1); LK.sid = 0;
+    if (mode != MODE_HOME) boot_home();
+    return;
+  }
+  memset(LK.in, 0, sizeof(LK.in)); memset(LK.combo, 0, sizeof(LK.combo)); memset(LK.heard_seat, 0, sizeof(LK.heard_seat));
+  if (from != LK.id) LK.start_pkt.n = 0;
+  LK.heard_seat[me - 1] = 1;
+  LK.on = 1; LK.sid = sid; LK.host = from; LK.np = np; LK.slot = me; LK.game = n; LK.resume = resume;
+  LK.at = lk_now(); LK.f = LK.sent = 0; LK.waiting = LK.banner = LK.rep = 0; LK.hash = 2166136261u; LK.hold = 0;
+  memcpy(LK.ids, ids, sizeof(uint32_t) * (size_t)np);
+  /* NAMES / NAME_COLORS: every seat's owner */
+  size_t o = (size_t)snprintf(LK.names, sizeof(LK.names), "NAMES = {");
+  for (int k = 0; k < np; k++) { char q[40]; lua_str(q, sizeof(q), names[k]); o += (size_t)snprintf(LK.names + o, sizeof(LK.names) - o, "%s%s", k ? ", " : "", q); }
+  o += (size_t)snprintf(LK.names + o, sizeof(LK.names) - o, "}\nNAME_COLORS = {");
+  for (int k = 0; k < np; k++) o += (size_t)snprintf(LK.names + o, sizeof(LK.names) - o, "%s%d", k ? ", " : "", cols[k] ? cols[k] : 27);
+  snprintf(LK.names + o, sizeof(LK.names) - o, "}\n");
+  sel = n;
+  if (home_slot) slot_close(home_slot);
+  if (resume) {
+    slot *p = NULL;
+    for (int i = 0; i < nslots && !p; i++) if (S[i].used && S[i].paused && S[i].game == n && S[i].link_token == resume && S[i].link_np == np) p = &S[i];
+    if (!p) {
+      say("this Bit has no paused copy of that game, so the Bits can't carry on together", 1);
+      link_end(2); LK.on = 0; LK.sid = 0; boot_home();
+      return;
+    }
+    BK = p->m; bk_ctx_put(&p->ctx); memset(&p->ctx, 0, sizeof(p->ctx));
+    p->paused = 0; p->link_np = 0; cur = p; mode = MODE_GAME;
+    LK.hold = 1;                       /* the button that carried on is ignored until it is let go */
+    snprintf(m, sizeof(m), "carrying on with \"%s\" on %d Bits: this Bit is player %d", E[n - 1].name, np, me);
+    say(m, 0);
+  } else {
+    snprintf(m, sizeof(m), "linked game: \"%s\" on %d Bits, this Bit is player %d", E[n - 1].name, np, me);
+    say(m, 0);
+    if (start_game(n, NULL)) { LK.on = 0; return; }
+  }
+  send_hi();
+}
+
+/* everyone goes home together; pause = each Bit keeps its copy of the game, to carry on together later */
+static void send_in(void);
+static void link_leave(int pause) {
+  if (!LK.on) return;
+  /* the others may still need this Bit's last buttons to reach the same frame: send them a few more times */
+  if (pause) for (int i = 0; i < 3; i++) send_in();
+  LK.on = 0;
+  if (cur && cur != home_slot && mode == MODE_GAME) {
+    if (pause) {
+      slot *s = cur;
+      pause_current();
+      s->link_np = LK.np; s->link_token = LK.sid;
+      memcpy(s->link_ids, LK.ids, sizeof(LK.ids));
+    } else { take_save(); slot_close(cur); cur = NULL; }
+  }
+  LK.sid = 0;
+  boot_home();
+  send_hi();
+}
+
+/* IN: sid, seat, first frame, count, then per frame: buttons (u16) and pressure */
+static void send_in(void) {
+  lk_w w; whead(&w, LK_IN);
+  const uint32_t first = LK.sent > LK_SEND ? LK.sent - LK_SEND : 0, cnt = LK.sent - first;
+  w32(&w, LK.sid); w8(&w, (uint32_t)LK.slot); w32(&w, first); w8(&w, cnt);
+  for (uint32_t f = first; f < LK.sent; f++) {
+    const lk_in *e = &LK.in[LK.slot - 1][f % LK_RING];
+    w16(&w, e->m);
+    for (int i = 0; i < LK_PRESS; i++) w8(&w, e->p[i]);
+  }
+  wsend(&w);
+}
+static void put_in(int seat, uint32_t f, uint16_t m, const uint8_t *p) {
+  if (seat < 1 || seat > LK.np || f < LK.f || f >= LK.f + LK_RING) return;
+  lk_in *e = &LK.in[seat - 1][f % LK_RING];
+  if (e->f1 == f + 1) return;
+  e->f1 = f + 1; e->m = m;
+  memcpy(e->p, p, LK_PRESS);
+}
+
+/* the bar at the bottom while a Bit's buttons are late; the game's own pixels under it are put back first */
+static void banner_off(void) {
+  if (!LK.banner) return;
+  memcpy(&BK->screen[(BK_H - 12) * BK_W], LK.under, sizeof(LK.under));
+  LK.banner = 0;
+}
+static void banner_on(void) {
+  if (!LK.banner) memcpy(LK.under, &BK->screen[(BK_H - 12) * BK_W], sizeof(LK.under));
+  LK.banner = 1;
+  /* drawn straight into the pixels (not with the game's draw state, which must stay as the game left it) */
+  memset(&BK->screen[(BK_H - 12) * BK_W], 1, sizeof(LK.under));
+  char t[64]; int miss = 0;
+  for (int k = 0; k < LK.np && !miss; k++) if (LK.in[k][LK.f % LK_RING].f1 != LK.f + 1) miss = k + 1;
+  const lk_peer *p = miss ? find_peer(LK.ids[miss - 1]) : NULL;
+  snprintf(t, sizeof(t), "WAITING FOR BIT %d   START+SELECT LEAVES", p ? p->num : 0);
+  bk_machine *keep = BK;
+  BK = sysm;                           /* draw the text on the error screen's machine, then copy its pixels */
+  bk_reset_draw_state();
+  memset(&BK->screen[(BK_H - 12) * BK_W], 1, sizeof(LK.under));
+  bk_text(t, 4, BK_H - 10, 7, 1);
+  memcpy(&keep->screen[(BK_H - 12) * BK_W], &BK->screen[(BK_H - 12) * BK_W], sizeof(LK.under));
+  BK = keep;
+}
+
+static void link_frame(uint16_t mask, const uint8_t *press) {
+  static const uint8_t NOP[LK_PRESS];
+  uint8_t pr[LK_PRESS];
+  if (press) memcpy(pr, press, LK_PRESS); else for (int i = 0; i < LK_PRESS; i++) pr[i] = (mask >> i) & 1 ? 255 : 0;
+  if (LK.hold) { if (mask) { mask = 0; memcpy(pr, NOP, LK_PRESS); } else LK.hold = 0; }
+  /* this Bit's buttons, DELAY frames ahead */
+  int fresh = 0;
+  while (LK.sent <= LK.f + LK_DELAY) { put_in(LK.slot, LK.sent, mask, pr); LK.sent++; fresh = 1; }
+  if (fresh || (LK.waiting && ++LK.rep % 4 == 0)) send_in();
+  /* run the frames whose buttons are all here: one, or two to catch up when the others are ahead */
+  for (int step = 0; step < 2; step++) {
+    int ready = 1, ahead = 1;
+    for (int k = 0; k < LK.np; k++) {
+      ready &= LK.in[k][LK.f % LK_RING].f1 == LK.f + 1;
+      ahead &= LK.in[k][(LK.f + 1) % LK_RING].f1 == LK.f + 2;
+    }
+    if (!ready) break;
+    if (step && !ahead) break;
+    banner_off();
+    LK.waiting = 0;
+    int leave = 0;
+    for (int k = 0; k < LK.np; k++) {
+      const lk_in *e = &LK.in[k][LK.f % LK_RING];
+      bk_set_input(k, e->m, e->p);
+      const int both = (e->m & (START | SELECT)) == (START | SELECT);   /* Start+Select by anyone: home on this frame */
+      if (both && !LK.combo[k]) leave = 1;
+      LK.combo[k] = (uint8_t)both;
+      LK.hash = fnv(LK.hash, &e->m, 2);
+    }
+    if (leave) { link_leave(1); return; }
+    LK.f++;
+    if (bk_lua_frame() != 0) { show_error(bk_lua_error()); return; }
+    LK.hash = fnv(LK.hash, &BK->rng, sizeof(BK->rng));
+    take_save();
+    if (!step) capture_after_frame(mask);
+    if (BK->sys[0] == 5) { BK->sys[0] = 0; restart_game(BK->sys[1]); continue; }   /* the same frame on every Bit */
+    handle_requests();
+    if (!LK.on || mode != MODE_GAME) return;
+  }
+  int ready = 1;
+  for (int k = 0; k < LK.np; k++) ready &= LK.in[k][LK.f % LK_RING].f1 == LK.f + 1;
+  if (ready) return;
+  LK.waiting++;
+  /* the host sends its START again until every seat's buttons have come: a lost START would leave a Bit out */
+  if (LK.host == LK.id && LK.start_pkt.n && LK.waiting % 10 == 1) {
+    int all = 1;
+    for (int k = 0; k < LK.np; k++) all &= LK.heard_seat[k];
+    if (!all && C.radio_send) C.radio_send(LK.start_pkt.b, LK.start_pkt.n);
+  }
+  if (LK.waiting > BK_FPS) banner_on();
+  /* the Bit this one waits for says it is on its home screen: it left the game (and its END got lost) */
+  if (LK.waiting > BK_FPS / 2)
+    for (int k = 0; k < LK.np; k++)
+      if (LK.heard_seat[k] && LK.in[k][LK.f % LK_RING].f1 != LK.f + 1) {
+        const lk_peer *q = find_peer(LK.ids[k]);
+        if (q && q->st == 1) { say("a player's Bit left the game, so the linked game ended", 1); link_leave(0); return; }
+      }
+  /* stuck: Start+Select on this Bit leaves the game for everyone */
+  if (LK.waiting > BK_FPS && (mask & (START | SELECT)) == (START | SELECT) && !combo_held) {
+    say("left the linked game", 0);
+    link_end(0); link_leave(0);
+  }
+}
+
+/* NET: key (the game's name), then events: count, values */
+static uint32_t net_key(void) { return cur && cur->game ? fnv(2166136261u, E[cur->game - 1].name, strlen(E[cur->game - 1].name)) : 0; }
+static void net_after_frame(void) {
+  int n = BK->net.out_n;
+  BK->net.out_n = 0;
+  if (!C.radio_send || !BK->net.id || mode != MODE_GAME || n <= 0) return;
+  if (n > BK_NET_OUT) n = BK_NET_OUT;
+  lk_w w; whead(&w, LK_NET); w32(&w, net_key());
+  for (int i = 0; i < n; i++) {
+    int c = BK->net.out[i][1];
+    if (c < 0) c = 0;
+    if (c > BK_NET_VALS) c = BK_NET_VALS;
+    if (w.n + 1 + 4 * c > 250) { wsend(&w); whead(&w, LK_NET); w32(&w, net_key()); }
+    w8(&w, (uint32_t)c);
+    for (int k = 0; k < c; k++) w32(&w, (uint32_t)BK->net.out[i][2 + k]);
+  }
+  wsend(&w);
+}
+static void net_recv(uint32_t from, lk_r *r) {
+  if (mode != MODE_GAME || !cur || !BK->net.id || r32(r) != net_key()) return;
+  /* keep what the game hasn't read yet at the front, then add these */
+  int nn = BK->net.in_n, rd = BK->net.in_r < 0 ? 0 : BK->net.in_r > nn ? nn : BK->net.in_r, w = 0;
+  for (; rd < nn; rd++, w++) if (w != rd) memcpy(BK->net.in[w], BK->net.in[rd], sizeof(BK->net.in[0]));
+  BK->net.in_n = w; BK->net.in_r = 0;
+  while (r->i < r->n && !r->bad) {
+    int c = (int)r8(r);
+    if (c > BK_NET_VALS) { r->bad = 1; break; }
+    int32_t v[BK_NET_VALS];
+    for (int k = 0; k < c; k++) v[k] = (int32_t)r32(r);
+    if (r->bad || BK->net.in_n >= BK_NET_IN) break;
+    int32_t *o = BK->net.in[BK->net.in_n++];
+    o[0] = (int32_t)(1 + from % 65534); o[1] = c;
+    memcpy(o + 2, v, sizeof(int32_t) * (size_t)c);
+    LK.heard++;
+  }
+}
+
+void bk_host_radio_recv(const void *pkt, int len) {
+  lk_r r = { pkt, len, 0, 0 };
+  if (!C.radio_send || r8(&r) != 'B' || r8(&r) != 'K' || r8(&r) != LK_VER) return;
+  const int type = (int)r8(&r);
+  const uint32_t from = r32(&r);
+  if (r.bad || from == LK.id) return;
+  lk_peer *p = find_peer(from);
+  if (type == LK_HI) {
+    const int isnew = !p;
+    if (!p) {
+      if (LK.npeers >= LK_PEERS) return;
+      p = &LK.peer[LK.npeers++];
+      memset(p, 0, sizeof(*p)); p->id = from;
+    }
+    p->num = (uint8_t)r8(&r); p->st = (uint8_t)r8(&r); p->color = (uint8_t)r8(&r);
+    rstr(&r, p->name, sizeof(p->name));
+    p->seen = lk_now();
+    if (isnew) {
+      char m[64]; snprintf(m, sizeof(m), "linked with Bit %d%s%s", p->num, p->name[0] ? ": " : "", p->name); say(m, 0);
+      send_hi();   /* answer straight away, so both know each other */
+    }
+    return;
+  }
+  if (p) p->seen = lk_now();
+  if (type == LK_START) {
+    uint32_t ids[BK_MAX_PLAYERS]; uint8_t cols[BK_MAX_PLAYERS]; char names[BK_MAX_PLAYERS][11]; char game[48];
+    const uint32_t sid = r32(&r); const int np = (int)r8(&r); const uint32_t fp = r32(&r), resume = r32(&r);
+    rstr(&r, game, sizeof(game));
+    if (np < 2 || np > BK_MAX_PLAYERS) return;
+    for (int k = 0; k < np; k++) { ids[k] = r32(&r); r8(&r); cols[k] = (uint8_t)r8(&r); rstr(&r, names[k], 11); }
+    if (!r.bad) enter(from, sid, np, ids, cols, names, fp, resume, game);
+  } else if (type == LK_IN) {
+    const uint32_t sid = r32(&r); const int seat = (int)r8(&r); const uint32_t first = r32(&r); const int cnt = (int)r8(&r);
+    if (!LK.on || sid != LK.sid || seat == LK.slot || seat < 1 || seat > LK.np) return;
+    LK.heard_seat[seat - 1] = 1;
+    for (int i = 0; i < cnt && !r.bad; i++) {
+      uint16_t m = (uint16_t)r16(&r); uint8_t pr[LK_PRESS];
+      for (int k = 0; k < LK_PRESS; k++) pr[k] = (uint8_t)r8(&r);
+      if (!r.bad) put_in(seat, first + (uint32_t)i, m, pr);
+    }
+  } else if (type == LK_END) {
+    const uint32_t sid = r32(&r); const int why = (int)r8(&r);
+    if (!LK.on || sid != LK.sid || r.bad) return;
+    static const char *W[4] = { "left the game", "doesn't have this game", "has no paused copy of it", "stopped with an error" };
+    char m[96]; snprintf(m, sizeof(m), "Bit %d %s, so the linked game ended", p ? p->num : 0, W[why & 3]); say(m, 1);
+    link_leave(0);
+  } else if (type == LK_NET) net_recv(from, &r);
+}
+
+/* once per frame: say hello, notice Bits that are gone, keep the home screen's list up to date */
+static void link_tick(void) {
+  LK.ticks++;
+  if (!C.radio_send) return;
+  const uint32_t now = lk_now();
+  /* a change (home, in a game) is said straight away and twice more, so one lost packet doesn't leave the
+     others with the wrong idea of who would join a game */
+  if (my_state() != LK.last_st) { LK.last_st = my_state(); LK.hi_rep = 3; LK.last_hi = now - 1000; }
+  if (LK.hi_rep && now - LK.last_hi >= 100) { LK.hi_rep--; send_hi(); }
+  else if (now - LK.last_hi >= 1000) send_hi();
+  for (int i = 0; i < LK.npeers; i++)
+    if (now - LK.peer[i].seen > LK_GONE_MS) {
+      char m[48]; snprintf(m, sizeof(m), "lost Bit %d", LK.peer[i].num); say(m, 0);
+      const uint32_t id = LK.peer[i].id;
+      LK.peer[i] = LK.peer[--LK.npeers]; i--;
+      if (LK.on) for (int k = 0; k < LK.np; k++) if (LK.ids[k] == id) { say("a player's Bit is gone, so the linked game ended", 1); link_leave(0); break; }
+    }
+  /* the paused badges depend on how many Bits would play: draw the home screen again when that changes */
+  const int n = link_roster_n();
+  if (mode == MODE_HOME && n != LK.home_n && LK.ticks > 2) { LK.home_n = n; boot_home(); }
+  LK.home_n = n;
+}
+
+int bk_host_linked(void) { return 1 + LK.npeers; }
+int bk_host_link_ready(void) { return link_roster_n(); }
+int bk_host_link_players(void) { return LK.on ? LK.np : 0; }
+uint32_t bk_host_link_sync(uint32_t *frame) { if (frame) *frame = LK.f; return LK.hash; }
+int bk_host_net_heard(void) { return LK.heard; }
+
+static void link_init(void) {
+  memset(&LK, 0, sizeof(LK));
+  LK.id = C.bit_id ? C.bit_id : (uint32_t)(uintptr_t)&LK ^ (uint32_t)time(NULL) ^ 0x5bd1e995u;
+  if (!LK.id) LK.id = 1;
+  LK.last_hi = lk_now() - 1000;
+}
+
 /* ------------------------------------------------------------ the frame */
 static void handle_requests(void);
 int bk_host_frame(uint16_t mask, const uint8_t *press) {
+  link_tick();
   const int both = (mask & (START | SELECT)) == (START | SELECT);
   if (mode == MODE_ERROR) {
     uint16_t down = mask & ~err_last; err_last = mask;
@@ -525,21 +1065,27 @@ int bk_host_frame(uint16_t mask, const uint8_t *press) {
     combo_held = both;
     return 0;
   }
+  if (!cur) { combo_held = both; boot_home(); return 0; }
+  if (link_on() && mode == MODE_GAME) { link_frame(mask, press); combo_held = both; return 0; }   /* lockstep */
   if (both && !combo_held && mode == MODE_GAME) { combo_held = both; bk_host_go_home(); return 0; }
   combo_held = both;
-  if (!cur) { boot_home(); return 0; }
+  if (mode == MODE_HOME) link_home_rows();
   if (cur->hold) {                   /* a resumed game sees no buttons until the one that resumed it is let go */
     if (mask) { mask = 0; press = NULL; } else cur->hold = 0;
   }
   bk_set_input(0, mask, press);
   if (bk_lua_frame() != 0) { show_error(bk_lua_error()); return 1; }
+  net_after_frame();
   take_save();
   capture_after_frame(mask);
   if (mode == MODE_HOME && BK->track[2] && BK->track[0] < 0) {   /* -1: start game n over, -2: n is selected */
     const int k = BK->track[0], n = BK->track[1];
     BK->track[2] = 0;
     if (k == -2) sel = n;
-    else if (k == -1) { slot *p = paused_slot(n); if (p) slot_close(p); bk_host_launch(n); return 0; }
+    else if (k == -1) {
+      if (link_wanted(n)) { sel = n; link_launch(n, 1); return 0; }
+      slot *p = paused_slot(n); if (p) slot_close(p); bk_host_launch(n); return 0;
+    }
   }
   handle_requests();
   return 0;
@@ -551,7 +1097,7 @@ static void handle_requests(void) {
   BK->sys[0] = 0;
   switch (cmd) {
     case 1: if (mode == MODE_HOME) bk_host_launch(arg); break;
-    case 2: if (mode == MODE_GAME) bk_host_go_home(); else if (mode == MODE_BOOT) boot_home(); break;
+    case 2: if (mode == MODE_GAME && link_on()) link_leave(1); else if (mode == MODE_GAME) bk_host_go_home(); else if (mode == MODE_BOOT) boot_home(); break;
     case 3: say("Y edits a game in the studio, not on the Bit", 0); break;
     case 4: if (mode == MODE_GAME && cur->has_cart && arg >= 1 && arg <= cur->cart.nlevels) { memcpy(BK->map, cur->cart.maps[arg - 1], sizeof(BK->map)); cur->level = arg - 1; } break;
     case 5: if (mode == MODE_GAME) restart_game(arg); break;
@@ -631,6 +1177,7 @@ int bk_host_init(const bk_host_config *cfg) {
   if (!home_code) say("no home screen cart (sys/home.lua)", 1);
   boot_code = C.boot_lua ? read_file(C.boot_lua, NULL) : NULL;
   load_settings();
+  link_init();
   char m[80]; snprintf(m, sizeof(m), "%d games and apps", nE); say(m, 0);
   boot_anim();
   return 0;
