@@ -220,6 +220,13 @@ static int l_stop(lua_State *l) {
   return 0;
 }
 
+/* track(x, y): report the player's position (world pixels) for the studio's route overlay.
+   ents_player() calls it for you. */
+static int l_track(lua_State *l) {
+  BK->track[0] = ci(l, 1); BK->track[1] = ci(l, 2); BK->track[2] = 1;
+  return 0;
+}
+
 /* ---- print -> console ---- */
 static int l_print(lua_State *l) {
   int n = lua_gettop(l);
@@ -244,7 +251,7 @@ static const luaL_Reg API[] = {
   {"btn", l_btn}, {"btnp", l_btnp}, {"btnr", l_btnr}, {"press", l_press},
   {"t", l_t}, {"time", l_time}, {"rnd", l_rnd}, {"srand", l_srand},
   {"sfx", l_sfx}, {"tone", l_tone}, {"stop", l_stop},
-  {"print", l_print},
+  {"print", l_print}, {"track", l_track},
   {NULL, NULL}
 };
 
@@ -331,6 +338,7 @@ int bk_lua_load_ex(const char *data, const char *code) {
 
 int bk_lua_frame(void) {
   if (!L) return 1;
+  BK->track[2] = 0;
   lua_getglobal(L, "_update");
   if (lua_isfunction(L, -1)) { if (pcall_budget(0) != LUA_OK) return 1; }
   else lua_pop(L, 1);

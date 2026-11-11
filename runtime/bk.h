@@ -58,6 +58,9 @@ typedef struct {
   uint8_t press[BK_NUM_BUTTONS];        /* analog 0..255 */
   uint16_t hold[BK_NUM_BUTTONS];        /* frames held, for btnp repeat */
 
+  /* --- player tracking (studio draws the route on the map) --- */
+  int32_t track[3];                     /* x, y, set this frame */
+
   /* --- time / rng --- */
   uint32_t frame;
   uint64_t rng;

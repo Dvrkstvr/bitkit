@@ -36,7 +36,7 @@
   RT._bkw_init();
   const ptr = {
     pal: RT._bkw_palette(), tiles: RT._bkw_tiles(), flags: RT._bkw_flags(), map: RT._bkw_map(),
-    press: RT._malloc(16)
+    press: RT._malloc(16), track: RT._bkw_track() >> 2
   };
   const DEFAULT_PAL = RT.HEAPU8.slice(ptr.pal, ptr.pal + 768);
 
@@ -423,6 +423,7 @@ end
         if (mp.zoom > 1) { mvCtx.fillStyle = '#fff'; mvCtx.font = '10px system-ui'; mvCtx.fillText(pl.type, sx, sy - 2); }
       }
     });
+    if (route.show) drawRoute();
     if (mp.hover && mp.layer === 'ents') {
       const [hx, hy] = mp.hover, s2 = 8 * mp.zoom;
       mvCtx.strokeStyle = '#fff'; mvCtx.strokeRect((hx - mp.x) * s2 + .5, (hy - mp.y) * s2 + .5, s2 - 1, s2 - 1);
@@ -442,6 +443,27 @@ end
     msCtx.strokeStyle = '#ffd23f'; msCtx.lineWidth = 2;
     msCtx.strokeRect((mp.tile % 16) * 16 + 1, (mp.tile >> 4) * 16 + 1, 14, 14); msCtx.lineWidth = 1;
     $('mapTileInfo').textContent = mp.tile + (mp.tile === 0 ? ' (empty)' : '');
+  }
+  function drawRoute() {
+    const z = mp.zoom, ox = mp.x * 8, oy = mp.y * 8;
+    route.runs.forEach((pts, ri) => {
+      const newest = ri === route.runs.length - 1;
+      const col = newest ? '255,210,63' : '110,195,240';
+      const alpha = newest ? .9 : .35;
+      mvCtx.lineWidth = newest ? 2 : 1.5;
+      mvCtx.strokeStyle = `rgba(${col},${alpha})`;
+      mvCtx.beginPath();
+      for (let i = 0; i < pts.length; i += 2) {
+        const x = (pts[i] - ox) * z, y = (pts[i + 1] - oy) * z;
+        const jump = i > 0 && (Math.abs(pts[i] - pts[i - 2]) > 24 || Math.abs(pts[i + 1] - pts[i - 1]) > 24);
+        if (i === 0 || jump) mvCtx.moveTo(x, y); else mvCtx.lineTo(x, y);
+      }
+      mvCtx.stroke();
+      // a dot every quarter second: wide spacing = fast, tight = slow
+      mvCtx.fillStyle = `rgba(${col},${alpha})`;
+      for (let i = 0; i < pts.length; i += 30) mvCtx.fillRect((pts[i] - ox) * z - z, (pts[i + 1] - oy) * z - z, 2 * z, 2 * z);
+    });
+    mvCtx.lineWidth = 1;
   }
   function mapPos(e) {
     const r = mv.getBoundingClientRect(), s = 8 * mp.zoom;
@@ -542,6 +564,8 @@ end
   $('mapZoom').onchange = e => { mp.zoom = +e.target.value; panMap(0, 0); };
   $('mapGrid').onchange = e => { mp.grid = e.target.checked; drawMap(); };
   $('mapUndo').onclick = () => mapHist.pop();
+  $('mapRoute').onchange = e => { route.show = e.target.checked; drawMap(); };
+  $('mapRouteClear').onclick = () => { route.runs = []; route.cur = null; drawMap(); };
 
   // editor shortcuts
   window.addEventListener('keydown', e => {
@@ -714,7 +738,12 @@ end
     RT._free(p); RT._free(d);
     return rc;
   }
+  // player route: positions reported by ents_player()/track() in the last few runs
+  const route = { runs: [], cur: null, show: true };
   function run() {
+    route.cur = [];
+    route.runs.push(route.cur);
+    if (route.runs.length > 3) route.runs.shift();
     startAudio();
     overlay.classList.add('hidden');
     clearErrLine();
@@ -725,7 +754,7 @@ end
     acc = 0; last = performance.now();
     screen.focus();
   }
-  function stop() { running = false; RT._bkw_stop(); log('■ stopped', 'sys'); }
+  function stop() { if (activeTab === 'map') setTimeout(drawMap, 0); running = false; RT._bkw_stop(); log('■ stopped', 'sys'); }
   onRuntimeError = msg => {
     running = false;
     overlay.textContent = msg;
@@ -737,6 +766,7 @@ end
   screen.addEventListener('mousedown', () => screen.focus());
   $('btnFull').onclick = () => { const g = $('gameWrap'); (g.requestFullscreen || g.webkitRequestFullscreen).call(g); screen.focus(); };
 
+  let routeTick = 0;
   let acc = 0, last = performance.now(), fpsCount = 0, fpsT = last;
   const STEP = 1000 / 60;
   function blit() {
@@ -754,9 +784,12 @@ end
       while (acc >= STEP && running) {
         RT.HEAPU8.set(input.press, ptr.press);
         if (RT._bkw_frame(input.mask, ptr.press) !== 0) running = false;
+        const tr = RT.HEAP32;
+        if (tr[ptr.track + 2] && route.cur) route.cur.push(tr[ptr.track], tr[ptr.track + 1]);
         acc -= STEP; ticks++; fpsCount++;
       }
       if (ticks) blit();
+      if (ticks && activeTab === 'map' && route.show && (++routeTick % 10) === 0) drawMap();
     }
     last = now;
     if (now - fpsT >= 1000) { $('fps').textContent = running ? `${fpsCount} fps` : ''; fpsCount = 0; fpsT = now; }
@@ -894,6 +927,7 @@ end
     ['Events', [
       ['on(name, fn)', 'Call fn whenever the event happens. Built-in: "player_hurt" (damage, source), "death" (entity).'],
       ['emit(name, ...)', 'Send an event. Behavior trees can react with the "Heard event" check, and send events with "Send event".'],
+      ['track(x, y)', 'Report the player position so the Map tab can draw the route you played. ents_player() does this for you.'],
       ['ents_on(type, ev, fn)', 'Per type events: "touch" fn(e, other), "hurt" fn(e, amount, source), "death" fn(e, source).']]],
     ['Sensors', [
       ['raycast(x,y,dx,dy,len,[what],[ignore])', 'Cast a line. Returns hit, hx, hy, thing. what: "wall", "player", "any", "enemy", "friend" or an entity name. Walls block it.'],

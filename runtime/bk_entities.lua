@@ -74,6 +74,7 @@ PLAYER = {name = "player", is_player = true, team = "friend", alive = true, x = 
 function ents_player(x, y, w, h)
   PLAYER.x, PLAYER.y, PLAYER.w, PLAYER.h = x, y, w or 8, h or 8
   TX, TY = x + PLAYER.w / 2, y + PLAYER.h / 2
+  track(TX, TY)
 end
 
 local function matches(o, what)
