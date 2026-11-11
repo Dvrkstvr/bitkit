@@ -30,8 +30,9 @@
 
   /* ------------------------------------------------------------ runtime */
   let onRuntimeError = () => {};
+  let logTap = null;   // collects runtime output instead of showing it (AI test runs)
   const RT = await BitKitRuntime({
-    onLog: (msg, isErr) => { if (isErr) { log(msg, 'err'); onRuntimeError(msg); } else log(msg); }
+    onLog: (msg, isErr) => { if (logTap) { (isErr ? logTap.errors : logTap.logs).push(msg); return; } if (isErr) { log(msg, 'err'); onRuntimeError(msg); } else log(msg); }
   });
   RT._bkw_init();
   const ptr = {
@@ -131,12 +132,12 @@ end
       entities, map: levels[0].map
     };
   }
-  function deserialize(o) {
-    const c = decodeCart(o);
+  function deserialize(o) { setCart(decodeCart(o), 0); }
+  function setCart(c, level) {
     cart.name = c.name; cart.code = c.code;
     cart.palette.set(c.palette); cart.tiles.set(c.tiles); cart.flags.set(c.flags);
     cart.entities = c.entities; cart.levels = c.levels;
-    bindLevel(0);
+    bindLevel(Math.max(0, Math.min(level | 0, c.levels.length - 1)));
   }
 
   let dirtySave = false;
@@ -179,7 +180,7 @@ end
     ta.addEventListener('input', markDirty);
   }
   function getCode() { return cm ? cm.getValue() : ta.value; }
-  function setCode(s) { if (cm) { cm.setValue(s); cm.clearHistory(); } else ta.value = s; }
+  function setCode(s, keepUndo) { if (cm) { if (cm.getValue() === s) return; cm.setValue(s); if (!keepUndo) cm.clearHistory(); } else ta.value = s; }
   function clearErrLine() { if (cm && errLine !== null) { cm.removeLineClass(errLine, 'background', 'cm-error-line'); errLine = null; } }
   function showErrLine(msg) {
     const m = /cart:(\d+):/.exec(msg);
@@ -192,6 +193,7 @@ end
 
   /* ------------------------------------------------------------ tabs */
   let activeTab = 'code';
+  let aiChat = null;   // AI helper chat (set up further down)
   document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
   function showTab(t) {
     activeTab = t;
@@ -202,6 +204,7 @@ end
     if (t === 'map') { refreshLevels(); refreshEntSelect(); drawMap(); }
     if (t === 'entities') entEd.render();
     if (t === 'cutscenes') csEd.render();
+    if (t === 'ai' && aiChat) aiChat.focus();
     lsSet(LS.settings + '.tab', t);
   }
 
@@ -1111,13 +1114,14 @@ end
   }
 
   /* ------------------------------------------------------------ cart actions */
-  function applyCart() {
+  function applyCart(keepUndo) {
     $('cartName').value = cart.name;
-    setCode(cart.code);
+    setCode(cart.code, keepUndo);
     atlasDirty = true; gfxDirtyRT = true;
     if (activeTab === 'sprites') drawSprites();
     if (activeTab === 'map') { refreshLevels(); refreshEntSelect(); drawMap(); }
     if (activeTab === 'entities') entEd.render();
+    if (activeTab === 'cutscenes') csEd.render();
   }
   // built-in demos: each demo file pushes {name, code, buildGfx, about} onto window.BK_DEMOS
   const DEMOS = () => (window.BK_DEMOS && window.BK_DEMOS.length ? window.BK_DEMOS : [BK_DEMO]);
@@ -1482,6 +1486,10 @@ end
       ['time()', 'Seconds since the cart started.'],
       ['rnd() / rnd(n) / rnd(a,b)', 'Random float 0-1, integer 1..n, or integer a..b. Deterministic: the same seed gives the same game, which multiplayer relies on.'],
       ['srand(seed)', 'Set the random seed. math.random uses the same generator.']]],
+    ['AI helper (✨ AI tab)', [
+      ['What it does', 'Chat with Claude or Gemini about your game. It can read and change the code, sprites, maps, levels, entities and cutscenes, and run the game to test its work.'],
+      ['Reviewing', 'The AI works on a copy of your cart. When it is done you get a Proposed changes card: Apply, Apply and run, or Discard. Undo puts your cart back after applying.'],
+      ['API key', 'BitKit has no server, so you use your own API key from Anthropic (platform.claude.com) or Google (aistudio.google.com). It stays in this browser and is only sent to that company. App subscriptions like Claude Pro or Gemini Advanced do not include API access.']]],
     ['Studio keys', [
       ['Ctrl+Enter', 'Run the cart (works anywhere).'],
       ['Ctrl+S', 'Save to this browser (it also autosaves). Use Save / share to keep a file.'],
@@ -1492,6 +1500,49 @@ end
   ];
   $('helpBody').innerHTML = `<h2>${APP} API</h2><p class="dim">Lua 5.4. The same runtime (C, compiled to WebAssembly here) runs on the PocketBit handheld. Carts are deterministic: no clock, no file access, seeded random.</p>` +
     HELP.map(([h, rowsH]) => `<h3>${h}</h3><table>${rowsH.map(([a, b]) => `<tr><td>${escapeHtml(a)}</td><td>${escapeHtml(b)}</td></tr>`).join('')}</table>`).join('');
+
+  /* ------------------------------------------------------------ AI helper (studio/ai.js) */
+  // the AI works on a deep copy of the cart; its changes come back through replaceCart after the user reviews them
+  const workspace = () => decodeCart(JSON.parse(JSON.stringify(serialize())));
+  // run a cart copy headless for some frames with scripted buttons; returns console output, errors and a screenshot
+  function testCart(c, opts) {
+    const wasRunning = running;
+    stop(true);
+    const tap = logTap = { logs: [], errors: [] };
+    let frames = 0, ok = true;
+    try {
+      const start = Math.max(0, Math.min(opts.level | 0, c.levels.length - 1));
+      RT.HEAPU8.set(c.palette, ptr.pal); RT.HEAPU8.set(c.tiles, ptr.tiles); RT.HEAPU8.set(c.flags, ptr.flags);
+      RT.HEAPU16.set(c.levels[start].map, ptr.map >> 1);
+      ok = loadCode(c.code, BKEntities.toLua(c.entities, levelsMeta(c.levels), start), null, 1, 0) === 0;
+      const press = new Uint8Array(12);
+      for (; ok && frames < opts.frames; frames++) {
+        let mask = 0; press.fill(0);
+        (opts.buttons || []).forEach(b => {
+          if (frames < (b.from | 0) || frames > (b.to === undefined ? 1e9 : b.to | 0)) return;
+          (b.press || []).forEach(n => { const i = typeof n === 'number' ? n : BTN.indexOf(String(n).toLowerCase()); if (i >= 0 && i < 12) { mask |= 1 << i; press[i] = 255; } });
+        });
+        RT.HEAPU8.set(press, ptr.press);
+        if (RT._bkw_frame(mask, ptr.press) !== 0) { ok = false; break; }
+        const tr = RT.HEAP32;
+        if (tr[ptr.sys]) { const cmd = tr[ptr.sys], arg = tr[ptr.sys + 1]; tr[ptr.sys] = 0; if (cmd === 4 && c.levels[arg - 1]) RT.HEAPU16.set(c.levels[arg - 1].map, ptr.map >> 1); }
+      }
+      blit();
+    } finally {
+      RT._bkw_stop(); logTap = null; gfxDirtyRT = true;
+    }
+    log(`✨ AI tested its version of the cart for ${frames} frames` + (tap.errors.length ? ` (${tap.errors.length} error${tap.errors.length > 1 ? 's' : ''})` : ''), 'sys');
+    if (wasRunning) log('(the game was stopped for the test; press Run to play)', 'sys');
+    return { ok: ok && !tap.errors.length, frames, logs: tap.logs, errors: tap.errors, png: screen.toDataURL('image/png') };
+  }
+  aiChat = window.BKAI ? BKAI.init({
+    $, toast, escapeHtml, modal: (...a) => modal(...a), closeModal: () => closeModal(), ask: (...a) => ask(...a), help: HELP,
+    workspace, testCart, run: () => run(),
+    signature: () => JSON.stringify(serialize()),
+    snapshot: () => JSON.stringify(serialize()),
+    loadSnapshot: s => { setCart(decodeCart(JSON.parse(s)), cart.level); applyCart(true); saveLocal(); },
+    replaceCart: c => { stop(true); setCart(c, cart.level); applyCart(true); saveLocal(); }
+  }) : null;
 
   /* ------------------------------------------------------------ start */
   document.title = `${APP} Studio`;
