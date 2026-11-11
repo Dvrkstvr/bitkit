@@ -1,133 +1,50 @@
 /* Demo cart "Kart Lab": a 2.5D kart racer. Original art and code. MIT License.
-   Tracks are levels: a start line and track points ("node" entities), plus boost pads, item crates
-   and hills, all placed on the Map tab. The game builds the road and the hills from them when a race
-   starts (this file pre-paints the built-in tracks the same way so the Map tab shows them).
+   Tracks are levels edited on the Track tab (see tracks.js): a smooth loop through control points, with
+   boost pads, item crates, hills and painted elevation. The game builds the road and the hills from them
+   when a race starts (this file pre-paints the built-in tracks the same way so the Map tab shows them).
+   The road is made from a few "segment" tiles (road, kerbs, grass, start line, boost pad).
    The karts are tiny voxel models rendered here from 9 angles (the other 7 are mirror images). */
 (function () {
-  const ROAD = 44, KERB = 7;               // half width of the road, kerb width (pixels); same as ROADW/KERBW in Lua
-  // Built-in tracks. ctrl: rough centre line (world pixels, map is 2048 x 1024), smoothed and turned into
-  // evenly spaced nodes. Pads, crate rows and hills are placed by [fraction of the lap, side offset].
+  // Built-in tracks: control points of the loop (world pixels, the map is 2048 x 1024; the first point is
+  // the start line), plus items placed by [fraction of the lap, offset to the right of the centre line].
   const TRACK_DEFS = [
     { name: 'Pinewood Loop',
-      ctrl: [[360, 190], [900, 150], [1400, 170], [1760, 290], [1880, 520], [1730, 730], [1430, 690],
+      pts: [[360, 190], [900, 150], [1400, 170], [1760, 290], [1880, 520], [1730, 730], [1430, 690],
         [1180, 540], [950, 600], [990, 820], [790, 930], [440, 880], [230, 700], [200, 420]],
       boosts: [[0.13, -18], [0.36, 16], [0.6, 0], [0.85, -16]],
       crates: [0.22, 0.52, 0.78],
       hills: [['hill', 0.27, 0], ['dip', 0.62, 0], ['bump', 0.73, 0], ['hill', 0.93, 120]] },
     { name: 'Quarry Hills',
-      ctrl: [[260, 560], [300, 230], [700, 140], [1100, 240], [1250, 470], [1500, 330], [1800, 260],
+      pts: [[260, 560], [300, 230], [700, 140], [1100, 240], [1250, 470], [1500, 330], [1800, 260],
         [1910, 560], [1700, 870], [1220, 900], [920, 700], [620, 880], [330, 830]],
       boosts: [[0.1, 0], [0.47, -16], [0.8, 14]],
       crates: [0.18, 0.4, 0.66, 0.9],
       hills: [['hill', 0.14, 0], ['bump', 0.22, 0], ['dip', 0.33, 0], ['hill', 0.45, 60], ['bump', 0.56, 0],
-        ['hill', 0.7, -40], ['bump', 0.77, 0], ['dip', 0.87, 0], ['bump', 0.96, 0]] },
+        ['hill', 0.7, -40], ['bump', 0.77, 0], ['dip', 0.87, 0], ['bump', 0.96, 0]],
+      raise: [[1500, 120, 60, 260], [250, 950, 40, 220]] },   // painted elevation: [x, y, height, radius]
   ];
-
-  // Catmull-Rom through closed control points, 'sub' samples per segment (the Lua code uses 8)
-  function spline(ctrl, sub) {
-    const pts = [], n = ctrl.length;
-    for (let i = 0; i < n; i++) {
-      const p0 = ctrl[(i - 1 + n) % n], p1 = ctrl[i], p2 = ctrl[(i + 1) % n], p3 = ctrl[(i + 2) % n];
-      for (let j = 0; j < sub; j++) {
-        const t = j / sub, t2 = t * t, t3 = t2 * t;
-        const cr = (a, b, c, d) => 0.5 * (2 * b + (c - a) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (3 * b - a - 3 * c + d) * t3);
-        pts.push([cr(p0[0], p1[0], p2[0], p3[0]), cr(p0[1], p1[1], p2[1], p3[1])]);
-      }
-    }
-    const S = [0];
-    for (let i = 0; i < pts.length; i++) { const a = pts[i], b = pts[(i + 1) % pts.length]; S.push(S[i] + Math.hypot(b[0] - a[0], b[1] - a[1])); }
-    return { pts, S, len: S[pts.length] };
-  }
-  // point, direction and right-hand normal at arc length s
-  function at(sp, s) {
-    s = ((s % sp.len) + sp.len) % sp.len;
-    let i = 0; while (i < sp.pts.length - 1 && sp.S[i + 1] < s) i++;
-    const a = sp.pts[i], b = sp.pts[(i + 1) % sp.pts.length], seg = sp.S[i + 1] - sp.S[i];
-    const f = seg > 0 ? (s - sp.S[i]) / seg : 0, dx = (b[0] - a[0]) / (seg || 1), dy = (b[1] - a[1]) / (seg || 1);
-    return { x: a[0] + (b[0] - a[0]) * f, y: a[1] + (b[1] - a[1]) * f, nx: -dy, ny: dx };
-  }
-  // the placed entities for a track: start, nodes every ~130 px, pads, crates, hills
-  function placeTrack(def) {
-    const sp = spline(def.ctrl, 20), out = [];
-    const put = (type, x, y) => out.push({ type, x: Math.round(x) - 4, y: Math.round(y) - 4 });
-    const p0 = at(sp, 0); put('start', p0.x, p0.y);
-    for (let s = 90; s < sp.len - 100; s += 130) { const p = at(sp, s); put('node', p.x, p.y); }
-    def.boosts.forEach(([f, o]) => { const p = at(sp, f * sp.len); put('boost', p.x + p.nx * o, p.y + p.ny * o); });
-    def.crates.forEach(f => { const p = at(sp, f * sp.len); [-22, 0, 22].forEach(o => put('crate', p.x + p.nx * o, p.y + p.ny * o)); });
-    def.hills.forEach(([k, f, o]) => { const p = at(sp, f * sp.len); put(k, p.x + p.nx * o, p.y + p.ny * o); });
-    return out;
-  }
-  // same ordering as read_track() in Lua: from the start, always on to the nearest node left
-  function chain(placed) {
-    const start = placed.find(p => p.type === 'start'), nodes = placed.filter(p => p.type === 'node').map(p => [p.x + 4, p.y + 4]);
-    const ctrl = [[start.x + 4, start.y + 4]];
-    let cur = ctrl[0];
-    while (nodes.length) {
-      let bi = 0, bd = Infinity;
-      nodes.forEach((n, i) => { const d = (n[0] - cur[0]) ** 2 + (n[1] - cur[1]) ** 2; if (d < bd) { bd = d; bi = i; } });
-      cur = nodes.splice(bi, 1)[0]; ctrl.push(cur);
-    }
-    return ctrl;
-  }
-  const grassTile = (tx, ty) => { const v = (tx * 31 + ty * 17 + (tx * ty) % 7) % 40; return v === 0 ? 3 : v < 3 ? 4 : 2; };
-  // the road painter, a copy of build_world() in the Lua code (without the hills)
-  function paintTrack(map, placed) {
-    const ctrl = chain(placed), sp = spline(ctrl, 8), RAW = sp.pts, RAWS = sp.S, LEN = sp.len, n = RAW.length;
-    for (let ty = 0; ty < 128; ty++) for (let tx = 0; tx < 256; tx++) map[ty * 256 + tx] = grassTile(tx, ty);
-    const CS = 64, grid = new Map();
-    for (let i = 0; i < n; i++) {
-      const a = RAW[i], b = RAW[(i + 1) % n];
-      for (let gx = Math.floor(Math.min(a[0], b[0]) / CS) - 1; gx <= Math.floor(Math.max(a[0], b[0]) / CS) + 1; gx++)
-        for (let gy = Math.floor(Math.min(a[1], b[1]) / CS) - 1; gy <= Math.floor(Math.max(a[1], b[1]) / CS) + 1; gy++) {
-          const k = gx * 1000 + gy; if (!grid.has(k)) grid.set(k, []); grid.get(k).push(i);
-        }
-    }
-    const near = (x, y) => {
-      const list = grid.get(Math.floor(x / CS) * 1000 + Math.floor(y / CS));
-      if (!list) return [1e9, 0];
-      let best = 1e18, s = 0;
-      for (const i of list) {
-        const a = RAW[i], b = RAW[(i + 1) % n], dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy;
-        let f = l2 > 0 ? ((x - a[0]) * dx + (y - a[1]) * dy) / l2 : 0; f = f < 0 ? 0 : f > 1 ? 1 : f;
-        const ex = x - (a[0] + dx * f), ey = y - (a[1] + dy * f), d = ex * ex + ey * ey;
-        if (d < best) { best = d; s = RAWS[i] + f * (RAWS[i + 1] - RAWS[i]); }
-      }
-      return [Math.sqrt(best), s];
-    };
-    const CL = new Map(), CSV = new Map(), M = ROAD + KERB + 4;
-    for (let i = 0; i < n; i++) {
-      const a = RAW[i], b = RAW[(i + 1) % n];
-      for (let cy = Math.max(0, Math.floor((Math.min(a[1], b[1]) - M) / 8)); cy <= Math.min(128, Math.floor((Math.max(a[1], b[1]) + M) / 8) + 1); cy++)
-        for (let cx = Math.max(0, Math.floor((Math.min(a[0], b[0]) - M) / 8)); cx <= Math.min(256, Math.floor((Math.max(a[0], b[0]) + M) / 8) + 1); cx++) {
-          const k = cy * 257 + cx;
-          if (!CL.has(k)) { const [d, s] = near(cx * 8, cy * 8); CL.set(k, d < ROAD ? 0 : d < ROAD + KERB ? 1 : 2); CSV.set(k, s); }
-        }
-    }
-    const done = new Set();
-    CL.forEach((c, k) => {
-      if (c >= 2) return;
-      const cy = Math.floor(k / 257), cx = k % 257;
-      for (let ty = cy - 1; ty <= cy; ty++) for (let tx = cx - 1; tx <= cx; tx++) {
-        const tk = ty * 256 + tx;
-        if (tx < 0 || ty < 0 || tx >= 256 || ty >= 128 || done.has(tk)) continue;
-        done.add(tk);
-        const k00 = ty * 257 + tx, g = kk => (CL.has(kk) ? CL.get(kk) : 2);
-        const c00 = g(k00), c10 = g(k00 + 1), c01 = g(k00 + 257), c11 = g(k00 + 258);
-        const sv = [k00, k00 + 1, k00 + 257, k00 + 258].find(kk => CSV.has(kk));
-        const s = sv === undefined ? 0 : CSV.get(sv);
-        map[tk] = c00 + c10 + c01 + c11 === 0 ? ((s < 7 || s > LEN - 7) ? 5 : 1) : 7 + (c00 * 27 + c10 * 9 + c01 * 3 + c11) * 2 + (Math.floor(s / 16) % 2);
+  const TRACKS = TRACK_DEFS.map(d => ({
+    name: d.name,
+    track: { pts: d.pts.map(p => p.slice()), road: 44, kerb: 7, laps: 3,
+      items: [].concat(d.boosts.map(([t, o]) => ({ k: 'boost', t, o })), d.crates.map(t => ({ k: 'crate', t, o: 0 })), d.hills.map(([k, t, o]) => ({ k, t, o }))) },
+    raise: d.raise || [],
+  }));
+  // elevation grid for a track (flat, plus any painted mounds)
+  function heights(def) {
+    const T = window.BKTracks, g = T.newHeights();
+    def.raise.forEach(([x, y, h, r]) => {
+      for (let gy = 0; gy < T.HG_H; gy++) for (let gx = 0; gx < T.HG_W; gx++) {
+        const d2 = ((gx * T.HG_CELL - x) ** 2 + (gy * T.HG_CELL - y) ** 2) / (r * r);
+        if (d2 < 9) g[gy * T.HG_W + gx] = Math.max(0, Math.min(255, Math.round(g[gy * T.HG_W + gx] + h * Math.exp(-d2))));
       }
     });
-    placed.filter(p => p.type === 'boost').forEach(p => {
-      const bx = p.x + 4, by = p.y + 4;
-      for (let ty = Math.floor(by / 8) - 2; ty <= Math.floor(by / 8) + 2; ty++) for (let tx = Math.floor(bx / 8) - 2; tx <= Math.floor(bx / 8) + 2; tx++)
-        if (tx >= 0 && ty >= 0 && tx < 256 && ty < 128 && map[ty * 256 + tx] === 1 && (tx * 8 + 4 - bx) ** 2 + (ty * 8 + 4 - by) ** 2 < 14 * 14) map[ty * 256 + tx] = 6;
-    });
+    return g;
   }
-
-  const TRACKS = TRACK_DEFS.map(d => ({ name: d.name, placed: placeTrack(d) }));
-  const luaTracks = 'DEFAULT_TRACKS = {  -- used when the cart has no levels (the studio passes the Map tab levels instead)\n' +
-    TRACKS.map(t => `  {name = "${t.name}", placed = {${t.placed.map(p => `{"${p.type}",${p.x},${p.y}}`).join(',')}}},`).join('\n') + '\n}';
+  const luaVal = v => Array.isArray(v) ? '{' + v.map(luaVal).join(', ') + '}'
+    : typeof v === 'object' ? '{' + Object.keys(v).map(k => `${k} = ${luaVal(v[k])}`).join(', ') + '}'
+    : typeof v === 'string' ? JSON.stringify(v) : String(v);
+  const luaTracks = 'DEFAULT_TRACKS = {  -- used when the cart has no tracks (the studio passes the Track tab levels instead)\n' +
+    TRACKS.map(t => `  {name = ${JSON.stringify(t.name)}, track = ${luaVal(t.track)}, height = "${window.BKTracks.heightHex(heights(t))}"},`).join('\n') + '\n}';
 
   const code = `-- Kart Lab: a 2.5D kart racing demo for BitKit
 -- It's all about the karts. Build one in the garage (body, engine, tyres, paint), pick a track,
@@ -141,13 +58,12 @@
 -- Items: Nitro (boost), Oil Slick (dropped behind you), Bolt (fired straight ahead or back),
 --        Drone (homes in on the kart in front of you, or behind), Shield (blocks one hit).
 --
--- Tracks are levels on the Map tab. Each one needs a "start" entity and "node" entities
--- along the middle of the road: the race heads from the start toward its nearest node,
--- then on to the next nearest, round the loop. "boost" pads, "crate" item boxes and
--- "hill", "bump" and "dip" entities (which raise and lower the ground) are optional.
--- The road, kerbs and hills are built from them when a race starts, so just move them
--- around (or add a level and place new ones) and race. Tile flags: 0 road, 1 kerb,
--- 2 grass, 3 boost pad, 4 start line.
+-- Tracks are made on the Track tab: each is a level with LEVELS[n].track = {pts, road, kerb,
+-- laps, items}. The road is a smooth loop through the points (the first one is the start
+-- line); items are boost pads, crate rows and hills placed round the lap. LEVELS[n].height
+-- is the painted elevation. The road, kerbs and hills are built from them when a race
+-- starts. The road is drawn with the "segment" tiles you paint on the Track tab.
+-- Tile behaviours (sprite flags): road, kerb, grass, boost, start: fget(tile, "boost").
 -- The floor is drawn with floorh() (a floor with hills), and karts, trees and items are
 -- sprites placed with project() and drawn at any size with sspr().
 
@@ -225,14 +141,56 @@ local function sgn(v) return v < 0 and -1 or (v > 0 and 1 or 0) end
 function track_list()
   local list = {}
   for i, L in ipairs(LEVELS or {}) do
-    for _, p in ipairs(L.placed or {}) do
-      if p[1] == "start" then list[#list + 1] = {name = L.name, level = i, placed = L.placed}; break end
+    if L.track and L.track.pts then
+      list[#list + 1] = {name = L.name, level = i, track = L.track, height = L.height}
+    else
+      for _, p in ipairs(L.placed or {}) do       -- older carts: a "start" entity and "node" entities
+        if p[1] == "start" then list[#list + 1] = {name = L.name, level = i, placed = L.placed}; break end
+      end
     end
   end
   if #list == 0 then
-    for _, t in ipairs(DEFAULT_TRACKS) do list[#list + 1] = {name = t.name, placed = t.placed} end
+    for _, t in ipairs(DEFAULT_TRACKS) do list[#list + 1] = {name = t.name, track = t.track, height = t.height} end
   end
   return list
+end
+
+-- a track from the Track tab: the points are the loop, the items are placed once the curve is built
+function spline_track(tk, height)
+  local ctrl = {}
+  for i, p in ipairs(tk.pts) do ctrl[i] = {p[1], p[2]} end
+  if #ctrl < 3 then return nil end
+  return {ctrl = ctrl, items = tk.items or {}, height = height, boosts = {}, crates = {}, hills = {}}
+end
+
+-- point and right-hand normal at distance s round the lap (after build_track)
+function at_s(s)
+  s = s % LEN
+  local lo, hi = 1, #RAW
+  while lo < hi do
+    local m = (lo + hi + 1) // 2
+    if RAWS[m] <= s then lo = m else hi = m - 1 end
+  end
+  local a, b = RAW[lo], RAW[lo % #RAW + 1]
+  local seg = RAWS[lo + 1] - RAWS[lo]
+  local f = seg > 0 and (s - RAWS[lo]) / seg or 0
+  local dx, dy = (b[1] - a[1]) / (seg > 0 and seg or 1), (b[2] - a[2]) / (seg > 0 and seg or 1)
+  return a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f, -dy, dx
+end
+
+HILL_KINDS = {hill = {36, 180}, bump = {14, 44}, dip = {-26, 160}}   -- height, radius (same as the Track tab)
+function place_items(T)
+  for _, it in ipairs(T.items or {}) do
+    local x, y, nx, ny = at_s((it.t or 0) * LEN)
+    local o = it.o or 0
+    if it.k == "boost" then T.boosts[#T.boosts + 1] = {x + nx * o, y + ny * o}
+    elseif it.k == "crate" then
+      for _, d in ipairs({-22, 0, 22}) do T.crates[#T.crates + 1] = {x = x + nx * (o + d), y = y + ny * (o + d), t = 0} end
+    elseif HILL_KINDS[it.k] then
+      local h = HILL_KINDS[it.k]
+      T.hills[#T.hills + 1] = {x + nx * o, y + ny * o, h[1], h[2]}
+    end
+  end
 end
 
 -- turn the placed entities into a loop of control points plus pads, crates and hills
@@ -246,7 +204,7 @@ function read_track(placed)
     elseif k == "boost" then T.boosts[#T.boosts + 1] = {x, y}
     elseif k == "crate" then T.crates[#T.crates + 1] = {x = x, y = y, t = 0}
     elseif k == "hill" then T.hills[#T.hills + 1] = {x, y, 36, 180}
-    elseif k == "bump" then T.hills[#T.hills + 1] = {x, y, 16, 30}
+    elseif k == "bump" then T.hills[#T.hills + 1] = {x, y, 14, 44}
     elseif k == "dip" then T.hills[#T.hills + 1] = {x, y, -26, 160} end
   end
   if not start or #nodes < 3 then return nil end
@@ -321,10 +279,23 @@ end
 function build_world(T, seed)
   local Y = coroutine.yield
   build_track(T.ctrl)
-  -- hills: a smooth bump per hill entity on a base height of 40
+  place_items(T)
+  -- elevation: the painted grid (one height every 16 px, as hex), then a smooth bump per hill
+  local G = nil
+  if T.height and #T.height >= 129 * 65 * 2 then
+    G = {}
+    for i = 0, 129 * 65 - 1 do G[i] = tonumber(T.height:sub(i * 2 + 1, i * 2 + 2), 16) or 40 end
+    Y(0.05)
+  end
   for cy = 0, 128 do
     for cx = 0, 256 do
       local x, y, h = cx * 8, cy * 8, 40
+      if G then
+        local gx, gy = cx // 2, cy // 2
+        local gx2, gy2 = math.min(gx + 1, 128), math.min(gy + 1, 64)
+        local u, v = (cx % 2) * 0.5, (cy % 2) * 0.5
+        h = (G[gy * 129 + gx] * (1 - u) + G[gy * 129 + gx2] * u) * (1 - v) + (G[gy2 * 129 + gx] * (1 - u) + G[gy2 * 129 + gx2] * u) * v
+      end
       for _, hl in ipairs(T.hills) do
         local d2 = ((x - hl[1])^2 + (y - hl[2])^2) / (hl[4] * hl[4])
         if d2 < 9 then h = h + hl[3] * math.exp(-d2) end
@@ -819,6 +790,9 @@ function _init()
   row, mode, gt = 1, "garage", 0
   shake, parts, pop_t = 0, {}, 0
   TREES, CRATES, hazards, shots = {}, {}, {}, {}
+  if KART_QUICK then                   -- "race it" on the Track tab: straight onto that track
+    for i, tr in ipairs(TRACKS) do if tr.level == KART_QUICK then sel.track = i; load_track() end end
+  end
 end
 
 function persist()
@@ -835,8 +809,11 @@ function load_track()
       coroutine.yield(0)
       ents_update()                      -- finishes the level switch
     end
-    local T = read_track(tr.placed)
-    if not T then load_err = tr.name .. " needs a start and 3 or more nodes"; return end
+    local tk = tr.track or {}
+    ROADW, KERBW, LAPS = tk.road or 44, tk.kerb or 7, tk.laps or 3
+    local T
+    if tr.track then T = spline_track(tr.track, tr.height) else T = read_track(tr.placed) end
+    if not T then load_err = tr.name .. " needs 3 or more points"; return end
     build_world(T, sel.track * 7)
   end)
 end
@@ -1201,7 +1178,7 @@ function _draw()
     local w = #s * 32
     shadow_text(s, 160 - w // 2, 80, n > 0 and 27 or 17, 4)
     text("drift: hold L (or B) and steer", 40, 124, 13)
-    text("X: item, hold down to look and fire back", 40, 134, 13)
+    text("X: item (hold down: fire back)", 40, 138, 13)
   elseif mode == "race" and gt < 40 then
     shadow_text("GO!", 112, 80, 17, 4)
   elseif mode == "results" then
@@ -1378,32 +1355,20 @@ end
     const grassPx = (x, y, v) => { const h = hash(x, y, 2 + v); return h < 140 ? 15 : h < 200 ? 17 : 16; };
     const putTile = (n, fn) => { for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) T[n * 64 + y * 8 + x] = fn(x, y); };
 
-    // floor tiles: 1 road, 2-4 grass, 5 start line, 6 boost pad, 7-168 road edges
-    const ROADF = 1, KERBF = 2, GRASSF = 4, BOOSTF = 8, STARTF = 16;
-    putTile(1, roadPx);
-    putTile(2, (x, y) => grassPx(x, y, 0));
-    putTile(3, (x, y) => (x === 2 && y === 3) || (x === 5 && y === 6) ? 27 : (x === 6 && y === 1) ? 13 : grassPx(x, y, 1));
-    putTile(4, (x, y) => (hash(x, y, 9) < 500 ? 15 : 16));
-    putTile(5, (x, y) => (((x >> 2) + (y >> 2)) & 1) ? 13 : 1);
-    putTile(6, (x, y) => ((x + y) & 7) < 3 ? 27 : ((x + y) & 7) < 5 ? 10 : 9);
-    cart.flags[1] = ROADF; cart.flags[2] = cart.flags[3] = cart.flags[4] = GRASSF;
-    cart.flags[5] = ROADF | STARTF; cart.flags[6] = ROADF | BOOSTF;
-    // edge tiles: the classes of the 4 corners (0 road, 1 kerb, 2 grass) are blended across the tile
-    // (marching-squares style), so road edges run diagonally. Tile = 7 + combo * 2 + kerb stripe.
-    for (let combo = 0; combo < 81; combo++) {
-      const c00 = Math.floor(combo / 27), c10 = Math.floor(combo / 9) % 3, c01 = Math.floor(combo / 3) % 3, c11 = combo % 3;
-      for (let stripe = 0; stripe < 2; stripe++) {
-        const id = 7 + combo * 2 + stripe;
-        putTile(id, (x, y) => {
-          const u = (x + 0.5) / 8, v = (y + 0.5) / 8;
-          const val = c00 * (1 - u) * (1 - v) + c10 * u * (1 - v) + c01 * (1 - u) * v + c11 * u * v;
-          const k = val < 0.5 ? 0 : val < 1.5 ? 1 : 2;
-          return k === 0 ? roadPx(x, y) : k === 1 ? (stripe ? 13 : 25) : grassPx(x, y, 0);
-        });
-        const val = (c00 + c10 + c01 + c11) / 4;
-        cart.flags[id] = val < 0.5 ? ROADF : val < 1.5 ? KERBF : GRASSF;
-      }
-    }
+    // road segment tiles (the Track tab paints these): 1 road, 2-4 grass, 5 start line, 6 boost pad,
+    // 169/170 kerb A/B. The road edge tiles 7-168 are built from them.
+    const TT = window.BKTracks.TILE;
+    putTile(TT.ROAD, roadPx);
+    putTile(TT.GRASS, (x, y) => grassPx(x, y, 0));
+    putTile(TT.GRASS2, (x, y) => (x === 2 && y === 3) || (x === 5 && y === 6) ? 27 : (x === 6 && y === 1) ? 13 : grassPx(x, y, 1));
+    putTile(TT.GRASS3, (x, y) => (hash(x, y, 9) < 500 ? 15 : 16));
+    putTile(TT.START, (x, y) => (((x >> 2) + (y >> 2)) & 1) ? 13 : 1);
+    putTile(TT.BOOST, (x, y) => ((x + y) & 7) < 3 ? 27 : ((x + y) & 7) < 5 ? 10 : 9);
+    putTile(TT.KERB_A, (x, y) => (hash(x, y, 5) < 120 ? 24 : 25));
+    putTile(TT.KERB_B, (x, y) => (hash(x, y, 6) < 120 ? 29 : 13));
+    window.BKTracks.genEdges(cart);
+    cart.entities = cart.entities || { types: [], placed: [] };
+    cart.entities.flagNames = window.BKTracks.FLAG_NAMES.slice();
 
     // karts: 3 bodies x 9 angles, 24x24 each, packed 5 per band of 3 tile rows from tile 176
     MODELS.forEach((vox, b) => {
@@ -1483,33 +1448,18 @@ end
       if (x >= 2 && x <= 5 && y >= 2 && y <= 5) return (x === 3 || x === 4) && (y === 3 || y === 4) ? 25 : 31;
       return 0;
     });
-    // map markers (only seen on the Map tab)
-    sprite(500, 8, 8, (x, y) => (Math.abs(x + 0.5 - 4) + Math.abs(y + 0.5 - 4) <= 3.5 ? (Math.abs(x + 0.5 - 4) + Math.abs(y + 0.5 - 4) > 2.5 ? 1 : 27) : 0)); // node
-    sprite(501, 8, 8, (x, y) => (x === 0 ? 1 : y < 5 ? (((x >> 1) + (y >> 1)) & 1 ? 13 : 1) : 0));             // start flag
-    sprite(503, 8, 8, (x, y) => (Math.abs(x - 3.5) <= 3.5 - Math.abs(y - 3.5) * 0.9 ? ((y + x) % 3 ? 27 : 10) : 0)); // boost
-    sprite(504, 8, 8, (x, y) => (Math.abs(x + 0.5 - 4) <= (y + 1) / 2 ? (y === 7 ? 14 : 16) : 0));              // hill
-    sprite(505, 8, 8, (x, y) => (y >= 4 && Math.abs(x + 0.5 - 4) <= (y - 3) ? 8 : 0));                            // bump
-    sprite(506, 8, 8, (x, y) => (Math.abs(x + 0.5 - 4) <= (8 - y) / 2 ? (y === 0 ? 19 : 21) : 0));              // dip
-
-    // entity types for the markers: invisible in the game, they just say where things go
-    const A = (name, frames) => ({ name, frames, speed: 8 });
-    const marker = (name, tile) => ({ name, sw: 1, sh: 1, grav: false, collide: false, left: false, hp: 0, inset: 0, team: 'neutral',
-      damage: 0, hidden: true, player: false, stomp: false, touch_fx: '', hurt: 15, stats: [], anims: [A('idle', [tile])], tree: null });
-    const types = [marker('start', 501), marker('node', 500), marker('boost', 503), marker('crate', 479),
-      marker('hill', 504), marker('bump', 505), marker('dip', 506)];
-
     // one level per track, the road painted the same way the game does it
     cart.levels = TRACKS.map(t => {
-      const map = new Uint16Array(256 * 128);
-      paintTrack(map, t.placed);
-      return { name: t.name, w: 256, h: 128, map, placed: t.placed.map(p => Object.assign({}, p)) };
+      const map = new Uint16Array(256 * 128), track = JSON.parse(JSON.stringify(t.track));
+      window.BKTracks.paint(map, track);
+      return { name: t.name, w: 256, h: 128, map, placed: [], track, height: heights(t) };
     });
     cart.map.set(cart.levels[0].map);
     cart.levels[0].map = cart.map;
-    cart.entities = { effects: [], types, placed: cart.levels[0].placed, cutscenes: [] };
+    cart.entities = Object.assign(cart.entities || {}, { effects: [], types: [], placed: cart.levels[0].placed, cutscenes: [] });
   }
 
-  const demo = { name: 'Kart Lab', code, buildGfx, about: 'A 2.5D kart racer with hills, items and two tracks you can edit on the Map tab.' };
+  const demo = { name: 'Kart Lab', code, buildGfx, about: 'A 2.5D kart racer with hills, items and two tracks you can edit on the Track tab.' };
   window.BK_DEMOS = window.BK_DEMOS || [];
   window.BK_DEMOS.push(demo);
 })();

@@ -39,8 +39,9 @@ The game runtime and browser studio for **PocketBit**, a DIY ESP32-S3 handheld.
 | Tab | What it does |
 |---|---|
 | **Code** | Lua editor with syntax highlighting, error-line markers and a console |
-| **Sprites** | 512 tiles of 8×8 pixels; pen, fill, pick, flip, rotate and flags; a 256-colour palette editor |
+| **Sprites** | 512 tiles of 8×8 pixels; pen, fill, pick, flip, rotate and tile behaviours (named flags: tick `solid`, `water`… and ask `fget(tile, "water")`); a 256-colour palette editor |
 | **Map** | 256×128 tile map with Tiles and Entities layers. A ghost of your last 3 play routes shows where the player actually goes |
+| **Track** | For racing games (shows up when a cart has tracks): spline road editor, items along the lap, elevation brush and the road's segment tiles |
 | **Entities** | Sprites, animations, team, HP, stats, effects (heal, slow…) and a behavior tree with presets |
 | **Cutscenes** | Dialog with portraits, camera pans, walks, fades and screen shake. Play them when a level starts, from a trigger zone on the map, or from code |
 | **Controller** | Live view of every button, remapping, threshold and deadzone |
@@ -120,9 +121,11 @@ A kart racer drawn SNES-style: the map becomes a floor seen in perspective, with
 - **Drift** with L (or B while on the throttle). The sparks go white, amber, then violet; let go for a boost. Full lock into a drift turns just a bit tighter than normal steering, and steering against it opens the line up.
 - **Items** from crates, used with X: Nitro, Oil Slick, Bolt, Drone (chases the kart in front) and Shield. Rivals use them too. Hold down to look back, and hold down while using a Bolt or Drone to fire it backwards.
 - **Hills and jumps**: the ground rises and falls, and fast karts leave the ground over crests.
-- **Tracks are levels on the Map tab.** Each has a `start` entity and `node` entities along the middle of the road, plus optional `boost` pads, `crate`s and `hill`/`bump`/`dip` entities. Move them around or add a level with **+ level**, and the road and hills are rebuilt when the race starts. Two tracks are included: Pinewood Loop and Quarry Hills.
+- **Tracks are made on the Track tab.** The road is a smooth loop: drag its points, double-click the road to add one, and place boost pads, crate rows, hills, bumps and dips along it. Paint elevation with the height brush (raise, lower, flatten, smooth), set the road width, kerbs and laps, and press **▶ race it**. The road is built from a few segment tiles you paint right there (road, kerb A/B, grass, start line, boost pad); the edge tiles where they meet are generated. Two tracks are included: Pinewood Loop and Quarry Hills.
 
 <img src="docs/media/kart-lab-race.png" width="400" alt="Kart Lab race"> <img src="docs/media/kart-lab-garage.png" width="400" alt="Kart Lab garage">
+
+<img src="docs/media/kart-track-editor.png" width="640" alt="Track tab: the spline road, items and elevation">
 
 ## 🕹️ Controls
 

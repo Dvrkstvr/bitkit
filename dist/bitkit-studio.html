@@ -676,6 +676,30 @@ body.bit-only .left { border-right: 0; max-width: 820px; margin: 0 auto; width: 
 .ai-compose textarea { flex: 1; min-width: 0; resize: vertical; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font: inherit; }
 .ai-compose textarea:focus { outline: none; border-color: #8e4fb0; }
 
+/* track editor */
+.trk-layout { display: flex; gap: 12px; flex: 1; min-height: 0; align-items: flex-start; }
+.trk-view-wrap { flex: 1; min-width: 320px; display: flex; flex-direction: column; gap: 4px; }
+#trkView { border: 1px solid var(--line); background: #0c0c14; outline: none; }
+#trkView:focus-visible { border-color: var(--accent2); }
+.trk-side { width: 300px; flex: none; display: flex; flex-direction: column; gap: 8px; }
+.trk-side h4 { margin: 6px 0 0; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--dim); }
+.trk-side .prop-grid input[type=range] { width: 110px; vertical-align: middle; }
+.trk-sel { padding: 6px 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; min-height: 2.6em; font-size: 12px; }
+.trk-sel button, .trk-sel select { margin-top: 4px; }
+.trk-parts { display: flex; flex-wrap: wrap; gap: 4px; }
+.trk-part { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 3px; font-size: 10px; width: 68px; }
+.trk-part.active { border-color: var(--accent); }
+.trk-part canvas { image-rendering: pixelated; }
+.trk-paint { display: flex; gap: 8px; align-items: flex-start; }
+#trkSeg { width: 176px; height: 176px; }
+#trkPal { width: 112px; height: 112px; cursor: pointer; border: 1px solid var(--line); }
+.trk-col { display: inline-block; width: 12px; height: 12px; border: 1px solid var(--line); vertical-align: middle; }
+.trk-preview { width: 192px; height: 96px; border: 1px solid var(--line); }
+.flags { flex-wrap: wrap; }
+.flags .flag-name { width: 40px; font-size: 10px; padding: 1px 2px; background: var(--panel2); border: 1px solid var(--line); border-radius: 4px; color: var(--text); text-align: center; }
+.flags .flag-name::placeholder { color: var(--dim); }
+@media (max-width: 900px) { .trk-layout { flex-direction: column; } .trk-side { width: 100%; } }
+
 </style>
 </head>
 <body>
@@ -731,6 +755,7 @@ body.bit-only .left { border-right: 0; max-width: 820px; margin: 0 auto; width: 
       <button data-tab="code" class="active">Code</button>
       <button data-tab="sprites">Sprites</button>
       <button data-tab="map">Map</button>
+      <button data-tab="track" id="tabTrackBtn" hidden title="Edit race tracks">Track</button>
       <button data-tab="entities">Entities</button>
       <button data-tab="cutscenes">Cutscenes</button>
       <button data-tab="input">Controller</button>
@@ -760,7 +785,7 @@ body.bit-only .left { border-right: 0; max-width: 820px; margin: 0 auto; width: 
             <button id="sprUndo" title="Ctrl+Z">Undo</button>
           </div>
           <div class="info"><b id="sprInfo">Tile 0</b> <code id="sprHint"></code></div>
-          <div class="flags"><span class="dim">Flags</span> <span id="sprFlags"></span></div>
+          <div class="flags"><span class="dim" title="Tick what this tile does. Name a behaviour and your code can ask fget(tile, &quot;name&quot;).">Behaviours</span> <span id="sprFlags"></span></div>
           <div class="pal-head">
             <span class="dim">Colour</span> <span id="colInfo"></span>
             <input type="color" id="colEdit" title="Change this palette colour">
@@ -807,6 +832,80 @@ body.bit-only .left { border-right: 0; max-width: 820px; margin: 0 auto; width: 
         <div class="map-picker">
           <div class="dim small">Tile: <b id="mapTileInfo">1</b></div>
           <div class="sheet-scroll small-sheet"><canvas id="mapSheet" width="256" height="512" class="pix"></canvas></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-track" class="tab">
+      <div id="trkNone" class="dim" hidden>
+        <p>This cart has no race tracks. A track is a level with a road drawn as a smooth loop: you drag its points around,
+        place boost pads, item crates and hills along it, and paint its elevation.</p>
+        <p><button id="trkMakeTrack">Make the current level a track</button></p>
+      </div>
+      <div id="trkMain">
+        <div class="toolbar">
+          <select id="trkLevel" title="Track to edit"></select>
+          <button id="trkNew" class="tiny" title="Add a new track (a new level)">+ track</button>
+          <button id="trkDup" class="tiny" title="Copy this track">duplicate</button>
+          <button id="trkDel" class="tiny danger" title="Delete this track and its level">delete</button>
+          <button id="trkPlay" class="tiny" title="Run the game and race this track straight away">▶ race it</button>
+          <span class="sep"></span>
+          <button data-ttool="move" class="ttool active" title="Drag points and items. Double-click the road to add a point. Drag empty space to pan.">Move</button>
+          <button data-ttool="point" class="ttool" title="Click to add a point to the nearest stretch of road">+ Point</button>
+          <button data-ttool="erase" class="ttool" title="Click a point or item to delete it (right click does this with any tool)">Erase</button>
+          <span class="sep"></span>
+          <button data-ttool="boost" class="ttool" title="Place a boost pad on the road">Boost pad</button>
+          <button data-ttool="crate" class="ttool" title="Place a row of 3 item crates">Crates</button>
+          <button data-ttool="hill" class="ttool" title="A big smooth hill">Hill</button>
+          <button data-ttool="bump" class="ttool" title="A sharp bump: fast karts jump off it">Bump</button>
+          <button data-ttool="dip" class="ttool" title="A hollow">Dip</button>
+          <span class="sep"></span>
+          <button data-ttool="raise" class="ttool" title="Paint the ground higher">Raise</button>
+          <button data-ttool="lower" class="ttool" title="Paint the ground lower">Lower</button>
+          <button data-ttool="flat" class="ttool" title="Level the ground to the height where you start the stroke">Flatten</button>
+          <button data-ttool="smooth" class="ttool" title="Smooth out bumps">Smooth</button>
+          <span class="grow"></span>
+          <span id="trkPos" class="dim small"></span>
+        </div>
+        <div class="trk-layout">
+          <div class="trk-view-wrap">
+            <canvas id="trkView" width="800" height="400" tabindex="0"></canvas>
+            <div class="dim small"><span id="trkLen"></span>. The red point (S) is the start line and the arrows show which way the race goes.
+              Drag points to shape the road, double-click the road to add one, right click deletes. Scroll to zoom, drag empty space (or Shift+drag) to pan.
+              <button id="trkFit" class="tiny">fit</button></div>
+          </div>
+          <div class="trk-side">
+            <div id="trkEmpty" class="dim" hidden>No track picked.</div>
+            <div id="trkBody">
+              <h4>Track</h4>
+              <div class="prop-grid">
+                <span>Name</span><span><input id="trkName" spellcheck="false"></span>
+                <span>Laps</span><span><input id="trkLaps" type="number" min="1" max="9"></span>
+                <span>Road width</span><span><input id="trkRoad" type="range" min="20" max="72"> <b id="trkRoadV"></b> px</span>
+                <span>Kerb width</span><span><input id="trkKerb" type="range" min="0" max="16"> <b id="trkKerbV"></b> px</span>
+              </div>
+              <button id="trkReverse" class="tiny">Race the other way</button>
+              <div id="trkSel" class="trk-sel"></div>
+              <div id="trkBrushBox" hidden>
+                <h4>Height brush</h4>
+                <div class="prop-grid"><span>Size</span><span><input id="trkBrush" type="range" min="24" max="320" value="72"> <b id="trkBrushV">72</b> px</span></div>
+              </div>
+              <label class="chk"><input type="checkbox" id="trkShowH" checked> show elevation</label>
+              <button id="trkFlatAll" class="tiny">flatten everything</button>
+              <h4>Road look</h4>
+              <div class="dim small">Paint these few tiles: the road, the kerbs and the grass. The edges (where they meet at any angle) are built from them.</div>
+              <div id="trkParts" class="trk-parts"></div>
+              <div class="trk-paint">
+                <canvas id="trkSeg" width="176" height="176" class="pix checker"></canvas>
+                <div>
+                  <canvas id="trkPal" width="192" height="192" class="pix"></canvas>
+                  <div class="dim small">Colour <span id="trkCol" class="trk-col"></span> · right click picks</div>
+                </div>
+              </div>
+              <div class="dim small" id="trkPartAbout"></div>
+              <canvas id="trkPreview" width="192" height="96" class="pix trk-preview" title="A straight bit of road"></canvas>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -12780,32 +12879,49 @@ end
 
 </script>
 <script>
-/* Demo cart "Kart Lab": a 2.5D kart racer. Original art and code. MIT License.
-   Tracks are levels: a start line and track points ("node" entities), plus boost pads, item crates
-   and hills, all placed on the Map tab. The game builds the road and the hills from them when a race
-   starts (this file pre-paints the built-in tracks the same way so the Map tab shows them).
-   The karts are tiny voxel models rendered here from 9 angles (the other 7 are mirror images). */
-(function () {
-  const ROAD = 44, KERB = 7;               // half width of the road, kerb width (pixels); same as ROADW/KERBW in Lua
-  // Built-in tracks. ctrl: rough centre line (world pixels, map is 2048 x 1024), smoothed and turned into
-  // evenly spaced nodes. Pads, crate rows and hills are placed by [fraction of the lap, side offset].
-  const TRACK_DEFS = [
-    { name: 'Pinewood Loop',
-      ctrl: [[360, 190], [900, 150], [1400, 170], [1760, 290], [1880, 520], [1730, 730], [1430, 690],
-        [1180, 540], [950, 600], [990, 820], [790, 930], [440, 880], [230, 700], [200, 420]],
-      boosts: [[0.13, -18], [0.36, 16], [0.6, 0], [0.85, -16]],
-      crates: [0.22, 0.52, 0.78],
-      hills: [['hill', 0.27, 0], ['dip', 0.62, 0], ['bump', 0.73, 0], ['hill', 0.93, 120]] },
-    { name: 'Quarry Hills',
-      ctrl: [[260, 560], [300, 230], [700, 140], [1100, 240], [1250, 470], [1500, 330], [1800, 260],
-        [1910, 560], [1700, 870], [1220, 900], [920, 700], [620, 880], [330, 830]],
-      boosts: [[0.1, 0], [0.47, -16], [0.8, 14]],
-      crates: [0.18, 0.4, 0.66, 0.9],
-      hills: [['hill', 0.14, 0], ['bump', 0.22, 0], ['dip', 0.33, 0], ['hill', 0.45, 60], ['bump', 0.56, 0],
-        ['hill', 0.7, -40], ['bump', 0.77, 0], ['dip', 0.87, 0], ['bump', 0.96, 0]] },
+/* Track editor: race tracks drawn as a smooth loop (a spline) over a level's map.
+   A level becomes a track when it has level.track = {pts, road, kerb, laps, items}:
+     pts    control points [[x, y], ...] in world pixels (the map is 2048 x 1024). The loop runs through
+            them in order and closes back to the first one, which is the start line.
+     road   half the width of the road, kerb: width of the kerb on each side (pixels)
+     laps   laps per race
+     items  [{k, t, o}]: k is boost, crate (a row of 3), hill, bump or dip; t is how far round the lap
+            (0..1 from the start line), o the offset to the right of the centre line (pixels).
+   Elevation is painted with the height brush: level.height is a grid of 129 x 65 heights (0..255, one
+   every 16 pixels, flat ground is 40); hill, bump and dip items add smooth bumps on top of it.
+   The road is painted onto the map from "segment" tiles: road, kerb A/B, grass, start line and boost pad.
+   You paint those few tiles and the 162 edge tiles (road meeting kerb meeting grass at any angle) are
+   built from them. The game reads LEVELS[n].track and builds the same road when a race starts.
+   MIT License. */
+window.BKTracks = (function () {
+  'use strict';
+  const MAPW = 256, MAPH = 128, WW = MAPW * 8, WH = MAPH * 8;
+  // tiles a track cart uses
+  const TILE = { ROAD: 1, GRASS: 2, GRASS2: 3, GRASS3: 4, START: 5, BOOST: 6, EDGE: 7, EDGE_END: 168, KERB_A: 169, KERB_B: 170 };
+  const FLAG = { ROAD: 1, KERB: 2, GRASS: 4, BOOST: 8, START: 16 };
+  const FLAG_NAMES = ['road', 'kerb', 'grass', 'boost', 'start', '', '', ''];
+  const PARTS = [
+    { tile: TILE.ROAD, name: 'Road', about: 'The middle of the track. Repeats along the whole road.' },
+    { tile: TILE.KERB_A, name: 'Kerb A', about: 'The sides. Kerb A and B take turns every 16 pixels, for stripes.' },
+    { tile: TILE.KERB_B, name: 'Kerb B', about: 'The sides. Kerb A and B take turns every 16 pixels, for stripes.' },
+    { tile: TILE.GRASS, name: 'Grass', about: 'Everything off the road.' },
+    { tile: TILE.GRASS2, name: 'Grass 2', about: 'Sprinkled now and then off the road.' },
+    { tile: TILE.GRASS3, name: 'Grass 3', about: 'Sprinkled now and then off the road.' },
+    { tile: TILE.START, name: 'Start line', about: 'Painted across the road at the first point.' },
+    { tile: TILE.BOOST, name: 'Boost pad', about: 'Painted where you put a boost pad.' },
   ];
+  const HG_W = 129, HG_H = 65, HG_CELL = 16, HG_FLAT = 40;   // height grid
+  const ITEM_HILLS = { hill: [36, 180], bump: [14, 44], dip: [-26, 160] };   // same as the game: height, radius
+  const ITEM_KINDS = {
+    boost: { name: 'Boost pad', color: '#ffd23f', side: true },
+    crate: { name: 'Item crates', color: '#c98a4b', side: true },
+    hill: { name: 'Hill', color: '#8ad35a', r: 180 },
+    bump: { name: 'Bump (jump)', color: '#e0e070', r: 44 },
+    dip: { name: 'Dip', color: '#3a86d0', r: 160 },
+  };
 
-  // Catmull-Rom through closed control points, 'sub' samples per segment (the Lua code uses 8)
+  // ------------------------------------------------------------ geometry
+  // Catmull-Rom through the closed loop of points, 'sub' samples per segment (the game uses 8)
   function spline(ctrl, sub) {
     const pts = [], n = ctrl.length;
     for (let i = 0; i < n; i++) {
@@ -12818,44 +12934,66 @@ end
     }
     const S = [0];
     for (let i = 0; i < pts.length; i++) { const a = pts[i], b = pts[(i + 1) % pts.length]; S.push(S[i] + Math.hypot(b[0] - a[0], b[1] - a[1])); }
-    return { pts, S, len: S[pts.length] };
+    return { pts, S, len: S[pts.length], sub };
   }
   // point, direction and right-hand normal at arc length s
   function at(sp, s) {
     s = ((s % sp.len) + sp.len) % sp.len;
-    let i = 0; while (i < sp.pts.length - 1 && sp.S[i + 1] < s) i++;
-    const a = sp.pts[i], b = sp.pts[(i + 1) % sp.pts.length], seg = sp.S[i + 1] - sp.S[i];
-    const f = seg > 0 ? (s - sp.S[i]) / seg : 0, dx = (b[0] - a[0]) / (seg || 1), dy = (b[1] - a[1]) / (seg || 1);
-    return { x: a[0] + (b[0] - a[0]) * f, y: a[1] + (b[1] - a[1]) * f, nx: -dy, ny: dx };
+    let lo = 0, hi = sp.pts.length - 1;
+    while (lo < hi) { const m = (lo + hi + 1) >> 1; if (sp.S[m] <= s) lo = m; else hi = m - 1; }
+    const a = sp.pts[lo], b = sp.pts[(lo + 1) % sp.pts.length], seg = sp.S[lo + 1] - sp.S[lo];
+    const f = seg > 0 ? (s - sp.S[lo]) / seg : 0, dx = (b[0] - a[0]) / (seg || 1), dy = (b[1] - a[1]) / (seg || 1);
+    return { x: a[0] + (b[0] - a[0]) * f, y: a[1] + (b[1] - a[1]) * f, dx, dy, nx: -dy, ny: dx };
   }
-  // the placed entities for a track: start, nodes every ~130 px, pads, crates, hills
-  function placeTrack(def) {
-    const sp = spline(def.ctrl, 20), out = [];
-    const put = (type, x, y) => out.push({ type, x: Math.round(x) - 4, y: Math.round(y) - 4 });
-    const p0 = at(sp, 0); put('start', p0.x, p0.y);
-    for (let s = 90; s < sp.len - 100; s += 130) { const p = at(sp, s); put('node', p.x, p.y); }
-    def.boosts.forEach(([f, o]) => { const p = at(sp, f * sp.len); put('boost', p.x + p.nx * o, p.y + p.ny * o); });
-    def.crates.forEach(f => { const p = at(sp, f * sp.len); [-22, 0, 22].forEach(o => put('crate', p.x + p.nx * o, p.y + p.ny * o)); });
-    def.hills.forEach(([k, f, o]) => { const p = at(sp, f * sp.len); put(k, p.x + p.nx * o, p.y + p.ny * o); });
-    return out;
-  }
-  // same ordering as read_track() in Lua: from the start, always on to the nearest node left
-  function chain(placed) {
-    const start = placed.find(p => p.type === 'start'), nodes = placed.filter(p => p.type === 'node').map(p => [p.x + 4, p.y + 4]);
-    const ctrl = [[start.x + 4, start.y + 4]];
-    let cur = ctrl[0];
-    while (nodes.length) {
-      let bi = 0, bd = Infinity;
-      nodes.forEach((n, i) => { const d = (n[0] - cur[0]) ** 2 + (n[1] - cur[1]) ** 2; if (d < bd) { bd = d; bi = i; } });
-      cur = nodes.splice(bi, 1)[0]; ctrl.push(cur);
+  // closest point of the curve to (x, y): arc length, distance, signed side offset, segment index
+  function nearest(sp, x, y) {
+    let best = 1e18, bs = 0, bo = 0, bi = 0;
+    const n = sp.pts.length;
+    for (let i = 0; i < n; i++) {
+      const a = sp.pts[i], b = sp.pts[(i + 1) % n], dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy;
+      let f = l2 > 0 ? ((x - a[0]) * dx + (y - a[1]) * dy) / l2 : 0; f = f < 0 ? 0 : f > 1 ? 1 : f;
+      const ex = x - (a[0] + dx * f), ey = y - (a[1] + dy * f), d = ex * ex + ey * ey;
+      if (d < best) {
+        best = d; bs = sp.S[i] + f * (sp.S[i + 1] - sp.S[i]); bi = i;
+        const l = Math.sqrt(l2) || 1; bo = (ex * -dy + ey * dx) / l;
+      }
     }
-    return ctrl;
+    return { s: bs, d: Math.sqrt(best), o: bo, seg: Math.floor(bi / sp.sub) };
   }
-  const grassTile = (tx, ty) => { const v = (tx * 31 + ty * 17 + (tx * ty) % 7) % 40; return v === 0 ? 3 : v < 3 ? 4 : 2; };
-  // the road painter, a copy of build_world() in the Lua code (without the hills)
-  function paintTrack(map, placed) {
-    const ctrl = chain(placed), sp = spline(ctrl, 8), RAW = sp.pts, RAWS = sp.S, LEN = sp.len, n = RAW.length;
-    for (let ty = 0; ty < 128; ty++) for (let tx = 0; tx < 256; tx++) map[ty * 256 + tx] = grassTile(tx, ty);
+  const itemPos = (sp, it) => { const p = at(sp, it.t * sp.len); return { x: p.x + p.nx * it.o, y: p.y + p.ny * it.o }; };
+
+  // ------------------------------------------------------------ tiles
+  // the edge tiles: the classes of a tile's 4 corners (0 road, 1 kerb, 2 grass) are blended across it
+  // (marching squares), so road edges run at any angle. Tile = 7 + combo * 2 + kerb stripe (A or B).
+  function genEdges(cart) {
+    const T = cart.tiles, src = n => T.subarray(n * 64, n * 64 + 64);
+    const road = src(TILE.ROAD), grass = src(TILE.GRASS), kerb = [src(TILE.KERB_A), src(TILE.KERB_B)];
+    for (let combo = 0; combo < 81; combo++) {
+      const c00 = Math.floor(combo / 27), c10 = Math.floor(combo / 9) % 3, c01 = Math.floor(combo / 3) % 3, c11 = combo % 3;
+      for (let stripe = 0; stripe < 2; stripe++) {
+        const id = TILE.EDGE + combo * 2 + stripe;
+        for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
+          const u = (x + 0.5) / 8, v = (y + 0.5) / 8;
+          const val = c00 * (1 - u) * (1 - v) + c10 * u * (1 - v) + c01 * (1 - u) * v + c11 * u * v;
+          const k = val < 0.5 ? 0 : val < 1.5 ? 1 : 2, i = y * 8 + x;
+          T[id * 64 + i] = k === 0 ? road[i] : k === 1 ? kerb[stripe][i] : grass[i];
+        }
+        const val = (c00 + c10 + c01 + c11) / 4;
+        cart.flags[id] = val < 0.5 ? FLAG.ROAD : val < 1.5 ? FLAG.KERB : FLAG.GRASS;
+      }
+    }
+    cart.flags[TILE.ROAD] = FLAG.ROAD; cart.flags[TILE.START] = FLAG.ROAD | FLAG.START; cart.flags[TILE.BOOST] = FLAG.ROAD | FLAG.BOOST;
+    cart.flags[TILE.GRASS] = cart.flags[TILE.GRASS2] = cart.flags[TILE.GRASS3] = FLAG.GRASS;
+    cart.flags[TILE.KERB_A] = cart.flags[TILE.KERB_B] = FLAG.KERB;
+  }
+  const grassTile = (tx, ty) => { const v = (tx * 31 + ty * 17 + (tx * ty) % 7) % 40; return v === 0 ? TILE.GRASS2 : v < 3 ? TILE.GRASS3 : TILE.GRASS; };
+
+  // paint the road of a track onto a map (the same way build_world() in the game does it)
+  function paint(map, tk) {
+    for (let ty = 0; ty < MAPH; ty++) for (let tx = 0; tx < MAPW; tx++) if (map[ty * MAPW + tx] <= TILE.EDGE_END) map[ty * MAPW + tx] = grassTile(tx, ty);
+    if (!tk || !tk.pts || tk.pts.length < 3) return;
+    const ROAD = tk.road || 44, KERB = tk.kerb || 7;
+    const sp = spline(tk.pts, 8), RAW = sp.pts, RAWS = sp.S, LEN = sp.len, n = RAW.length;
     const CS = 64, grid = new Map();
     for (let i = 0; i < n; i++) {
       const a = RAW[i], b = RAW[(i + 1) % n];
@@ -12879,8 +13017,8 @@ end
     const CL = new Map(), CSV = new Map(), M = ROAD + KERB + 4;
     for (let i = 0; i < n; i++) {
       const a = RAW[i], b = RAW[(i + 1) % n];
-      for (let cy = Math.max(0, Math.floor((Math.min(a[1], b[1]) - M) / 8)); cy <= Math.min(128, Math.floor((Math.max(a[1], b[1]) + M) / 8) + 1); cy++)
-        for (let cx = Math.max(0, Math.floor((Math.min(a[0], b[0]) - M) / 8)); cx <= Math.min(256, Math.floor((Math.max(a[0], b[0]) + M) / 8) + 1); cx++) {
+      for (let cy = Math.max(0, Math.floor((Math.min(a[1], b[1]) - M) / 8)); cy <= Math.min(MAPH, Math.floor((Math.max(a[1], b[1]) + M) / 8) + 1); cy++)
+        for (let cx = Math.max(0, Math.floor((Math.min(a[0], b[0]) - M) / 8)); cx <= Math.min(MAPW, Math.floor((Math.max(a[0], b[0]) + M) / 8) + 1); cx++) {
           const k = cy * 257 + cx;
           if (!CL.has(k)) { const [d, s] = near(cx * 8, cy * 8); CL.set(k, d < ROAD ? 0 : d < ROAD + KERB ? 1 : 2); CSV.set(k, s); }
         }
@@ -12890,26 +13028,544 @@ end
       if (c >= 2) return;
       const cy = Math.floor(k / 257), cx = k % 257;
       for (let ty = cy - 1; ty <= cy; ty++) for (let tx = cx - 1; tx <= cx; tx++) {
-        const tk = ty * 256 + tx;
-        if (tx < 0 || ty < 0 || tx >= 256 || ty >= 128 || done.has(tk)) continue;
-        done.add(tk);
+        const tk2 = ty * MAPW + tx;
+        if (tx < 0 || ty < 0 || tx >= MAPW || ty >= MAPH || done.has(tk2)) continue;
+        done.add(tk2);
         const k00 = ty * 257 + tx, g = kk => (CL.has(kk) ? CL.get(kk) : 2);
         const c00 = g(k00), c10 = g(k00 + 1), c01 = g(k00 + 257), c11 = g(k00 + 258);
         const sv = [k00, k00 + 1, k00 + 257, k00 + 258].find(kk => CSV.has(kk));
         const s = sv === undefined ? 0 : CSV.get(sv);
-        map[tk] = c00 + c10 + c01 + c11 === 0 ? ((s < 7 || s > LEN - 7) ? 5 : 1) : 7 + (c00 * 27 + c10 * 9 + c01 * 3 + c11) * 2 + (Math.floor(s / 16) % 2);
+        map[tk2] = c00 + c10 + c01 + c11 === 0 ? ((s < 7 || s > LEN - 7) ? TILE.START : TILE.ROAD)
+          : TILE.EDGE + (c00 * 27 + c10 * 9 + c01 * 3 + c11) * 2 + (Math.floor(s / 16) % 2);
       }
     });
-    placed.filter(p => p.type === 'boost').forEach(p => {
-      const bx = p.x + 4, by = p.y + 4;
+    (tk.items || []).filter(it => it.k === 'boost').forEach(it => {
+      const p = itemPos(sp, it), bx = Math.floor(p.x), by = Math.floor(p.y);
       for (let ty = Math.floor(by / 8) - 2; ty <= Math.floor(by / 8) + 2; ty++) for (let tx = Math.floor(bx / 8) - 2; tx <= Math.floor(bx / 8) + 2; tx++)
-        if (tx >= 0 && ty >= 0 && tx < 256 && ty < 128 && map[ty * 256 + tx] === 1 && (tx * 8 + 4 - bx) ** 2 + (ty * 8 + 4 - by) ** 2 < 14 * 14) map[ty * 256 + tx] = 6;
+        if (tx >= 0 && ty >= 0 && tx < MAPW && ty < MAPH && map[ty * MAPW + tx] === TILE.ROAD && (tx * 8 + 4 - bx) ** 2 + (ty * 8 + 4 - by) ** 2 < 14 * 14) map[ty * MAPW + tx] = TILE.BOOST;
     });
   }
 
-  const TRACKS = TRACK_DEFS.map(d => ({ name: d.name, placed: placeTrack(d) }));
-  const luaTracks = 'DEFAULT_TRACKS = {  -- used when the cart has no levels (the studio passes the Map tab levels instead)\n' +
-    TRACKS.map(t => `  {name = "${t.name}", placed = {${t.placed.map(p => `{"${p.type}",${p.x},${p.y}}`).join(',')}}},`).join('\n') + '\n}';
+  // ------------------------------------------------------------ heights
+  const newHeights = () => new Uint8Array(HG_W * HG_H).fill(HG_FLAT);
+  // ground height at a world point: the painted grid (blended) plus the hill items
+  function heightFn(lv) {
+    const g = lv.height, tk = lv.track, sp = tk && tk.pts && tk.pts.length >= 3 ? spline(tk.pts, 8) : null;
+    const hills = sp ? (tk.items || []).filter(it => ITEM_HILLS[it.k]).map(it => { const p = itemPos(sp, it); return [p.x, p.y, ITEM_HILLS[it.k][0], ITEM_HILLS[it.k][1]]; }) : [];
+    return (x, y) => {
+      let h = HG_FLAT;
+      if (g) {
+        const fx = Math.max(0, Math.min(HG_W - 1.001, x / HG_CELL)), fy = Math.max(0, Math.min(HG_H - 1.001, y / HG_CELL));
+        const ix = Math.floor(fx), iy = Math.floor(fy), u = fx - ix, v = fy - iy, i = iy * HG_W + ix;
+        h = (g[i] * (1 - u) + g[i + 1] * u) * (1 - v) + (g[i + HG_W] * (1 - u) + g[i + HG_W + 1] * u) * v;
+      }
+      for (const hl of hills) { const d2 = ((x - hl[0]) ** 2 + (y - hl[1]) ** 2) / (hl[3] * hl[3]); if (d2 < 9) h += hl[2] * Math.exp(-d2); }
+      return h;
+    };
+  }
+  // the grid as a hex string for the game (2 characters per height)
+  function heightHex(g) { let s = ''; for (let i = 0; i < g.length; i++) s += (g[i] < 16 ? '0' : '') + g[i].toString(16); return s; }
+
+  function defaultTrack() {   // an oval with a kink, in the middle of the map
+    const pts = [];
+    for (let i = 0; i < 10; i++) {
+      const a = i / 10 * Math.PI * 2 - Math.PI / 2;
+      pts.push([Math.round(1024 + Math.cos(a) * 700), Math.round(512 + Math.sin(a) * 330 * (i === 5 ? 0.55 : 1))]);
+    }
+    return { pts, road: 44, kerb: 7, laps: 3, items: [{ k: 'boost', t: 0.25, o: 0 }, { k: 'crate', t: 0.5, o: 0 }, { k: 'bump', t: 0.75, o: 0 }] };
+  }
+  const uses = cart => !!(cart.levels && cart.levels.some(L => L.track));
+  // before a run: rebuild the edge tiles from the segment tiles (they may have been painted on the Sprites tab)
+  function beforeRun(cart) { if (uses(cart)) { genEdges(cart); return true; } return false; }
+
+  // ------------------------------------------------------------ editor
+  function init(ctx) {
+    const { cart, $, toast, escapeHtml } = ctx;
+    const view = $('trkView'), vctx = view.getContext('2d');
+    const bg = document.createElement('canvas'); bg.width = WW; bg.height = WH;
+    const bgctx = bg.getContext('2d');
+    const st = { lvl: -1, tool: 'move', sel: null, drag: null, part: 0, col: 13, s: 0.4, ox: 0, oy: 0, fitted: false, bgDirty: true, sp: null, br: 72, showH: true, hDirty: true };
+    const hc = document.createElement('canvas'); hc.width = HG_W; hc.height = HG_H;
+    const hctx = hc.getContext('2d');
+    const HTOOLS = { raise: 1, lower: 1, flat: 1, smooth: 1 };
+    const tracks = () => cart.levels.map((L, i) => (L.track ? i : -1)).filter(i => i >= 0);
+    const L = () => cart.levels[st.lvl];
+    const tk = () => (L() ? L().track : null);
+
+    // -- background: the level map drawn with the cart's tiles
+    function renderBg() {
+      const lv = L(); if (!lv) return;
+      const pal = cart.palette, tiles = cart.tiles, cache = new Map();
+      const img = bgctx.createImageData(WW, WH), d32 = new Uint32Array(img.data.buffer);
+      const tileRGBA = n => {
+        let c = cache.get(n); if (c) return c;
+        c = new Uint32Array(64);
+        for (let i = 0; i < 64; i++) { const p = tiles[n * 64 + i]; c[i] = p ? (255 << 24) | (pal[p * 3 + 2] << 16) | (pal[p * 3 + 1] << 8) | pal[p * 3] : 0xff000000; }
+        cache.set(n, c); return c;
+      };
+      for (let ty = 0; ty < MAPH; ty++) for (let tx = 0; tx < MAPW; tx++) {
+        const c = tileRGBA(lv.map[ty * MAPW + tx] & 511);
+        for (let y = 0; y < 8; y++) d32.set(c.subarray(y * 8, y * 8 + 8), (ty * 8 + y) * WW + tx * 8);
+      }
+      bgctx.putImageData(img, 0, 0);
+      st.bgDirty = false; st.hDirty = true;
+    }
+    // elevation as a relief map: brighter is higher, lit from the top left
+    function renderHeights() {
+      const hf = heightFn(L()), img = hctx.createImageData(HG_W, HG_H), d = img.data;
+      const H = new Float32Array(HG_W * HG_H);
+      for (let y = 0; y < HG_H; y++) for (let x = 0; x < HG_W; x++) H[y * HG_W + x] = hf(x * HG_CELL, y * HG_CELL);
+      for (let y = 0; y < HG_H; y++) for (let x = 0; x < HG_W; x++) {
+        const i = y * HG_W + x, h = H[i];
+        const gx = H[y * HG_W + Math.min(HG_W - 1, x + 1)] - H[y * HG_W + Math.max(0, x - 1)];
+        const gy = H[Math.min(HG_H - 1, y + 1) * HG_W + x] - H[Math.max(0, y - 1) * HG_W + x];
+        const shade = Math.max(-1, Math.min(1, -(gx + gy) / 24));
+        const e = Math.max(-1, Math.min(1, (h - HG_FLAT) / 60));
+        const r = e > 0 ? 255 : 60, g2 = e > 0 ? 220 : 120, b = e > 0 ? 140 : 255;
+        const a = Math.min(200, Math.abs(e) * 150 + Math.abs(shade) * 120);
+        const lit = shade > 0 ? 255 : 0;
+        d[i * 4] = Math.abs(e) > Math.abs(shade) ? r : lit; d[i * 4 + 1] = Math.abs(e) > Math.abs(shade) ? g2 : lit;
+        d[i * 4 + 2] = Math.abs(e) > Math.abs(shade) ? b : lit; d[i * 4 + 3] = a;
+      }
+      hctx.putImageData(img, 0, 0);
+      st.hDirty = false;
+    }
+    function brush(wx, wy) {
+      const lv = L(); if (!lv.height) lv.height = newHeights();
+      const g = lv.height, r = st.br / HG_CELL, cx = wx / HG_CELL, cy = wy / HG_CELL, tool = st.tool;
+      const src = tool === 'smooth' ? g.slice() : null;
+      for (let y = Math.max(0, Math.floor(cy - r)); y <= Math.min(HG_H - 1, Math.ceil(cy + r)); y++)
+        for (let x = Math.max(0, Math.floor(cx - r)); x <= Math.min(HG_W - 1, Math.ceil(cx + r)); x++) {
+          const d = Math.hypot(x - cx, y - cy) / r; if (d >= 1) continue;
+          const w = (1 - d * d) * (1 - d * d), i = y * HG_W + x;
+          let v = g[i];
+          if (tool === 'raise') v += 3 * w;
+          else if (tool === 'lower') v -= 3 * w;
+          else if (tool === 'flat') v += (st.flatTo - v) * 0.35 * w;
+          else {
+            let sum = 0, n = 0;
+            for (let yy = Math.max(0, y - 1); yy <= Math.min(HG_H - 1, y + 1); yy++) for (let xx = Math.max(0, x - 1); xx <= Math.min(HG_W - 1, x + 1); xx++) { sum += src[yy * HG_W + xx]; n++; }
+            v += (sum / n - v) * 0.5 * w;
+          }
+          g[i] = Math.max(0, Math.min(255, Math.round(v + (Math.random() - 0.5) * 0.01)));
+        }
+      st.hDirty = true;
+    }
+
+    // re-paint the road onto the level (after an edit), at most every 120 ms while dragging
+    let repaintT = 0, repaintQ = null;
+    function repaint(now) {
+      const t = tk(); if (!t) return;
+      if (!now) { clearTimeout(repaintQ); repaintQ = setTimeout(() => repaint(true), 120); return; }
+      paint(L().map, t); st.bgDirty = true; ctx.mapChanged(); draw();
+    }
+    function edited() { st.sp = null; st.hDirty = true; ctx.changed(); repaint(); draw(); }
+    const spl = () => (st.sp || (st.sp = spline(tk().pts, 8)));
+
+    // -- view transform
+    const toScr = (x, y) => [(x - st.ox) * st.s, (y - st.oy) * st.s];
+    const toWorld = (sx, sy) => [sx / st.s + st.ox, sy / st.s + st.oy];
+    function fit() {
+      const w = view.clientWidth || view.width, h = view.clientHeight || view.height;
+      st.s = Math.min(w / WW, h / WH); st.ox = -(w / st.s - WW) / 2; st.oy = -(h / st.s - WH) / 2;
+    }
+    function resize() {
+      const r = view.parentElement.getBoundingClientRect();
+      const w = Math.max(320, Math.floor(r.width)), h = Math.max(240, Math.min(Math.floor(w / 2), window.innerHeight - 260));
+      if (view.width !== w || view.height !== h) { view.width = w; view.height = h; view.style.width = w + 'px'; view.style.height = h + 'px'; if (!st.fitted) { fit(); st.fitted = true; } }
+    }
+
+    function draw() {
+      resize();
+      const g = vctx; g.setTransform(1, 0, 0, 1, 0, 0);
+      g.fillStyle = '#0c0c14'; g.fillRect(0, 0, view.width, view.height);
+      const t = tk();
+      if (!t) return;
+      if (st.bgDirty) renderBg();
+      g.imageSmoothingEnabled = false;
+      g.drawImage(bg, -st.ox * st.s, -st.oy * st.s, WW * st.s, WH * st.s);
+      if (st.showH || HTOOLS[st.tool]) {
+        if (st.hDirty) renderHeights();
+        g.imageSmoothingEnabled = true;
+        g.drawImage(hc, (-HG_CELL / 2 - st.ox) * st.s, (-HG_CELL / 2 - st.oy) * st.s, HG_W * HG_CELL * st.s, HG_H * HG_CELL * st.s);
+        g.imageSmoothingEnabled = false;
+      }
+      const sp = spl();
+      // centre line
+      g.strokeStyle = 'rgba(255,255,255,0.55)'; g.lineWidth = 1.5; g.setLineDash([6, 6]); g.beginPath();
+      sp.pts.forEach((p, i) => { const [x, y] = toScr(p[0], p[1]); if (i) g.lineTo(x, y); else g.moveTo(x, y); });
+      g.closePath(); g.stroke(); g.setLineDash([]);
+      // direction arrows along the lap
+      g.fillStyle = 'rgba(255,255,255,0.8)';
+      for (let k = 1; k < 12; k++) {
+        const p = at(sp, sp.len * k / 12), [x, y] = toScr(p.x, p.y), a = Math.atan2(p.dy, p.dx);
+        g.save(); g.translate(x, y); g.rotate(a); g.beginPath(); g.moveTo(6, 0); g.lineTo(-4, -4); g.lineTo(-4, 4); g.fill(); g.restore();
+      }
+      // items
+      (t.items || []).forEach((it, i) => {
+        const K = ITEM_KINDS[it.k] || ITEM_KINDS.boost, p = itemPos(sp, it), [x, y] = toScr(p.x, p.y);
+        const selected = st.sel && st.sel.item === i;
+        if (K.r) { g.strokeStyle = K.color; g.globalAlpha = 0.6; g.beginPath(); g.arc(x, y, K.r * st.s, 0, Math.PI * 2); g.stroke(); g.globalAlpha = 1; }
+        g.fillStyle = K.color; g.strokeStyle = selected ? '#fff' : '#000'; g.lineWidth = selected ? 2 : 1;
+        if (it.k === 'crate') {
+          const q = at(sp, it.t * sp.len);
+          [-22, 0, 22].forEach(o => { const [cx, cy] = toScr(q.x + q.nx * (it.o + o), q.y + q.ny * (it.o + o)); g.fillRect(cx - 4, cy - 4, 8, 8); g.strokeRect(cx - 4, cy - 4, 8, 8); });
+        } else if (it.k === 'boost') {
+          g.beginPath(); g.moveTo(x, y - 7); g.lineTo(x + 6, y + 5); g.lineTo(x - 6, y + 5); g.closePath(); g.fill(); g.stroke();
+        } else { g.beginPath(); g.arc(x, y, 6, 0, Math.PI * 2); g.fill(); g.stroke(); }
+      });
+      // control points
+      t.pts.forEach((p, i) => {
+        const [x, y] = toScr(p[0], p[1]), selected = st.sel && st.sel.pt === i;
+        g.fillStyle = i === 0 ? '#ff6b5e' : '#ffffff'; g.strokeStyle = selected ? '#ffd23f' : '#000'; g.lineWidth = selected ? 3 : 1.5;
+        g.beginPath(); g.arc(x, y, i === 0 ? 8 : 6, 0, Math.PI * 2); g.fill(); g.stroke();
+        g.fillStyle = '#000'; g.font = 'bold 9px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.fillText(i === 0 ? 'S' : String(i), x, y + 0.5);
+      });
+      // start line
+      const s0 = at(sp, 0), w = (t.road || 44) + (t.kerb || 7);
+      const [ax, ay] = toScr(s0.x + s0.nx * w, s0.y + s0.ny * w), [bx, by] = toScr(s0.x - s0.nx * w, s0.y - s0.ny * w);
+      g.strokeStyle = '#ff6b5e'; g.lineWidth = 2; g.beginPath(); g.moveTo(ax, ay); g.lineTo(bx, by); g.stroke();
+      if (HTOOLS[st.tool] && st.mouse) {
+        const [mx, my] = toScr(st.mouse[0], st.mouse[1]);
+        g.strokeStyle = '#fff'; g.lineWidth = 1; g.beginPath(); g.arc(mx, my, st.br * st.s, 0, Math.PI * 2); g.stroke();
+      }
+      $('trkLen').textContent = `${t.pts.length} points, ${Math.round(sp.len)} px per lap`;
+    }
+
+    // -- picking
+    function hitPoint(sx, sy) {
+      const t = tk(); let best = -1, bd = 12 * 12;
+      t.pts.forEach((p, i) => { const [x, y] = toScr(p[0], p[1]), d = (x - sx) ** 2 + (y - sy) ** 2; if (d < bd) { bd = d; best = i; } });
+      return best;
+    }
+    function hitItem(sx, sy) {
+      const t = tk(), sp = spl(); let best = -1, bd = 10 * 10;
+      (t.items || []).forEach((it, i) => { const p = itemPos(sp, it), [x, y] = toScr(p.x, p.y), d = (x - sx) ** 2 + (y - sy) ** 2; if (d < bd) { bd = d; best = i; } });
+      return best;
+    }
+    const clampW = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+    function itemFrom(k, wx, wy) {
+      const t = tk(), sp = spl(), nr = nearest(sp, wx, wy), K = ITEM_KINDS[k];
+      const lim = K.side ? Math.max(0, (t.road || 44) - (k === 'crate' ? 30 : 10)) : 400;
+      return { k, t: Math.round(nr.s / sp.len * 1000) / 1000, o: Math.round(clampW(nr.o, -lim, lim)) };
+    }
+    const evPos = e => { const r = view.getBoundingClientRect(); return [(e.clientX - r.left) * view.width / r.width, (e.clientY - r.top) * view.height / r.height]; };
+
+    view.addEventListener('contextmenu', e => e.preventDefault());
+    view.addEventListener('mousedown', e => {
+      const t = tk(); if (!t) return;
+      view.focus();
+      const [sx, sy] = evPos(e), [wx, wy] = toWorld(sx, sy);
+      if (e.button === 1 || (e.button === 0 && e.shiftKey)) { st.drag = { pan: true, sx, sy, ox: st.ox, oy: st.oy }; return; }
+      const pi = hitPoint(sx, sy), ii = pi < 0 ? hitItem(sx, sy) : -1;
+      if (e.button === 2 || st.tool === 'erase') {          // right click (or the eraser) deletes
+        if (pi >= 0) delPoint(pi); else if (ii >= 0) { t.items.splice(ii, 1); st.sel = null; edited(); }
+        return;
+      }
+      if (st.tool === 'move' || st.tool === 'point') {
+        if (pi >= 0) { st.sel = { pt: pi }; st.drag = { pt: pi }; draw(); updateSel(); return; }
+        if (ii >= 0 && st.tool === 'move') { st.sel = { item: ii }; st.drag = { item: ii }; draw(); updateSel(); return; }
+        if (st.tool === 'point' || e.detail === 2) { addPoint(wx, wy); return; }
+        st.sel = null; updateSel();
+        st.drag = { pan: true, sx, sy, ox: st.ox, oy: st.oy }; draw(); return;
+      }
+      if (HTOOLS[st.tool]) {
+        st.flatTo = heightFn(L())(wx, wy);
+        st.drag = { height: true, moved: true }; brush(wx, wy); draw(); return;
+      }
+      if (ITEM_KINDS[st.tool]) {
+        t.items = t.items || [];
+        t.items.push(itemFrom(st.tool, wx, wy));
+        st.sel = { item: t.items.length - 1 }; st.drag = { item: t.items.length - 1 };
+        edited(); updateSel();
+      }
+    });
+    window.addEventListener('mousemove', e => {
+      const t = tk();
+      if (!t || !ctx.isActive()) return;
+      const [sx, sy] = evPos(e), [wx, wy] = toWorld(sx, sy);
+      if (e.target === view) {
+        $('trkPos').textContent = `x ${Math.round(wx)}  y ${Math.round(wy)}  height ${Math.round(heightFn(L())(wx, wy))}`;
+        st.mouse = [wx, wy];
+        if (HTOOLS[st.tool] && !st.drag) draw();
+      }
+      const d = st.drag; if (!d) return;
+      if (d.height) { brush(wx, wy); draw(); return; }
+      if (d.pan) { st.ox = d.ox - (sx - d.sx) / st.s; st.oy = d.oy - (sy - d.sy) / st.s; draw(); return; }
+      if (d.pt !== undefined) {
+        t.pts[d.pt] = [Math.round(clampW(wx, 8, WW - 8)), Math.round(clampW(wy, 8, WH - 8))];
+        d.moved = true; st.sp = null; st.hDirty = true; repaint(); draw();
+      } else if (d.item !== undefined) {
+        const it = t.items[d.item], n = itemFrom(it.k, wx, wy);
+        it.t = n.t; it.o = n.o; d.moved = true; st.hDirty = true; repaint(); draw();
+      }
+    });
+    window.addEventListener('mouseup', () => {
+      if (st.drag && st.drag.height) ctx.changed();
+      else if (st.drag && st.drag.moved) { st.sp = null; ctx.changed(); repaint(true); }
+      st.drag = null;
+    });
+    view.addEventListener('wheel', e => {
+      if (!tk()) return;
+      e.preventDefault();
+      const [sx, sy] = evPos(e), [wx, wy] = toWorld(sx, sy);
+      st.s = clampW(st.s * (e.deltaY < 0 ? 1.2 : 1 / 1.2), 0.15, 4);
+      st.ox = wx - sx / st.s; st.oy = wy - sy / st.s; draw();
+    }, { passive: false });
+    view.addEventListener('keydown', e => {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && st.sel) {
+        e.preventDefault();
+        if (st.sel.pt !== undefined) delPoint(st.sel.pt);
+        else { tk().items.splice(st.sel.item, 1); st.sel = null; edited(); updateSel(); }
+      }
+    });
+
+    function addPoint(wx, wy) {
+      const t = tk(), sp = spl(), nr = nearest(sp, wx, wy);
+      // insert into the stretch of road nearest the click (after its first point)
+      remapItems(() => { t.pts.splice(nr.seg + 1, 0, [Math.round(wx), Math.round(wy)]); });
+      st.sel = { pt: nr.seg + 1 }; st.drag = { pt: nr.seg + 1 };
+      edited(); updateSel();
+    }
+    function delPoint(i) {
+      const t = tk();
+      if (t.pts.length <= 4) { toast('A track needs at least 4 points'); return; }
+      remapItems(() => t.pts.splice(i, 1));
+      st.sel = null; edited(); updateSel();
+    }
+    // keep items where they are on the map when the curve changes shape
+    function remapItems(change) {
+      const t = tk(), before = spl(), pos = (t.items || []).map(it => itemPos(before, it));
+      change(); st.sp = null;
+      const sp = spl();
+      (t.items || []).forEach((it, i) => { const n = itemFrom(it.k, pos[i].x, pos[i].y); it.t = n.t; it.o = n.o; });
+      void sp;
+    }
+
+    // -- side panel
+    function updateSel() {
+      const box = $('trkSel'), t = tk();
+      if (!t || !st.sel) { box.innerHTML = '<span class="dim">Click a point or item to select it.</span>'; return; }
+      if (st.sel.pt !== undefined) {
+        const i = st.sel.pt;
+        box.innerHTML = `<b>${i === 0 ? 'Start point' : 'Point ' + i}</b> <span class="dim">(${t.pts[i][0]}, ${t.pts[i][1]})</span><br>` +
+          (i ? '<button id="trkMakeStart" class="tiny">Start here</button> ' : '') + '<button id="trkDelPt" class="tiny danger">Delete</button>';
+        if (i) $('trkMakeStart').onclick = () => {
+          remapItems(() => { t.pts = t.pts.slice(i).concat(t.pts.slice(0, i)); L().track.pts = t.pts; });
+          st.sel = { pt: 0 }; edited(); updateSel();
+        };
+        $('trkDelPt').onclick = () => delPoint(i);
+      } else {
+        const it = t.items[st.sel.item]; if (!it) { st.sel = null; updateSel(); return; }
+        box.innerHTML = `<b>${escapeHtml(ITEM_KINDS[it.k].name)}</b> <span class="dim">${Math.round(it.t * 100)}% round the lap, ${it.o} px ${it.o < 0 ? 'left' : 'right'}</span><br>` +
+          `<select id="trkItemKind">${Object.keys(ITEM_KINDS).map(k => `<option value="${k}"${k === it.k ? ' selected' : ''}>${ITEM_KINDS[k].name}</option>`).join('')}</select> <button id="trkDelItem" class="tiny danger">Delete</button>`;
+        $('trkItemKind').onchange = e => { it.k = e.target.value; const p = itemPos(spl(), it), n = itemFrom(it.k, p.x, p.y); it.o = n.o; edited(); updateSel(); };
+        $('trkDelItem').onclick = () => { t.items.splice(st.sel.item, 1); st.sel = null; edited(); updateSel(); };
+      }
+    }
+    function setTool(t) {
+      st.tool = t;
+      document.querySelectorAll('#tab-track .ttool').forEach(b => b.classList.toggle('active', b.dataset.ttool === t));
+      view.style.cursor = t === 'move' ? 'default' : HTOOLS[t] ? 'none' : 'crosshair';
+      $('trkBrushBox').hidden = !HTOOLS[t];
+      if (ctx.isActive()) draw();
+    }
+    document.querySelectorAll('#tab-track .ttool').forEach(b => b.onclick = () => setTool(b.dataset.ttool));
+
+    function refreshList() {
+      const list = tracks();
+      if (!list.includes(st.lvl)) st.lvl = list.length ? list[0] : -1;
+      $('trkLevel').innerHTML = list.map(i => `<option value="${i}"${i === st.lvl ? ' selected' : ''}>${escapeHtml(cart.levels[i].name)}</option>`).join('');
+      const t = tk();
+      $('trkEmpty').hidden = !!t; $('trkBody').hidden = !t;
+      if (!t) return;
+      $('trkName').value = L().name;
+      $('trkLaps').value = t.laps || 3; $('trkRoad').value = t.road || 44; $('trkKerb').value = t.kerb || 7;
+      $('trkRoadV').textContent = (t.road || 44) * 2; $('trkKerbV').textContent = t.kerb || 7;
+    }
+    $('trkLevel').onchange = e => { st.lvl = +e.target.value; st.sel = null; st.sp = null; st.bgDirty = true; st.hDirty = true; refreshList(); updateSel(); draw(); };
+    $('trkName').onchange = e => { L().name = e.target.value.trim() || L().name; ctx.changed(); ctx.levelsChanged(); refreshList(); };
+    $('trkLaps').onchange = e => { tk().laps = clampW(Math.round(+e.target.value) || 3, 1, 9); ctx.changed(); refreshList(); };
+    $('trkRoad').oninput = e => { tk().road = +e.target.value; $('trkRoadV').textContent = tk().road * 2; ctx.changed(); repaint(); };
+    $('trkKerb').oninput = e => { tk().kerb = +e.target.value; $('trkKerbV').textContent = tk().kerb; ctx.changed(); repaint(); };
+    $('trkReverse').onclick = () => {
+      const t = tk(); if (!t) return;
+      remapItems(() => { t.pts = [t.pts[0]].concat(t.pts.slice(1).reverse()); });
+      (t.items || []).forEach(it => { if (ITEM_KINDS[it.k].side) it.o = Math.round(it.o); });
+      st.sel = null; edited(); updateSel(); toast('The race now runs the other way');
+    };
+    $('trkBrush').oninput = e => { st.br = +e.target.value; $('trkBrushV').textContent = st.br; };
+    $('trkShowH').onchange = e => { st.showH = e.target.checked; draw(); };
+    $('trkFlatAll').onclick = async () => {
+      if (!tk() || !L().height) return;
+      if (!await ctx.ask('Flatten the whole map?', 'Painted elevation is removed. Hill, bump and dip pieces stay.', 'Flatten')) return;
+      delete L().height; st.hDirty = true; ctx.changed(); draw();
+    };
+    $('trkFit').onclick = () => { fit(); draw(); };
+    $('trkNew').onclick = () => {
+      ctx.syncLevel();
+      const n = tracks().length + 1;
+      const lv = { name: `Track ${n}`, w: MAPW, h: MAPH, map: new Uint16Array(MAPW * MAPH), placed: [], track: defaultTrack() };
+      paint(lv.map, lv.track);
+      cart.levels.push(lv); st.lvl = cart.levels.length - 1; st.sel = null; st.sp = null; st.bgDirty = true;
+      ctx.changed(); ctx.levelsChanged(); refreshList(); updateSel(); draw();
+      toast(`Added ${lv.name}. Drag the points to shape it.`);
+    };
+    $('trkDup').onclick = () => {
+      if (!tk()) return;
+      ctx.syncLevel();
+      const src = L(), lv = { name: src.name + ' copy', w: src.w, h: src.h, map: src.map.slice(), placed: src.placed.map(p => Object.assign({}, p)), track: JSON.parse(JSON.stringify(src.track)), height: src.height ? src.height.slice() : undefined };
+      cart.levels.splice(st.lvl + 1, 0, lv);
+      if (cart.level > st.lvl) ctx.bindLevel(cart.level + 1);
+      st.lvl++; st.sp = null; st.bgDirty = true; ctx.changed(); ctx.levelsChanged(); refreshList(); draw();
+    };
+    $('trkDel').onclick = async () => {
+      if (!tk()) return;
+      if (cart.levels.length < 2) { toast('A cart needs at least one level'); return; }
+      if (!await ctx.ask(`Delete "${L().name}"?`, 'The track and its level are removed.', 'Delete')) return;
+      ctx.syncLevel();
+      const i = st.lvl;
+      cart.levels.splice(i, 1);
+      ctx.bindLevel(cart.level > i ? cart.level - 1 : Math.min(cart.level, cart.levels.length - 1));
+      st.lvl = -1; st.sp = null; st.bgDirty = true; ctx.changed(); ctx.levelsChanged(); refreshList(); updateSel(); draw();
+    };
+    $('trkPlay').onclick = () => { if (tk()) ctx.run(st.lvl, `KART_QUICK = ${st.lvl + 1}\n`); };
+    $('trkMakeTrack').onclick = () => {
+      ctx.syncLevel();
+      const lv = cart.levels[cart.level];
+      lv.track = defaultTrack(); paint(lv.map, lv.track); genEdges(cart); ctx.gfxChanged();
+      st.lvl = cart.level; st.sp = null; st.bgDirty = true; ctx.changed(); ctx.mapChanged(); refreshList(); updateSel(); render();
+    };
+
+    // -- segment painter: the few tiles the road is made of
+    const segC = $('trkSeg'), segX = segC.getContext('2d'), palC = $('trkPal'), palX = palC.getContext('2d'), partsEl = $('trkParts');
+    const PX = 22;
+    function rgb(i) { const p = cart.palette; return `rgb(${p[i * 3]},${p[i * 3 + 1]},${p[i * 3 + 2]})`; }
+    function drawTile(g, n, x0, y0, z) {
+      for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
+        const c = cart.tiles[n * 64 + y * 8 + x];
+        g.fillStyle = c ? rgb(c) : '#000'; g.fillRect(x0 + x * z, y0 + y * z, z, z);
+      }
+    }
+    function drawParts() {
+      partsEl.innerHTML = '';
+      PARTS.forEach((p, i) => {
+        const b = document.createElement('button');
+        b.className = 'trk-part' + (i === st.part ? ' active' : ''); b.title = p.about;
+        const c = document.createElement('canvas'); c.width = c.height = 32; c.className = 'pix';
+        drawTile(c.getContext('2d'), p.tile, 0, 0, 4);
+        b.appendChild(c); b.appendChild(document.createTextNode(p.name));
+        b.onclick = () => { st.part = i; drawParts(); drawSeg(); };
+        partsEl.appendChild(b);
+      });
+      $('trkPartAbout').textContent = PARTS[st.part].about;
+    }
+    function drawSeg() {
+      segX.fillStyle = '#000'; segX.fillRect(0, 0, segC.width, segC.height);
+      drawTile(segX, PARTS[st.part].tile, 0, 0, PX);
+      segX.strokeStyle = 'rgba(255,255,255,0.08)';
+      for (let i = 1; i < 8; i++) { segX.beginPath(); segX.moveTo(i * PX + 0.5, 0); segX.lineTo(i * PX + 0.5, 8 * PX); segX.moveTo(0, i * PX + 0.5); segX.lineTo(8 * PX, i * PX + 0.5); segX.stroke(); }
+      // a little road cross-section preview: grass | kerb | road | road | kerb | grass, 2 rows
+      const pv = $('trkPreview').getContext('2d'), z = 3;
+      const row = [TILE.GRASS, TILE.KERB_A, TILE.ROAD, TILE.ROAD, TILE.ROAD, TILE.ROAD, TILE.KERB_A, TILE.GRASS];
+      for (let r = 0; r < 4; r++) row.forEach((n, i) => drawTile(pv, (n === TILE.KERB_A && r % 2) ? TILE.KERB_B : n, i * 8 * z, r * 8 * z, z));
+      drawPal();
+    }
+    function drawPal() {
+      const z = 12;
+      for (let i = 0; i < 256; i++) { palX.fillStyle = i ? rgb(i) : '#000'; palX.fillRect((i % 16) * z, Math.floor(i / 16) * z, z, z); }
+      palX.strokeStyle = '#fff'; palX.lineWidth = 2; palX.strokeRect((st.col % 16) * z + 1, Math.floor(st.col / 16) * z + 1, z - 2, z - 2);
+      $('trkCol').style.background = rgb(st.col);
+    }
+    palC.addEventListener('mousedown', e => {
+      const r = palC.getBoundingClientRect(), z = r.width / 16;
+      st.col = Math.floor((e.clientY - r.top) / z) * 16 + Math.floor((e.clientX - r.left) / z); drawPal();
+    });
+    let painting = false;
+    function segPaint(e) {
+      const r = segC.getBoundingClientRect(), x = Math.floor((e.clientX - r.left) / r.width * 8), y = Math.floor((e.clientY - r.top) / r.height * 8);
+      if (x < 0 || y < 0 || x > 7 || y > 7) return;
+      const i = PARTS[st.part].tile * 64 + y * 8 + x;
+      if (e.button === 2 || e.altKey) { st.col = cart.tiles[i]; drawPal(); return; }
+      if (cart.tiles[i] === st.col) return;
+      cart.tiles[i] = st.col; drawSeg();
+      segDirty = true;
+    }
+    let segDirty = false;
+    segC.addEventListener('contextmenu', e => e.preventDefault());
+    segC.addEventListener('mousedown', e => { painting = e.button === 0 && !e.altKey; segPaint(e); });
+    segC.addEventListener('mousemove', e => { if (painting) segPaint(e); });
+    window.addEventListener('mouseup', () => {
+      painting = false;
+      if (segDirty) { segDirty = false; genEdges(cart); ctx.gfxChanged(); drawParts(); st.bgDirty = true; draw(); }
+    });
+
+    function render() {
+      $('trkNone').hidden = uses(cart);
+      $('trkMain').hidden = !uses(cart);
+      if (!uses(cart)) return;
+      refreshList(); updateSel(); drawParts(); drawSeg();
+      st.bgDirty = true; st.hDirty = true; st.sp = null;
+      requestAnimationFrame(draw);
+    }
+    window.addEventListener('resize', () => { if (ctx.isActive()) draw(); });
+    setTool('move');
+    return { render, refreshGfx() { st.bgDirty = true; if (ctx.isActive()) { drawParts(); drawSeg(); draw(); } } };
+  }
+
+  return { init, spline, at, nearest, paint, genEdges, defaultTrack, uses, beforeRun, heightHex, heightFn, newHeights, HG_W, HG_H, HG_CELL, TILE, FLAG, FLAG_NAMES, PARTS, ITEM_KINDS };
+})();
+
+</script>
+<script>
+/* Demo cart "Kart Lab": a 2.5D kart racer. Original art and code. MIT License.
+   Tracks are levels edited on the Track tab (see tracks.js): a smooth loop through control points, with
+   boost pads, item crates, hills and painted elevation. The game builds the road and the hills from them
+   when a race starts (this file pre-paints the built-in tracks the same way so the Map tab shows them).
+   The road is made from a few "segment" tiles (road, kerbs, grass, start line, boost pad).
+   The karts are tiny voxel models rendered here from 9 angles (the other 7 are mirror images). */
+(function () {
+  // Built-in tracks: control points of the loop (world pixels, the map is 2048 x 1024; the first point is
+  // the start line), plus items placed by [fraction of the lap, offset to the right of the centre line].
+  const TRACK_DEFS = [
+    { name: 'Pinewood Loop',
+      pts: [[360, 190], [900, 150], [1400, 170], [1760, 290], [1880, 520], [1730, 730], [1430, 690],
+        [1180, 540], [950, 600], [990, 820], [790, 930], [440, 880], [230, 700], [200, 420]],
+      boosts: [[0.13, -18], [0.36, 16], [0.6, 0], [0.85, -16]],
+      crates: [0.22, 0.52, 0.78],
+      hills: [['hill', 0.27, 0], ['dip', 0.62, 0], ['bump', 0.73, 0], ['hill', 0.93, 120]] },
+    { name: 'Quarry Hills',
+      pts: [[260, 560], [300, 230], [700, 140], [1100, 240], [1250, 470], [1500, 330], [1800, 260],
+        [1910, 560], [1700, 870], [1220, 900], [920, 700], [620, 880], [330, 830]],
+      boosts: [[0.1, 0], [0.47, -16], [0.8, 14]],
+      crates: [0.18, 0.4, 0.66, 0.9],
+      hills: [['hill', 0.14, 0], ['bump', 0.22, 0], ['dip', 0.33, 0], ['hill', 0.45, 60], ['bump', 0.56, 0],
+        ['hill', 0.7, -40], ['bump', 0.77, 0], ['dip', 0.87, 0], ['bump', 0.96, 0]],
+      raise: [[1500, 120, 60, 260], [250, 950, 40, 220]] },   // painted elevation: [x, y, height, radius]
+  ];
+  const TRACKS = TRACK_DEFS.map(d => ({
+    name: d.name,
+    track: { pts: d.pts.map(p => p.slice()), road: 44, kerb: 7, laps: 3,
+      items: [].concat(d.boosts.map(([t, o]) => ({ k: 'boost', t, o })), d.crates.map(t => ({ k: 'crate', t, o: 0 })), d.hills.map(([k, t, o]) => ({ k, t, o }))) },
+    raise: d.raise || [],
+  }));
+  // elevation grid for a track (flat, plus any painted mounds)
+  function heights(def) {
+    const T = window.BKTracks, g = T.newHeights();
+    def.raise.forEach(([x, y, h, r]) => {
+      for (let gy = 0; gy < T.HG_H; gy++) for (let gx = 0; gx < T.HG_W; gx++) {
+        const d2 = ((gx * T.HG_CELL - x) ** 2 + (gy * T.HG_CELL - y) ** 2) / (r * r);
+        if (d2 < 9) g[gy * T.HG_W + gx] = Math.max(0, Math.min(255, Math.round(g[gy * T.HG_W + gx] + h * Math.exp(-d2))));
+      }
+    });
+    return g;
+  }
+  const luaVal = v => Array.isArray(v) ? '{' + v.map(luaVal).join(', ') + '}'
+    : typeof v === 'object' ? '{' + Object.keys(v).map(k => `${k} = ${luaVal(v[k])}`).join(', ') + '}'
+    : typeof v === 'string' ? JSON.stringify(v) : String(v);
+  const luaTracks = 'DEFAULT_TRACKS = {  -- used when the cart has no tracks (the studio passes the Track tab levels instead)\n' +
+    TRACKS.map(t => `  {name = ${JSON.stringify(t.name)}, track = ${luaVal(t.track)}, height = "${window.BKTracks.heightHex(heights(t))}"},`).join('\n') + '\n}';
 
   const code = `-- Kart Lab: a 2.5D kart racing demo for BitKit
 -- It's all about the karts. Build one in the garage (body, engine, tyres, paint), pick a track,
@@ -12923,13 +13579,12 @@ end
 -- Items: Nitro (boost), Oil Slick (dropped behind you), Bolt (fired straight ahead or back),
 --        Drone (homes in on the kart in front of you, or behind), Shield (blocks one hit).
 --
--- Tracks are levels on the Map tab. Each one needs a "start" entity and "node" entities
--- along the middle of the road: the race heads from the start toward its nearest node,
--- then on to the next nearest, round the loop. "boost" pads, "crate" item boxes and
--- "hill", "bump" and "dip" entities (which raise and lower the ground) are optional.
--- The road, kerbs and hills are built from them when a race starts, so just move them
--- around (or add a level and place new ones) and race. Tile flags: 0 road, 1 kerb,
--- 2 grass, 3 boost pad, 4 start line.
+-- Tracks are made on the Track tab: each is a level with LEVELS[n].track = {pts, road, kerb,
+-- laps, items}. The road is a smooth loop through the points (the first one is the start
+-- line); items are boost pads, crate rows and hills placed round the lap. LEVELS[n].height
+-- is the painted elevation. The road, kerbs and hills are built from them when a race
+-- starts. The road is drawn with the "segment" tiles you paint on the Track tab.
+-- Tile behaviours (sprite flags): road, kerb, grass, boost, start: fget(tile, "boost").
 -- The floor is drawn with floorh() (a floor with hills), and karts, trees and items are
 -- sprites placed with project() and drawn at any size with sspr().
 
@@ -13007,14 +13662,56 @@ local function sgn(v) return v < 0 and -1 or (v > 0 and 1 or 0) end
 function track_list()
   local list = {}
   for i, L in ipairs(LEVELS or {}) do
-    for _, p in ipairs(L.placed or {}) do
-      if p[1] == "start" then list[#list + 1] = {name = L.name, level = i, placed = L.placed}; break end
+    if L.track and L.track.pts then
+      list[#list + 1] = {name = L.name, level = i, track = L.track, height = L.height}
+    else
+      for _, p in ipairs(L.placed or {}) do       -- older carts: a "start" entity and "node" entities
+        if p[1] == "start" then list[#list + 1] = {name = L.name, level = i, placed = L.placed}; break end
+      end
     end
   end
   if #list == 0 then
-    for _, t in ipairs(DEFAULT_TRACKS) do list[#list + 1] = {name = t.name, placed = t.placed} end
+    for _, t in ipairs(DEFAULT_TRACKS) do list[#list + 1] = {name = t.name, track = t.track, height = t.height} end
   end
   return list
+end
+
+-- a track from the Track tab: the points are the loop, the items are placed once the curve is built
+function spline_track(tk, height)
+  local ctrl = {}
+  for i, p in ipairs(tk.pts) do ctrl[i] = {p[1], p[2]} end
+  if #ctrl < 3 then return nil end
+  return {ctrl = ctrl, items = tk.items or {}, height = height, boosts = {}, crates = {}, hills = {}}
+end
+
+-- point and right-hand normal at distance s round the lap (after build_track)
+function at_s(s)
+  s = s % LEN
+  local lo, hi = 1, #RAW
+  while lo < hi do
+    local m = (lo + hi + 1) // 2
+    if RAWS[m] <= s then lo = m else hi = m - 1 end
+  end
+  local a, b = RAW[lo], RAW[lo % #RAW + 1]
+  local seg = RAWS[lo + 1] - RAWS[lo]
+  local f = seg > 0 and (s - RAWS[lo]) / seg or 0
+  local dx, dy = (b[1] - a[1]) / (seg > 0 and seg or 1), (b[2] - a[2]) / (seg > 0 and seg or 1)
+  return a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f, -dy, dx
+end
+
+HILL_KINDS = {hill = {36, 180}, bump = {14, 44}, dip = {-26, 160}}   -- height, radius (same as the Track tab)
+function place_items(T)
+  for _, it in ipairs(T.items or {}) do
+    local x, y, nx, ny = at_s((it.t or 0) * LEN)
+    local o = it.o or 0
+    if it.k == "boost" then T.boosts[#T.boosts + 1] = {x + nx * o, y + ny * o}
+    elseif it.k == "crate" then
+      for _, d in ipairs({-22, 0, 22}) do T.crates[#T.crates + 1] = {x = x + nx * (o + d), y = y + ny * (o + d), t = 0} end
+    elseif HILL_KINDS[it.k] then
+      local h = HILL_KINDS[it.k]
+      T.hills[#T.hills + 1] = {x + nx * o, y + ny * o, h[1], h[2]}
+    end
+  end
 end
 
 -- turn the placed entities into a loop of control points plus pads, crates and hills
@@ -13028,7 +13725,7 @@ function read_track(placed)
     elseif k == "boost" then T.boosts[#T.boosts + 1] = {x, y}
     elseif k == "crate" then T.crates[#T.crates + 1] = {x = x, y = y, t = 0}
     elseif k == "hill" then T.hills[#T.hills + 1] = {x, y, 36, 180}
-    elseif k == "bump" then T.hills[#T.hills + 1] = {x, y, 16, 30}
+    elseif k == "bump" then T.hills[#T.hills + 1] = {x, y, 14, 44}
     elseif k == "dip" then T.hills[#T.hills + 1] = {x, y, -26, 160} end
   end
   if not start or #nodes < 3 then return nil end
@@ -13103,10 +13800,23 @@ end
 function build_world(T, seed)
   local Y = coroutine.yield
   build_track(T.ctrl)
-  -- hills: a smooth bump per hill entity on a base height of 40
+  place_items(T)
+  -- elevation: the painted grid (one height every 16 px, as hex), then a smooth bump per hill
+  local G = nil
+  if T.height and #T.height >= 129 * 65 * 2 then
+    G = {}
+    for i = 0, 129 * 65 - 1 do G[i] = tonumber(T.height:sub(i * 2 + 1, i * 2 + 2), 16) or 40 end
+    Y(0.05)
+  end
   for cy = 0, 128 do
     for cx = 0, 256 do
       local x, y, h = cx * 8, cy * 8, 40
+      if G then
+        local gx, gy = cx // 2, cy // 2
+        local gx2, gy2 = math.min(gx + 1, 128), math.min(gy + 1, 64)
+        local u, v = (cx % 2) * 0.5, (cy % 2) * 0.5
+        h = (G[gy * 129 + gx] * (1 - u) + G[gy * 129 + gx2] * u) * (1 - v) + (G[gy2 * 129 + gx] * (1 - u) + G[gy2 * 129 + gx2] * u) * v
+      end
       for _, hl in ipairs(T.hills) do
         local d2 = ((x - hl[1])^2 + (y - hl[2])^2) / (hl[4] * hl[4])
         if d2 < 9 then h = h + hl[3] * math.exp(-d2) end
@@ -13601,6 +14311,9 @@ function _init()
   row, mode, gt = 1, "garage", 0
   shake, parts, pop_t = 0, {}, 0
   TREES, CRATES, hazards, shots = {}, {}, {}, {}
+  if KART_QUICK then                   -- "race it" on the Track tab: straight onto that track
+    for i, tr in ipairs(TRACKS) do if tr.level == KART_QUICK then sel.track = i; load_track() end end
+  end
 end
 
 function persist()
@@ -13617,8 +14330,11 @@ function load_track()
       coroutine.yield(0)
       ents_update()                      -- finishes the level switch
     end
-    local T = read_track(tr.placed)
-    if not T then load_err = tr.name .. " needs a start and 3 or more nodes"; return end
+    local tk = tr.track or {}
+    ROADW, KERBW, LAPS = tk.road or 44, tk.kerb or 7, tk.laps or 3
+    local T
+    if tr.track then T = spline_track(tr.track, tr.height) else T = read_track(tr.placed) end
+    if not T then load_err = tr.name .. " needs 3 or more points"; return end
     build_world(T, sel.track * 7)
   end)
 end
@@ -13983,7 +14699,7 @@ function _draw()
     local w = #s * 32
     shadow_text(s, 160 - w // 2, 80, n > 0 and 27 or 17, 4)
     text("drift: hold L (or B) and steer", 40, 124, 13)
-    text("X: item, hold down to look and fire back", 40, 134, 13)
+    text("X: item (hold down: fire back)", 40, 138, 13)
   elseif mode == "race" and gt < 40 then
     shadow_text("GO!", 112, 80, 17, 4)
   elseif mode == "results" then
@@ -14160,32 +14876,20 @@ end
     const grassPx = (x, y, v) => { const h = hash(x, y, 2 + v); return h < 140 ? 15 : h < 200 ? 17 : 16; };
     const putTile = (n, fn) => { for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) T[n * 64 + y * 8 + x] = fn(x, y); };
 
-    // floor tiles: 1 road, 2-4 grass, 5 start line, 6 boost pad, 7-168 road edges
-    const ROADF = 1, KERBF = 2, GRASSF = 4, BOOSTF = 8, STARTF = 16;
-    putTile(1, roadPx);
-    putTile(2, (x, y) => grassPx(x, y, 0));
-    putTile(3, (x, y) => (x === 2 && y === 3) || (x === 5 && y === 6) ? 27 : (x === 6 && y === 1) ? 13 : grassPx(x, y, 1));
-    putTile(4, (x, y) => (hash(x, y, 9) < 500 ? 15 : 16));
-    putTile(5, (x, y) => (((x >> 2) + (y >> 2)) & 1) ? 13 : 1);
-    putTile(6, (x, y) => ((x + y) & 7) < 3 ? 27 : ((x + y) & 7) < 5 ? 10 : 9);
-    cart.flags[1] = ROADF; cart.flags[2] = cart.flags[3] = cart.flags[4] = GRASSF;
-    cart.flags[5] = ROADF | STARTF; cart.flags[6] = ROADF | BOOSTF;
-    // edge tiles: the classes of the 4 corners (0 road, 1 kerb, 2 grass) are blended across the tile
-    // (marching-squares style), so road edges run diagonally. Tile = 7 + combo * 2 + kerb stripe.
-    for (let combo = 0; combo < 81; combo++) {
-      const c00 = Math.floor(combo / 27), c10 = Math.floor(combo / 9) % 3, c01 = Math.floor(combo / 3) % 3, c11 = combo % 3;
-      for (let stripe = 0; stripe < 2; stripe++) {
-        const id = 7 + combo * 2 + stripe;
-        putTile(id, (x, y) => {
-          const u = (x + 0.5) / 8, v = (y + 0.5) / 8;
-          const val = c00 * (1 - u) * (1 - v) + c10 * u * (1 - v) + c01 * (1 - u) * v + c11 * u * v;
-          const k = val < 0.5 ? 0 : val < 1.5 ? 1 : 2;
-          return k === 0 ? roadPx(x, y) : k === 1 ? (stripe ? 13 : 25) : grassPx(x, y, 0);
-        });
-        const val = (c00 + c10 + c01 + c11) / 4;
-        cart.flags[id] = val < 0.5 ? ROADF : val < 1.5 ? KERBF : GRASSF;
-      }
-    }
+    // road segment tiles (the Track tab paints these): 1 road, 2-4 grass, 5 start line, 6 boost pad,
+    // 169/170 kerb A/B. The road edge tiles 7-168 are built from them.
+    const TT = window.BKTracks.TILE;
+    putTile(TT.ROAD, roadPx);
+    putTile(TT.GRASS, (x, y) => grassPx(x, y, 0));
+    putTile(TT.GRASS2, (x, y) => (x === 2 && y === 3) || (x === 5 && y === 6) ? 27 : (x === 6 && y === 1) ? 13 : grassPx(x, y, 1));
+    putTile(TT.GRASS3, (x, y) => (hash(x, y, 9) < 500 ? 15 : 16));
+    putTile(TT.START, (x, y) => (((x >> 2) + (y >> 2)) & 1) ? 13 : 1);
+    putTile(TT.BOOST, (x, y) => ((x + y) & 7) < 3 ? 27 : ((x + y) & 7) < 5 ? 10 : 9);
+    putTile(TT.KERB_A, (x, y) => (hash(x, y, 5) < 120 ? 24 : 25));
+    putTile(TT.KERB_B, (x, y) => (hash(x, y, 6) < 120 ? 29 : 13));
+    window.BKTracks.genEdges(cart);
+    cart.entities = cart.entities || { types: [], placed: [] };
+    cart.entities.flagNames = window.BKTracks.FLAG_NAMES.slice();
 
     // karts: 3 bodies x 9 angles, 24x24 each, packed 5 per band of 3 tile rows from tile 176
     MODELS.forEach((vox, b) => {
@@ -14265,33 +14969,18 @@ end
       if (x >= 2 && x <= 5 && y >= 2 && y <= 5) return (x === 3 || x === 4) && (y === 3 || y === 4) ? 25 : 31;
       return 0;
     });
-    // map markers (only seen on the Map tab)
-    sprite(500, 8, 8, (x, y) => (Math.abs(x + 0.5 - 4) + Math.abs(y + 0.5 - 4) <= 3.5 ? (Math.abs(x + 0.5 - 4) + Math.abs(y + 0.5 - 4) > 2.5 ? 1 : 27) : 0)); // node
-    sprite(501, 8, 8, (x, y) => (x === 0 ? 1 : y < 5 ? (((x >> 1) + (y >> 1)) & 1 ? 13 : 1) : 0));             // start flag
-    sprite(503, 8, 8, (x, y) => (Math.abs(x - 3.5) <= 3.5 - Math.abs(y - 3.5) * 0.9 ? ((y + x) % 3 ? 27 : 10) : 0)); // boost
-    sprite(504, 8, 8, (x, y) => (Math.abs(x + 0.5 - 4) <= (y + 1) / 2 ? (y === 7 ? 14 : 16) : 0));              // hill
-    sprite(505, 8, 8, (x, y) => (y >= 4 && Math.abs(x + 0.5 - 4) <= (y - 3) ? 8 : 0));                            // bump
-    sprite(506, 8, 8, (x, y) => (Math.abs(x + 0.5 - 4) <= (8 - y) / 2 ? (y === 0 ? 19 : 21) : 0));              // dip
-
-    // entity types for the markers: invisible in the game, they just say where things go
-    const A = (name, frames) => ({ name, frames, speed: 8 });
-    const marker = (name, tile) => ({ name, sw: 1, sh: 1, grav: false, collide: false, left: false, hp: 0, inset: 0, team: 'neutral',
-      damage: 0, hidden: true, player: false, stomp: false, touch_fx: '', hurt: 15, stats: [], anims: [A('idle', [tile])], tree: null });
-    const types = [marker('start', 501), marker('node', 500), marker('boost', 503), marker('crate', 479),
-      marker('hill', 504), marker('bump', 505), marker('dip', 506)];
-
     // one level per track, the road painted the same way the game does it
     cart.levels = TRACKS.map(t => {
-      const map = new Uint16Array(256 * 128);
-      paintTrack(map, t.placed);
-      return { name: t.name, w: 256, h: 128, map, placed: t.placed.map(p => Object.assign({}, p)) };
+      const map = new Uint16Array(256 * 128), track = JSON.parse(JSON.stringify(t.track));
+      window.BKTracks.paint(map, track);
+      return { name: t.name, w: 256, h: 128, map, placed: [], track, height: heights(t) };
     });
     cart.map.set(cart.levels[0].map);
     cart.levels[0].map = cart.map;
-    cart.entities = { effects: [], types, placed: cart.levels[0].placed, cutscenes: [] };
+    cart.entities = Object.assign(cart.entities || {}, { effects: [], types: [], placed: cart.levels[0].placed, cutscenes: [] });
   }
 
-  const demo = { name: 'Kart Lab', code, buildGfx, about: 'A 2.5D kart racer with hills, items and two tracks you can edit on the Map tab.' };
+  const demo = { name: 'Kart Lab', code, buildGfx, about: 'A 2.5D kart racer with hills, items and two tracks you can edit on the Track tab.' };
   window.BK_DEMOS = window.BK_DEMOS || [];
   window.BK_DEMOS.push(demo);
 })();
@@ -14440,8 +15129,26 @@ window.BKEntities = (function () {
     return (list || []).filter(c => c.name).map(c => `  [${luaStr(c.name)}] = {level = ${c.level | 0}, steps = {` +
       (c.steps || []).map(st => luaVal({ t: st.t, p: st.p || {} })).join(', ') + '}},').join('\n');
   }
+  // tile behaviours: named sprite flags, so code can say fget(tile, "boost")
+  function flagsLua(data) {
+    const names = (data && data.flagNames) || ['solid'];
+    const pairs = names.map((n, i) => (n && /^[A-Za-z_]\w*$/.test(n) ? `${n} = ${i}` : '')).filter(Boolean);
+    return `FLAGS = {${pairs.join(', ')}}\n` +
+      'do local raw_fget, raw_fset = fget, fset\n' +
+      '  function fget(n, b) if type(b) == "string" then b = FLAGS[b] if b == nil then return false end end if b == nil then return raw_fget(n) end return raw_fget(n, b) end\n' +
+      '  function fset(n, b, on) if type(b) == "string" then b = FLAGS[b] if b == nil then return end end return raw_fset(n, b, on) end\n' +
+      'end\n';
+  }
+  // a level's extra data: a race track and its elevation grid (see tracks.js)
+  function levelExtraLua(L) {
+    let s = '';
+    if (L.track) s += `, track = ${luaVal(L.track)}`;
+    if (L.height && window.BKTracks) s += `, height = "${window.BKTracks.heightHex(L.height)}"`;
+    return s;
+  }
   function toLua(data, levels, start, extra) {
-    if (!data || (!data.types.length && !(data.effects || []).length && !(data.cutscenes || []).length)) return extra || '';
+    const hasTracks = (levels || []).some(L => L.track);
+    if (!data || (!data.types.length && !(data.effects || []).length && !(data.cutscenes || []).length && !hasTracks)) return flagsLua(data) + (extra || '');
     const defs = data.types.map(t => {
       const anims = {};
       t.anims.forEach(a => { if (a.name && /^[A-Za-z_]\w*$/.test(a.name)) anims[a.name] = { f: a.frames, s: a.speed }; });
@@ -14451,7 +15158,7 @@ window.BKEntities = (function () {
         damage: t.damage || 0, hidden: !!t.hidden, player: !!t.player, stomp: !!t.stomp, touch_fx: t.touch_fx || '', hurt: t.hurt || (t.player ? 60 : 15),
         stats, anims, tree: treeOut(t.tree) };
     });
-    const lines = ['-- generated by the studio Entities and Cutscenes tabs', 'ents_cutscenes({', cutscenesLua(data.cutscenes), '})', 'ents_effects({'];
+    const lines = ['-- generated by the studio Entities, Cutscenes and Track tabs', flagsLua(data), 'ents_cutscenes({', cutscenesLua(data.cutscenes), '})', 'ents_effects({'];
     (data.effects || []).forEach(f => lines.push('  ' + luaVal({ name: f.name, dur: +f.dur || 0, stack: f.stack || 'refresh', hp: +f.hp || 0,
       every: +f.every || 0, tick: +f.tick || 0, tint: f.tint === '' || f.tint === undefined ? -1 : +f.tint, mods: (f.mods || []).filter(m => m.stat).map(m => ({ stat: m.stat, op: m.op, value: +m.value || 0 })) }) + ','));
     lines.push('})', 'ents_define({');
@@ -14459,7 +15166,7 @@ window.BKEntities = (function () {
     const placedLua = list => list.map(p => `{${luaStr(p.type)}, ${p.x | 0}, ${p.y | 0}}`).join(', ');
     if (levels && levels.length) {
       lines.push('})', 'ents_levels({');
-      levels.forEach(L => lines.push(`  {name = ${luaStr(L.name)}, w = ${L.w | 0}, h = ${L.h | 0}, placed = {${placedLua(L.placed || [])}}},`));
+      levels.forEach(L => lines.push(`  {name = ${luaStr(L.name)}, w = ${L.w | 0}, h = ${L.h | 0}, placed = {${placedLua(L.placed || [])}}${levelExtraLua(L)}},`));
       lines.push(`}, ${((start | 0) + 1)})`);
     } else {
       lines.push('})', 'ents_place({');
@@ -14593,6 +15300,9 @@ window.BKEntities = (function () {
       formEl.hidden = !t || st.mode !== 'ent';
       $('fxForm').hidden = st.mode !== 'fx';
       $('entEmpty').hidden = !(st.mode === 'ent' && !t);
+      $('entEmpty').innerHTML = cart.entities.types.length ? 'No entity selected. Press <b>+ new</b> to make one.'
+        : 'This game has no entities. Press <b>+ new</b> to make one' + (window.BKTracks && window.BKTracks.uses(cart)
+          ? '. Its race tracks, boost pads, crates and hills are on the <b>Track</b> tab.' : '.');
       if (st.mode === 'fx') { renderFx(); return; }
       if (!t) return;
       showPage(); renderHead();
@@ -16190,7 +16900,8 @@ end
     if (!cart.levels || !cart.levels.length) cart.levels = [{ name: 'Level 1', w: MAPW, h: MAPH, map: cart.map, placed: cart.entities.placed }];
     bindLevel(0);
   }
-  const levelsMeta = levels => levels.map(L => ({ name: L.name, w: L.w, h: L.h, placed: L.placed }));
+  const levelsMeta = levels => levels.map(L => ({ name: L.name, w: L.w, h: L.h, placed: L.placed, track: L.track, height: L.height }));
+  const HG_LEN = BKTracks.HG_W * BKTracks.HG_H;   // a track level's elevation grid (see tracks.js)
 
   // byte RLE: [count, value] pairs (count 1..255) then base64
   function rle(bytes) {
@@ -16218,7 +16929,8 @@ end
       format: 'bitkit-cart', version: 1, name: cart.name, code: getCode(),
       palette: b64(cart.palette), tiles: rle(cart.tiles), flags: rle(cart.flags),
       map: rle(new Uint8Array(L0.map.buffer.slice(0))),
-      levels: cart.levels.map(L => ({ name: L.name, w: L.w, h: L.h, map: rle(new Uint8Array(L.map.buffer.slice(0))), placed: L.placed })),
+      levels: cart.levels.map(L => Object.assign({ name: L.name, w: L.w, h: L.h, map: rle(new Uint8Array(L.map.buffer.slice(0))), placed: L.placed },
+        L.track ? { track: L.track } : {}, L.height ? { height: rle(L.height) } : {})),
       entities, entities_lua: BKEntities.toLua(entities, levelsMeta(cart.levels), 0)
     };
   }
@@ -16230,7 +16942,8 @@ end
     const map = unmap(o.map);
     const levels = Array.isArray(o.levels) && o.levels.length
       ? o.levels.map((L, i) => ({ name: L.name || `Level ${i + 1}`, w: Math.max(1, Math.min(MAPW, L.w | 0 || MAPW)), h: Math.max(1, Math.min(MAPH, L.h | 0 || MAPH)),
-          map: unmap(L.map), placed: Array.isArray(L.placed) ? L.placed : [] }))
+          map: unmap(L.map), placed: Array.isArray(L.placed) ? L.placed : [],
+          track: L.track && Array.isArray(L.track.pts) ? L.track : undefined, height: L.height ? unrle(L.height, HG_LEN) : undefined }))
       : [{ name: 'Level 1', w: MAPW, h: MAPH, map, placed: entities.placed || [] }];
     entities.placed = levels[0].placed;
     return {
@@ -16313,8 +17026,10 @@ end
     if (t === 'map') { refreshLevels(); refreshEntSelect(); drawMap(); }
     if (t === 'entities') entEd.render();
     if (t === 'cutscenes') csEd.render();
+    if (t === 'track') trkEd.render();
     if (t === 'ai' && aiChat) aiChat.focus();
     lsSet(LS.settings + '.tab', t);
+    if (typeof trkEd !== 'undefined') showTrackTab();
   }
 
   /* ------------------------------------------------------------ tile atlas (for editors) */
@@ -16360,6 +17075,14 @@ end
     cart, $, toast, escapeHtml, tileThumb, getAtlas,
     changed: markDirty, ask: (...a) => ask(...a), isActive: () => activeTab === 'entities'
   });
+  const trkEd = BKTracks.init({
+    cart, $, toast, escapeHtml, ask: (...a) => ask(...a), isActive: () => activeTab === 'track',
+    changed: markDirty, gfxChanged: () => gfxChanged(), mapChanged: () => { mapDirtyRT = true; markDirty(); },
+    syncLevel: () => syncLevel(), bindLevel: i => bindLevel(i), levelsChanged: () => { refreshLevels(); showTrackTab(); },
+    run: (lvl, extra) => run(lvl, extra)
+  });
+  // the Track tab shows up for carts with race tracks (or while it is open)
+  function showTrackTab() { $('tabTrackBtn').hidden = !BKTracks.uses(cart) && activeTab !== 'track'; }
   const csEd = BKCutscenes.init({
     cart, $, toast, escapeHtml, changed: markDirty, ask: (...a) => ask(...a),
     levels: () => cart.levels,
@@ -16378,17 +17101,38 @@ end
   const sheet = $('sheet'), sheetCtx = sheet.getContext('2d');
   const palC = $('palette'), palCtx = palC.getContext('2d');
 
+  // tile behaviours: 8 on/off flags per tile, each with a name the game picks (stored with the cart's entities).
+  // Code asks with fget(tile, "name") (or the number). Flag 0 ("solid") is what entities stand on.
   const flagsEl = $('sprFlags');
+  const DEFAULT_FLAG_NAMES = ['solid', '', '', '', '', '', '', ''];
+  const flagNames = () => cart.entities.flagNames || DEFAULT_FLAG_NAMES;
   for (let b = 0; b < 8; b++) {
     const l = document.createElement('label');
-    l.innerHTML = `<input type="checkbox" data-bit="${b}">${b}`;
+    l.innerHTML = `<input type="checkbox" data-bit="${b}"><input class="flag-name" data-name="${b}" placeholder="${b}" spellcheck="false" maxlength="12">`;
     flagsEl.appendChild(l);
   }
   flagsEl.addEventListener('change', e => {
+    if (e.target.dataset.name !== undefined) {         // renamed a behaviour
+      const names = flagNames().slice(), b = +e.target.dataset.name;
+      let n = e.target.value.trim().toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
+      if (/^\d/.test(n)) n = '_' + n;
+      if (n && names.some((x, i) => x === n && i !== b)) { toast('That name is taken'); n = names[b]; }
+      names[b] = n; cart.entities.flagNames = names; e.target.value = n;
+      showFlags(); markDirty();
+      return;
+    }
     const b = +e.target.dataset.bit;
     if (e.target.checked) cart.flags[spr.tile] |= 1 << b; else cart.flags[spr.tile] &= ~(1 << b);
     gfxDirtyRT = true; markDirty();
   });
+  function showFlags() {
+    const names = flagNames();
+    flagsEl.querySelectorAll('input[data-bit]').forEach(i => {
+      const b = +i.dataset.bit; i.checked = (cart.flags[spr.tile] >> b) & 1;
+      i.parentElement.title = names[b] ? `Behaviour "${names[b]}" (flag ${b}). In code: fget(tile, "${names[b]}")` : `Flag ${b}: give it a name to use it as a behaviour. In code: fget(tile, ${b})`;
+    });
+    flagsEl.querySelectorAll('input[data-name]').forEach(i => { if (document.activeElement !== i) i.value = names[+i.dataset.name] || ''; });
+  }
 
   function tilePix(px, py) { // pixel inside current selection -> index in tiles[]
     const t = spr.tile + (py >> 3) * 16 + (px >> 3);
@@ -16432,7 +17176,9 @@ end
     // info
     $('sprInfo').textContent = `Tile ${spr.tile}`;
     $('sprHint').textContent = spr.size === 1 ? `spr(${spr.tile}, x, y)` : `spr(${spr.tile}, x, y, ${spr.size}, ${spr.size})`;
-    flagsEl.querySelectorAll('input').forEach(i => { i.checked = (cart.flags[spr.tile] >> +i.dataset.bit) & 1; });
+    if (BKTracks.uses(cart) && spr.tile >= BKTracks.TILE.EDGE && spr.tile <= BKTracks.TILE.EDGE_END)
+      $('sprHint').textContent = 'road edge: built from the road look on the Track tab';
+    showFlags();
     drawPalette();
   }
 
@@ -16752,7 +17498,8 @@ end
       ...(cart.level > 0 ? [['Move up', () => { const i = cart.level; syncLevel(); [cart.levels[i - 1], cart.levels[i]] = [cart.levels[i], cart.levels[i - 1]]; bindLevel(i - 1); refreshLevels(); markDirty(); closeModal(); }]] : []),
       ['Duplicate', () => {
         syncLevel();
-        cart.levels.splice(cart.level + 1, 0, { name: L.name + ' copy', w: L.w, h: L.h, map: L.map.slice(), placed: L.placed.map(p => Object.assign({}, p)) });
+        cart.levels.splice(cart.level + 1, 0, { name: L.name + ' copy', w: L.w, h: L.h, map: L.map.slice(), placed: L.placed.map(p => Object.assign({}, p)),
+          track: L.track ? JSON.parse(JSON.stringify(L.track)) : undefined, height: L.height ? L.height.slice() : undefined });
         closeModal(); switchLevel(cart.level + 1);
       }],
       ['Save', () => {
@@ -17058,6 +17805,7 @@ end
   function run(startLevel, extraLua) {
     const start = typeof startLevel === 'number' ? startLevel : 0;
     syncLevel();
+    if (BKTracks.beforeRun(cart)) atlasDirty = true;   // track carts: edge tiles come from the road segment tiles
     newRouteSegment(start);
     startAudio();
     overlay.classList.add('hidden');
@@ -17283,6 +18031,8 @@ end
     if (activeTab === 'map') { refreshLevels(); refreshEntSelect(); drawMap(); }
     if (activeTab === 'entities') entEd.render();
     if (activeTab === 'cutscenes') csEd.render();
+    if (activeTab === 'track') trkEd.render();
+    showTrackTab();
   }
   // built-in demos: each demo file pushes {name, code, buildGfx, about} onto window.BK_DEMOS
   const DEMOS = () => (window.BK_DEMOS && window.BK_DEMOS.length ? window.BK_DEMOS : [BK_DEMO]);
@@ -17655,7 +18405,7 @@ end
       ['spr(n,x,y,[w,h],[flipx],[flipy],[scale])', 'Draw sprite n. w,h are in tiles (2,2 draws a 16x16 sprite). Colour 0 is transparent.'],
       ['map([cx,cy,cw,ch,sx,sy])', 'Draw a cw x ch area of the map starting at tile cx,cy to screen sx,sy. Default draws one screen (40x30 tiles).'],
       ['mget(x,y) / mset(x,y,n)', 'Read or change a map tile (map is 256x128 tiles).'],
-      ['fget(n,[bit]) / fset(n,bit,on)', 'Sprite flags. Use them to mark tiles as solid, deadly, etc.'],
+      ['fget(n,[bit]) / fset(n,bit,on)', 'Tile behaviours (sprite flags). Name them on the Sprites tab and ask by name: fget(mget(x, y), "water"). Numbers 0-7 work too; FLAGS holds the names.'],
       ['camera([x,y])', 'Offset all drawing. camera() resets it (use for the HUD).'],
       ['clip([x,y,w,h])', 'Only draw inside this rectangle. clip() resets.'],
       ['pal([c0,c1])', 'Draw colour c0 as c1. pal() resets.'],

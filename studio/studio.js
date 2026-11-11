@@ -81,7 +81,8 @@ end
     if (!cart.levels || !cart.levels.length) cart.levels = [{ name: 'Level 1', w: MAPW, h: MAPH, map: cart.map, placed: cart.entities.placed }];
     bindLevel(0);
   }
-  const levelsMeta = levels => levels.map(L => ({ name: L.name, w: L.w, h: L.h, placed: L.placed }));
+  const levelsMeta = levels => levels.map(L => ({ name: L.name, w: L.w, h: L.h, placed: L.placed, track: L.track, height: L.height }));
+  const HG_LEN = BKTracks.HG_W * BKTracks.HG_H;   // a track level's elevation grid (see tracks.js)
 
   // byte RLE: [count, value] pairs (count 1..255) then base64
   function rle(bytes) {
@@ -109,7 +110,8 @@ end
       format: 'bitkit-cart', version: 1, name: cart.name, code: getCode(),
       palette: b64(cart.palette), tiles: rle(cart.tiles), flags: rle(cart.flags),
       map: rle(new Uint8Array(L0.map.buffer.slice(0))),
-      levels: cart.levels.map(L => ({ name: L.name, w: L.w, h: L.h, map: rle(new Uint8Array(L.map.buffer.slice(0))), placed: L.placed })),
+      levels: cart.levels.map(L => Object.assign({ name: L.name, w: L.w, h: L.h, map: rle(new Uint8Array(L.map.buffer.slice(0))), placed: L.placed },
+        L.track ? { track: L.track } : {}, L.height ? { height: rle(L.height) } : {})),
       entities, entities_lua: BKEntities.toLua(entities, levelsMeta(cart.levels), 0)
     };
   }
@@ -121,7 +123,8 @@ end
     const map = unmap(o.map);
     const levels = Array.isArray(o.levels) && o.levels.length
       ? o.levels.map((L, i) => ({ name: L.name || `Level ${i + 1}`, w: Math.max(1, Math.min(MAPW, L.w | 0 || MAPW)), h: Math.max(1, Math.min(MAPH, L.h | 0 || MAPH)),
-          map: unmap(L.map), placed: Array.isArray(L.placed) ? L.placed : [] }))
+          map: unmap(L.map), placed: Array.isArray(L.placed) ? L.placed : [],
+          track: L.track && Array.isArray(L.track.pts) ? L.track : undefined, height: L.height ? unrle(L.height, HG_LEN) : undefined }))
       : [{ name: 'Level 1', w: MAPW, h: MAPH, map, placed: entities.placed || [] }];
     entities.placed = levels[0].placed;
     return {
@@ -204,8 +207,10 @@ end
     if (t === 'map') { refreshLevels(); refreshEntSelect(); drawMap(); }
     if (t === 'entities') entEd.render();
     if (t === 'cutscenes') csEd.render();
+    if (t === 'track') trkEd.render();
     if (t === 'ai' && aiChat) aiChat.focus();
     lsSet(LS.settings + '.tab', t);
+    if (typeof trkEd !== 'undefined') showTrackTab();
   }
 
   /* ------------------------------------------------------------ tile atlas (for editors) */
@@ -251,6 +256,14 @@ end
     cart, $, toast, escapeHtml, tileThumb, getAtlas,
     changed: markDirty, ask: (...a) => ask(...a), isActive: () => activeTab === 'entities'
   });
+  const trkEd = BKTracks.init({
+    cart, $, toast, escapeHtml, ask: (...a) => ask(...a), isActive: () => activeTab === 'track',
+    changed: markDirty, gfxChanged: () => gfxChanged(), mapChanged: () => { mapDirtyRT = true; markDirty(); },
+    syncLevel: () => syncLevel(), bindLevel: i => bindLevel(i), levelsChanged: () => { refreshLevels(); showTrackTab(); },
+    run: (lvl, extra) => run(lvl, extra)
+  });
+  // the Track tab shows up for carts with race tracks (or while it is open)
+  function showTrackTab() { $('tabTrackBtn').hidden = !BKTracks.uses(cart) && activeTab !== 'track'; }
   const csEd = BKCutscenes.init({
     cart, $, toast, escapeHtml, changed: markDirty, ask: (...a) => ask(...a),
     levels: () => cart.levels,
@@ -269,17 +282,38 @@ end
   const sheet = $('sheet'), sheetCtx = sheet.getContext('2d');
   const palC = $('palette'), palCtx = palC.getContext('2d');
 
+  // tile behaviours: 8 on/off flags per tile, each with a name the game picks (stored with the cart's entities).
+  // Code asks with fget(tile, "name") (or the number). Flag 0 ("solid") is what entities stand on.
   const flagsEl = $('sprFlags');
+  const DEFAULT_FLAG_NAMES = ['solid', '', '', '', '', '', '', ''];
+  const flagNames = () => cart.entities.flagNames || DEFAULT_FLAG_NAMES;
   for (let b = 0; b < 8; b++) {
     const l = document.createElement('label');
-    l.innerHTML = `<input type="checkbox" data-bit="${b}">${b}`;
+    l.innerHTML = `<input type="checkbox" data-bit="${b}"><input class="flag-name" data-name="${b}" placeholder="${b}" spellcheck="false" maxlength="12">`;
     flagsEl.appendChild(l);
   }
   flagsEl.addEventListener('change', e => {
+    if (e.target.dataset.name !== undefined) {         // renamed a behaviour
+      const names = flagNames().slice(), b = +e.target.dataset.name;
+      let n = e.target.value.trim().toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
+      if (/^\d/.test(n)) n = '_' + n;
+      if (n && names.some((x, i) => x === n && i !== b)) { toast('That name is taken'); n = names[b]; }
+      names[b] = n; cart.entities.flagNames = names; e.target.value = n;
+      showFlags(); markDirty();
+      return;
+    }
     const b = +e.target.dataset.bit;
     if (e.target.checked) cart.flags[spr.tile] |= 1 << b; else cart.flags[spr.tile] &= ~(1 << b);
     gfxDirtyRT = true; markDirty();
   });
+  function showFlags() {
+    const names = flagNames();
+    flagsEl.querySelectorAll('input[data-bit]').forEach(i => {
+      const b = +i.dataset.bit; i.checked = (cart.flags[spr.tile] >> b) & 1;
+      i.parentElement.title = names[b] ? `Behaviour "${names[b]}" (flag ${b}). In code: fget(tile, "${names[b]}")` : `Flag ${b}: give it a name to use it as a behaviour. In code: fget(tile, ${b})`;
+    });
+    flagsEl.querySelectorAll('input[data-name]').forEach(i => { if (document.activeElement !== i) i.value = names[+i.dataset.name] || ''; });
+  }
 
   function tilePix(px, py) { // pixel inside current selection -> index in tiles[]
     const t = spr.tile + (py >> 3) * 16 + (px >> 3);
@@ -323,7 +357,9 @@ end
     // info
     $('sprInfo').textContent = `Tile ${spr.tile}`;
     $('sprHint').textContent = spr.size === 1 ? `spr(${spr.tile}, x, y)` : `spr(${spr.tile}, x, y, ${spr.size}, ${spr.size})`;
-    flagsEl.querySelectorAll('input').forEach(i => { i.checked = (cart.flags[spr.tile] >> +i.dataset.bit) & 1; });
+    if (BKTracks.uses(cart) && spr.tile >= BKTracks.TILE.EDGE && spr.tile <= BKTracks.TILE.EDGE_END)
+      $('sprHint').textContent = 'road edge: built from the road look on the Track tab';
+    showFlags();
     drawPalette();
   }
 
@@ -643,7 +679,8 @@ end
       ...(cart.level > 0 ? [['Move up', () => { const i = cart.level; syncLevel(); [cart.levels[i - 1], cart.levels[i]] = [cart.levels[i], cart.levels[i - 1]]; bindLevel(i - 1); refreshLevels(); markDirty(); closeModal(); }]] : []),
       ['Duplicate', () => {
         syncLevel();
-        cart.levels.splice(cart.level + 1, 0, { name: L.name + ' copy', w: L.w, h: L.h, map: L.map.slice(), placed: L.placed.map(p => Object.assign({}, p)) });
+        cart.levels.splice(cart.level + 1, 0, { name: L.name + ' copy', w: L.w, h: L.h, map: L.map.slice(), placed: L.placed.map(p => Object.assign({}, p)),
+          track: L.track ? JSON.parse(JSON.stringify(L.track)) : undefined, height: L.height ? L.height.slice() : undefined });
         closeModal(); switchLevel(cart.level + 1);
       }],
       ['Save', () => {
@@ -949,6 +986,7 @@ end
   function run(startLevel, extraLua) {
     const start = typeof startLevel === 'number' ? startLevel : 0;
     syncLevel();
+    if (BKTracks.beforeRun(cart)) atlasDirty = true;   // track carts: edge tiles come from the road segment tiles
     newRouteSegment(start);
     startAudio();
     overlay.classList.add('hidden');
@@ -1174,6 +1212,8 @@ end
     if (activeTab === 'map') { refreshLevels(); refreshEntSelect(); drawMap(); }
     if (activeTab === 'entities') entEd.render();
     if (activeTab === 'cutscenes') csEd.render();
+    if (activeTab === 'track') trkEd.render();
+    showTrackTab();
   }
   // built-in demos: each demo file pushes {name, code, buildGfx, about} onto window.BK_DEMOS
   const DEMOS = () => (window.BK_DEMOS && window.BK_DEMOS.length ? window.BK_DEMOS : [BK_DEMO]);
@@ -1546,7 +1586,7 @@ end
       ['spr(n,x,y,[w,h],[flipx],[flipy],[scale])', 'Draw sprite n. w,h are in tiles (2,2 draws a 16x16 sprite). Colour 0 is transparent.'],
       ['map([cx,cy,cw,ch,sx,sy])', 'Draw a cw x ch area of the map starting at tile cx,cy to screen sx,sy. Default draws one screen (40x30 tiles).'],
       ['mget(x,y) / mset(x,y,n)', 'Read or change a map tile (map is 256x128 tiles).'],
-      ['fget(n,[bit]) / fset(n,bit,on)', 'Sprite flags. Use them to mark tiles as solid, deadly, etc.'],
+      ['fget(n,[bit]) / fset(n,bit,on)', 'Tile behaviours (sprite flags). Name them on the Sprites tab and ask by name: fget(mget(x, y), "water"). Numbers 0-7 work too; FLAGS holds the names.'],
       ['camera([x,y])', 'Offset all drawing. camera() resets it (use for the HUD).'],
       ['clip([x,y,w,h])', 'Only draw inside this rectangle. clip() resets.'],
       ['pal([c0,c1])', 'Draw colour c0 as c1. pal() resets.'],

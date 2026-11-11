@@ -2,6 +2,7 @@
 // for 3000 frames with scripted input. Exits non-zero on any Lua error.
 const fs = require('fs'); global.window = {};
 eval(fs.readFileSync(__dirname + '/../studio/demo.js', 'utf8'));
+eval(fs.readFileSync(__dirname + '/../studio/tracks.js', 'utf8'));
 eval(fs.readFileSync(__dirname + '/../studio/kart.js', 'utf8'));
 eval(fs.readFileSync(__dirname + '/../studio/entities.js', 'utf8'));
 eval(fs.readFileSync(__dirname + '/../studio/home.js', 'utf8'));
@@ -206,6 +207,26 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
     const modes = logs.filter(x => x.startsWith('mode')).map(x => x.split(/\s+/)[1]).join(',');
     if (modes !== 'loading,count,race,results,garage') fail('Kart Lab race end: modes ' + modes + ' (expected loading,count,race,results,garage)');
     if (errors.length) { errors.forEach(e => fail('Kart Lab finish: ' + e)); errors = []; }
+  }
+
+  // Kart Lab tracks from the Track tab: levels with a spline track and painted elevation, passed in as
+  // LEVELS; "race it" (KART_QUICK) goes straight to the track; tile behaviours answer fget(tile, "name")
+  {
+    logs = [];
+    const kd = window.BK_DEMOS.find(d => d.name === 'Kart Lab');
+    const kc = { tiles: new Uint8Array(32768), flags: new Uint8Array(512), map: new Uint16Array(32768) };
+    kd.buildGfx(kc);
+    kc.levels[1].track.pts[3] = [1200, 300];          // an edit on the Track tab
+    window.BKTracks.paint(kc.levels[1].map, kc.levels[1].track);
+    const meta = kc.levels.map(L => ({ name: L.name, w: L.w, h: L.h, placed: L.placed, track: L.track, height: L.height }));
+    M.HEAPU8.set(kc.tiles, M._bkw_tiles()); M.HEAPU8.set(kc.flags, M._bkw_flags()); M.HEAPU16.set(kc.levels[1].map, M._bkw_map() >> 1);
+    const probe = '\nlocal _u = _update\nfunction _update() _u() if mode == "count" and gt == 1 then print("trk", #TRACKS, TRACKS[sel.track].name, LAPS, #CRATES, math.floor(hget(1500, 120)), fget(5, "start"), fget(6, "boost"), fget(1, "boost")) end end';
+    const lua = window.BKEntities.toLua(kc.entities, meta, 1, 'KART_QUICK = 2\n');
+    if (M._bkw_load_ex(s(lua), s(kd.code + probe)) !== 0) fail('Kart Lab (Track tab levels) did not load: ' + errors.join(' '));
+    for (let f = 0; f < 200; f++) if (M._bkw_frame(0, 0)) { fail('Kart Lab (Track tab levels) stopped at frame ' + f); break; }
+    const l = (logs.find(x => x.startsWith('trk')) || '').split('\t').slice(1).join(',');
+    if (!/^2,Quarry Hills,3,12,(\d+),true,true,false$/.test(l) || +l.split(',')[4] < 70) fail('Kart Lab Track tab levels: ' + l + ' (expected 2 tracks, Quarry Hills straight away, 3 laps, 12 crates, raised ground near 1500,120, named behaviours)');
+    if (errors.length) { errors.forEach(e => fail('Kart Lab Track tab: ' + e)); errors = []; }
   }
 
   if (!process.exitCode) console.log('ok: runtime checks, home screen, 3000 demo frames, level switching, cutscenes, save data, multiplayer, 2.5D floor and Kart Lab passed');
