@@ -28,7 +28,7 @@ how to build and flash it, and what has and hasn't been tried on real hardware.
 | `clock()` for idle games (Windrow's time away) | ✅ | ✅ PCF8563 RTC, or `time <unix>` on the console | build only |
 | Analog `press()` | gamepad triggers | ✅ optional MCP3208 + Hall sensors, else 0/255 | build only |
 | Linked play (lockstep, up to 8 Bits) and `net_send` events | ✅ BroadcastChannel | ✅ ESP-NOW broadcasts, see [Linked Bits](#linked-bits) | `device` CI job: two Bits over a socket, 15% packets lost |
-| Frame-time budget per game | | ⏳ measured next PR | |
+| Frame-time budget per game | | ⚠️ estimated, see [Frame budget](#frame-budget); a benchmark build measures it on a board | `device` CI job (host times) |
 
 ## How it fits together
 
@@ -83,6 +83,74 @@ uses `rnd()`, `t()` and buttons; `clock()` and `pairs()` over tables keyed by ta
 addresses, which differ between Bits) can drift. The CI test checks that two Bits stay in step frame by frame
 (a hash of every frame's buttons and `rnd()` state) with 15% of packets lost.
 
+## Frame budget
+
+At 60 fps a frame has 16.7 ms: 4.0 million cycles of one 240 MHz core. The loop spends them on the Lua frame (the
+game and the host), mixing the sound, and turning the screen into RGB565 (the DMA sends each band while the next
+is converted, so sending is mostly free). Sound is cheap; the picture costs about 1-2 ms with no screen look.
+
+**Measured on a board: not yet.** There is no PocketBit to run it on, and Espressif's QEMU for the S3 that
+ESP-IDF 5.3 ships doesn't emulate PSRAM, which every game needs. So there are two things:
+
+1. **Estimates** from the `device` CI job, which runs the same C and Lua on the CI machine (an x86 server core).
+   The ESP32-S3 is roughly 30-60 times slower than that for this kind of work: it runs at 240 MHz, does about one
+   instruction a cycle, has no hardware for Lua's double-precision numbers (only single precision), and Lua's
+   memory is in PSRAM behind a 64 KB cache. The factor is a rule of thumb, not a measurement: treat the table as a
+   ranking of which games are at risk. Numbers from one run (CI prints fresh ones in every run's summary):
+
+| Game | CI host avg ms | estimate on the S3 (×30–60) | 60 fps? | Lua peak |
+|---|---:|---:|---|---:|
+| Sprout Hop | 0.83 | 25–50 ms | unlikely | 0.8 MB |
+| Windrow | 1.08 | 32–65 ms | unlikely | 1.0 MB |
+| Beacon Keeper | 0.23 | 7–14 ms | borderline | 0.7 MB |
+| Sweep Storm | 1.15 | 34–69 ms | unlikely | 1.3 MB |
+| Kart Lab | 2.94 | 88–177 ms | unlikely | 3.1 MB |
+| Crossgate | 0.09 | 3–5 ms | likely | 0.6 MB |
+| Tinwing | 1.80 | 54–108 ms | unlikely | 1.8 MB |
+| Deepglow | 0.56 | 17–34 ms | unlikely | 0.5 MB |
+| Puffball | 0.06 | 2–3 ms | likely | 0.5 MB |
+| Hedge Hogs | 0.15 | 5–9 ms | likely | 0.6 MB |
+| Cauldron Crew | 0.13 | 4–8 ms | likely | 0.5 MB |
+| Hexbeat | 0.15 | 4–9 ms | likely | 0.5 MB |
+| Loopbox | 0.15 | 5–9 ms | likely | 0.5 MB |
+| Game Boy | 0.19 | 6–11 ms | likely (C core; the ×30–60 rule is pessimistic for C) | 0.4 MB |
+| Game Boy Color | 0.21 | 6–13 ms | likely (C core; the ×30–60 rule is pessimistic for C) | 0.4 MB |
+| NES | 1.08 | 32–65 ms | unlikely (C core; the ×30–60 rule is pessimistic for C) | 0.4 MB |
+| Settings | 0.08 | 2–5 ms | likely | 0.3 MB |
+| Themes | 0.09 | 3–6 ms | likely | 0.6 MB |
+
+| Screen look | CI host ms | estimate on the S3 (×30–60) |
+|---|---:|---:|
+| off | 0.03 | 1–2 ms |
+| sepia | 0.51 | 15–30 ms |
+| vivid | 0.38 | 11–23 ms |
+| night | 0.63 | 19–38 ms |
+| handheld | 0.50 | 15–30 ms |
+| arcade | 0.62 | 19–37 ms |
+| crt | 0.76 | 23–45 ms |
+
+   What it says: the small games and the apps fit. The big Lua games (Kart Lab, Tinwing, Sweep Storm, Windrow,
+   Sprout Hop) probably run at 15-40 fps as they are. The full-screen looks (everything but "off") probably cost
+   more than a whole frame by themselves: on the device they need a cheaper path (e.g. colour-only looks, or a
+   look drawn at half resolution) before the Settings app should offer them there.
+
+2. **The benchmark build**, for the real numbers. `sdkconfig.bench` turns on `BIT_BENCH`: at boot the firmware
+   plays every built-in game for 600 frames with random buttons (no screen, sound card or radio needed, so a bare
+   DevKit works) and prints a table of millions of cycles per frame (average, 95th percentile, worst) for the Lua
+   frame, the sound and the picture, then the picture with every screen look:
+
+   ```sh
+   idf.py -B build-bench -DSDKCONFIG=build-bench/sdkconfig -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.bench" flash monitor
+   ```
+
+   CI builds it too: `benchmark/pocketbit.bin` in the **pocketbit-firmware** artifact (`FLASHING.txt` says how).
+   Divide by 4.0 for the share of a 60 fps frame.
+
+Ways to win the time back, once the board says how much is missing: draw the picture on the other core while
+Lua runs the next frame (worth the picture's 1-2 ms, more with a look); keep Lua's interpreter loop in internal
+RAM; let heavy games run their logic at 30 fps; or give the device build 32-bit float numbers (hardware FPU),
+which would make it differ slightly from the studio and needs care for linked games.
+
 ## Build and flash
 
 ```sh
@@ -125,7 +193,8 @@ GPIO 26-37 are taken by the flash and the octal PSRAM. GPIO 45 is a strapping pi
 - The panel init (ST7789 orientation, colour inversion, BGR), the 20 MHz write clock and tearing (no TE sync yet).
 - I2S levels and the left/right split on the two amplifiers.
 - SD card in 1-bit mode on those pins, and FAT write speed for clips while a game runs.
-- How fast Lua runs from PSRAM: that decides which games reach 60 fps (next PR measures it).
+- How fast Lua runs from PSRAM: that decides which games reach 60 fps. Estimated in [Frame budget](#frame-budget);
+  the benchmark build measures it on the first board.
 - Analog buttons and the PCF8563.
 - ESP-NOW between real Bits: range, lag (the 3-frame input delay assumes a few ms) and packet loss next to Wi-Fi,
   and whether internal RAM is enough with the radio on (the build leaves about 90 KB of internal RAM unused by

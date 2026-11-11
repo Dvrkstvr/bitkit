@@ -14,3 +14,10 @@ Serial console (115200, the same USB port): logs, frame times every 5 seconds, a
   time <unix seconds>    set the clock (idle games count the time you were away)
   lua <code>             run Lua in the game that is playing
   home                   go to the home screen
+
+Benchmark: benchmark/pocketbit.bin is a firmware that measures every built-in game at boot (no screen, sound or
+radio needed) and prints a table of CPU cycles per frame on the serial console. Flash everything above once, then:
+
+  esptool.py --chip esp32s3 -b 460800 write_flash 0x10000 benchmark/pocketbit.bin
+
+and open the serial monitor (115200). Flash pocketbit.bin at 0x10000 again to go back.

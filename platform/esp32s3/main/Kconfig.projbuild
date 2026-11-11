@@ -185,6 +185,14 @@ menu "PocketBit hardware"
             depends on BIT_LINK
     endmenu
 
+    config BIT_BENCH
+        bool "Benchmark: measure every game at boot, print a table, then stop (no screen, sound or radio)"
+        default n
+    config BIT_BENCH_FRAMES
+        int "Frames per game in the benchmark"
+        default 600
+        depends on BIT_BENCH
+
     config BIT_MAX_PAUSED
         int "Games kept paused in memory"
         default 4
