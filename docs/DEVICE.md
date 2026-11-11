@@ -126,6 +126,7 @@ ESP-IDF 5.3 ships doesn't emulate PSRAM, which every game needs. So there are tw
 | Hedge Hogs | 0.15 | 5–9 ms | likely | 0.6 MB |
 | Cauldron Crew | 0.13 | 4–8 ms | likely | 0.5 MB |
 | Mind Laps | 0.03 | 1–2 ms | likely | 0.5 MB |
+| Snowbelly (racing, one view) | 0.43 | 13–26 ms | borderline | 1.1 MB |
 | Hexbeat | 0.15 | 4–9 ms | likely | 0.5 MB |
 | Loopbox | 0.15 | 5–9 ms | likely | 0.5 MB |
 | Game Boy | 0.19 | 6–11 ms | likely (C core; the ×30–60 rule is pessimistic for C) | 0.4 MB |
