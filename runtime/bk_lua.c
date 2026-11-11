@@ -61,6 +61,28 @@ static int l_map(lua_State *l) {
   return 0;
 }
 
+/* floor(x, y, angle, height, horizon, [focal=160], [outside=-1], [step=1]) */
+static int l_floorplane(lua_State *l) {
+  bk_floor((float)luaL_checknumber(l, 1), (float)luaL_checknumber(l, 2), (float)luaL_checknumber(l, 3),
+           (float)luaL_checknumber(l, 4), ci(l, 5), (float)optn(l, 6, 160), opti(l, 7, -1), opti(l, 8, 1));
+  return 0;
+}
+/* project(x, y, [z=0]) -> sx, sy, scale   (nil when behind the camera) */
+static int l_project(lua_State *l) {
+  float sx, sy, sc;
+  if (!bk_project((float)luaL_checknumber(l, 1), (float)luaL_checknumber(l, 2), (float)optn(l, 3, 0), &sx, &sy, &sc)) {
+    lua_pushnil(l); return 1;
+  }
+  lua_pushnumber(l, sx); lua_pushnumber(l, sy); lua_pushnumber(l, sc);
+  return 3;
+}
+/* sspr(n, x, y, [w=1], [h=1], [scale=1], [flipx], [flipy]): sprite at any (fractional) scale */
+static int l_sspr(lua_State *l) {
+  bk_sspr(ci(l, 1), (float)luaL_checknumber(l, 2), (float)luaL_checknumber(l, 3), opti(l, 4, 1), opti(l, 5, 1),
+          (float)optn(l, 6, 1), lua_toboolean(l, 7), lua_toboolean(l, 8));
+  return 0;
+}
+
 static int l_mget(lua_State *l) {
   int x = ci(l, 1), y = ci(l, 2);
   int v = (x < 0 || y < 0 || x >= BK_MAP_W || y >= BK_MAP_H) ? 0 : BK->map[y * BK_MAP_W + x];
@@ -284,7 +306,7 @@ static int l_print(lua_State *l) {
 static const luaL_Reg API[] = {
   {"cls", l_cls}, {"pset", l_pset}, {"pget", l_pget}, {"line", l_line},
   {"rect", l_rect}, {"rectfill", l_rectfill}, {"circ", l_circ}, {"circfill", l_circfill},
-  {"text", l_text}, {"spr", l_spr}, {"map", l_map}, {"mget", l_mget}, {"mset", l_mset},
+  {"text", l_text}, {"spr", l_spr}, {"map", l_map}, {"floor", l_floorplane}, {"project", l_project}, {"sspr", l_sspr}, {"mget", l_mget}, {"mset", l_mset},
   {"fget", l_fget}, {"fset", l_fset}, {"camera", l_camera}, {"clip", l_clip},
   {"pal", l_pal}, {"palt", l_palt}, {"palette", l_palette},
   {"btn", l_btn}, {"btnp", l_btnp}, {"btnr", l_btnr}, {"press", l_press},

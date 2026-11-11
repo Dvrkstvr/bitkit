@@ -6,6 +6,7 @@
 #include <stdlib.h>
 
 bk_machine *BK = 0;
+static bk_floor_cam fcam;   /* camera of the last floor() call, used by project() */
 
 static const char *BASE_PAL[32] = {
   "000000","1b1b2f","3a2e5c","5e3a8c","8e4fb0","c06bd0",
@@ -44,6 +45,7 @@ void bk_reset_draw_state(void) {
   BK->clip_x1 = BK_W; BK->clip_y1 = BK_H;
   for (int i = 0; i < 256; i++) { BK->draw_pal[i] = (uint8_t)i; BK->transparent[i] = 0; }
   BK->transparent[0] = 1;
+  fcam.valid = 0;
 }
 
 void bk_machine_init(bk_machine *m) {
@@ -185,6 +187,102 @@ void bk_map(int cx, int cy, int cw, int ch, int sx, int sy) {
       if (mx < 0 || mx >= BK_MAP_W) continue;
       int t = BK->map[my * BK_MAP_W + mx];
       if (t) tile_draw(t, sx + i * 8, sy + j * 8, 0, 0, 1);
+    }
+  }
+}
+
+/* ---------------- 2.5D floor ---------------- */
+
+#define FLOOR_FAR 4096.f   /* world pixels: anything further is drawn in the outside colour */
+
+/* For each screen row below the horizon the floor distance is z = height * focal / (row - horizon).
+   The row is a straight line across the map, so it is walked with 16.16 fixed-point steps:
+   two adds, a map read and a tile read per pixel. step 2 or 4 draws every 2nd/4th column and
+   repeats it (cheaper, chunkier). */
+void bk_floor(float x, float y, float angle, float height, int horizon, float focal, int outside, int step) {
+  if (step < 1) step = 1;
+  if (focal < 1) focal = 1;
+  if (height < 0.01f) height = 0.01f;
+  float c = cosf(angle), s = sinf(angle);
+  float cx = (BK->clip_x0 + BK->clip_x1) * 0.5f;
+  fcam.x = x; fcam.y = y; fcam.angle = angle; fcam.height = height; fcam.focal = focal;
+  fcam.horizon = horizon; fcam.c = c; fcam.s = s; fcam.valid = 1;
+  fcam.cx = cx;
+  const int mw = BK_MAP_W * 8, mh = BK_MAP_H * 8;
+  uint8_t out = BK->draw_pal[outside & 255];
+  int y0 = horizon + 1 > BK->clip_y0 ? horizon + 1 : BK->clip_y0;
+  for (int sy = y0; sy < BK->clip_y1; sy++) {
+    uint8_t *row = &BK->screen[sy * BK_W];
+    float z = height * focal / (float)(sy - horizon);
+    if (z > FLOOR_FAR) {
+      if (outside >= 0) memset(row + BK->clip_x0, out, (size_t)(BK->clip_x1 - BK->clip_x0));
+      continue;
+    }
+    float k = z / focal;                       /* world pixels per screen pixel on this row */
+    float off = (BK->clip_x0 + 0.5f - cx) * k;
+    float wx = x + c * z - s * off, wy = y + s * z + c * off;
+    int32_t fx = (int32_t)(wx * 65536.f), fy = (int32_t)(wy * 65536.f);
+    int32_t dx = (int32_t)(-s * k * 65536.f) * step, dy = (int32_t)(c * k * 65536.f) * step;
+    for (int sx = BK->clip_x0; sx < BK->clip_x1; sx += step, fx += dx, fy += dy) {
+      int px = fx >> 16, py = fy >> 16;
+      int col = -1;
+      if ((unsigned)px < (unsigned)mw && (unsigned)py < (unsigned)mh) {
+        int t = BK->map[(py >> 3) * BK_MAP_W + (px >> 3)];
+        if (t > 0 && t < BK_TILES) col = BK->draw_pal[BK->tiles[t * BK_TILE_BYTES + (py & 7) * 8 + (px & 7)]];
+      }
+      if (col < 0) { if (outside < 0) continue; col = out; }
+      if (step == 1) row[sx] = (uint8_t)col;
+      else {
+        int e = sx + step > BK->clip_x1 ? BK->clip_x1 : sx + step;
+        memset(row + sx, col, (size_t)(e - sx));
+      }
+    }
+  }
+}
+
+/* World point (wz = height above the floor) to screen with the camera of the last bk_floor().
+   scale = screen pixels per world pixel at that distance. */
+int bk_project(float wx, float wy, float wz, float *sx, float *sy, float *scale) {
+  if (!fcam.valid) return 0;
+  float dx = wx - fcam.x, dy = wy - fcam.y;
+  float z = dx * fcam.c + dy * fcam.s;
+  if (z < 1.f) return 0;
+  float lat = -dx * fcam.s + dy * fcam.c;
+  float k = fcam.focal / z;
+  *sx = fcam.cx + lat * k;
+  *sy = fcam.horizon + (fcam.height - wz) * k;
+  *scale = k;
+  return 1;
+}
+
+/* Scaled sprite: tiles n.. (w x h tiles from the sheet) drawn sc times bigger, nearest-neighbour,
+   top-left at x, y (camera applies), transparent colours skipped. */
+void bk_sspr(int n, float x, float y, int w, int h, float sc, int flipx, int flipy) {
+  if (w < 1) w = 1;
+  if (h < 1) h = 1;
+  if (sc <= 0.f) return;
+  int sw = w * 8, sh = h * 8;
+  int x0 = (int)floorf(x) - BK->cam_x, y0 = (int)floorf(y) - BK->cam_y;
+  int dw = (int)(sw * sc + 0.5f), dh = (int)(sh * sc + 0.5f);
+  if (dw < 1 || dh < 1 || dw > 4096 || dh > 4096) return;
+  int32_t step = (int32_t)(65536.f / sc);
+  int ya = y0 < BK->clip_y0 ? BK->clip_y0 : y0, yb = y0 + dh > BK->clip_y1 ? BK->clip_y1 : y0 + dh;
+  int xa = x0 < BK->clip_x0 ? BK->clip_x0 : x0, xb = x0 + dw > BK->clip_x1 ? BK->clip_x1 : x0 + dw;
+  for (int py = ya; py < yb; py++) {
+    int v = (int)(((int64_t)(py - y0) * step) >> 16);
+    if (v >= sh) v = sh - 1;
+    if (flipy) v = sh - 1 - v;
+    int trow = n + (v >> 3) * 16;
+    uint8_t *dst = &BK->screen[py * BK_W];
+    for (int px = xa; px < xb; px++) {
+      int u = (int)(((int64_t)(px - x0) * step) >> 16);
+      if (u >= sw) u = sw - 1;
+      if (flipx) u = sw - 1 - u;
+      int t = trow + (u >> 3);
+      if (t < 0 || t >= BK_TILES) continue;
+      uint8_t c = BK->tiles[t * BK_TILE_BYTES + (v & 7) * 8 + (u & 7)];
+      if (BK->transparent[c]) continue;
+      dst[px] = BK->draw_pal[c];
     }
   }
 }

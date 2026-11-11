@@ -100,6 +100,19 @@ An idle game where you are the lighthouse. Everything is drawn from code, withou
 - Docked ships pay tolls. Spend them in the harbour shop (**X**) on oil, a better lens, ship lanterns, coast cannons, a bigger harbour, and a clockwork lens that aims the beam for you.
 - It uses `save()`, `saved()` and `clock()`, so the harbour keeps earning while the Bit is off.
 
+## 🏎️ The demo: Kart Lab (2.5D)
+
+A kart racer drawn SNES-style: the map becomes a floor seen in perspective, and karts, trees and cones are scaled sprites.
+
+- **It's all about the karts.** In the garage, pick a body (Dart, Brick, Hopper), an engine (Buzz 2-stroke, Twin, V-Torque), tyres (Slicks, Knobbly, Softs) and a paint job. Every part changes speed, accel, grip, weight, offroad and drift.
+- **Analog throttle** on R: squeeze harder to go faster. B brakes. Hold **L** while turning to drift; the sparks go white, amber, then violet, and letting go gives a boost.
+- Three rival karts with their own random builds, boost pads, 3 laps around Pinewood Loop, and your best time is saved.
+- The track is an ordinary map, so you can repaint it on the Map tab.
+
+<img src="docs/media/kart-lab-race.png" width="400" alt="Kart Lab race"> <img src="docs/media/kart-lab-garage.png" width="400" alt="Kart Lab garage">
+
+Load it with **Demo → Kart Lab**.
+
 ## 🕹️ Controls
 
 | PocketBit | Gamepad (standard mapping) | Keyboard |
@@ -116,6 +129,7 @@ An idle game where you are the lighthouse. Everything is drawn from code, withou
 | Callbacks | `_init` `_update` `_draw` |
 | Graphics | `cls pset pget line rect rectfill circ circfill text spr map camera clip pal palt palette` |
 | Map | `mget mset fget fset` |
+| 2.5D | `floor project sspr` (perspective floor from the map, world-to-screen, scaled sprites) |
 | Input | `btn btnp btnr press` |
 | Sound | `sfx tone stop` (8-voice stereo synth) |
 | Entities | `ents_update ents_draw ents_player ents_spawn ents_all ents_touch ents_kill ents_damage ents_on` |
