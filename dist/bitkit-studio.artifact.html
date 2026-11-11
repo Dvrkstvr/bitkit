@@ -14795,7 +14795,7 @@ function _init()
       "Confuse and Paint fly at the nearest rival: for a while they see wrong numbers or none there.",
       "Shore cells are worth 1, the middle ring 2, the core 4. Power-ups get stronger towards the middle.",
       "The storm shrinks the island. Standing in it costs hearts.",
-      "Fog covers the island and you can only walk where you can see. Digging clears the fog around what you dig.",
+      "Fog covers the island and you can only walk where you can see. Digging clears the fog around what you dig, and so does standing on dug ground.",
       "Up to 20 Bits nearby can join the same match. Bots fill the empty spots.",
     },
     settings = { { key = "skill", name = "Bot skill", values = { "Easy", "Normal", "Hard" }, value = 2 },
@@ -14971,7 +14971,8 @@ end
 
 -- ============================================================ fog of war
 -- Each Bit keeps its own: you see what's near ground you dug yourself, and you can only walk where
--- you can see. Only digging clears fog, so when the storm comes you have to dig your way out of it.
+-- you can see. Digging clears fog, and so does standing on dug ground (anyone's), so ground another
+-- player solved next to you lets you through. Undug ground doesn't, so the storm stays dangerous.
 FOG_DIG, FOG_START = 2, 4
 function fog_on() return setting("fog") ~= 2 and not (me and me.out) end
 function reveal(x0, y0, r)
@@ -15312,6 +15313,9 @@ function step_me()
     elseif mx ~= 0 and walkable(p.x + mx, p.y) then p.x = p.x + mx
     elseif my ~= 0 and walkable(p.x, p.y + my) then p.y = p.y + my
     else bump = 6 end
+    -- standing on dug ground (yours or anyone's) lets you see around it, so ground someone else
+    -- solved next to you never walls you in
+    if op[idx(p.x, p.y)] > 0 then reveal(p.x, p.y, FOG_DIG) end
   end
   local i = idx(p.x, p.y)
   if btnp("a") then
