@@ -62,6 +62,7 @@
       <button data-tab="entities">Entities</button>
       <button data-tab="cutscenes">Cutscenes</button>
       <button data-tab="input">Controller</button>
+      <button data-tab="ai" class="ai-tabbtn" title="Make games with Claude or Gemini">✨ AI</button>
       <button data-tab="help">Help</button>
     </nav>
 
@@ -375,6 +376,23 @@
       </div>
     </div>
 
+    <div id="tab-ai" class="tab">
+      <div class="ai-head">
+        <select id="aiProvider" title="AI provider"><option value="claude">Claude</option><option value="gemini">Gemini</option></select>
+        <select id="aiModel" title="Model"></select>
+        <span id="aiStatus" class="dim small"></span>
+        <span class="grow"></span>
+        <button id="aiNew" class="tiny" title="Start a new conversation">New chat</button>
+        <button id="aiSettings" class="tiny" title="API keys and options">⚙ Settings</button>
+      </div>
+      <div id="aiSetup" class="ai-setup" hidden></div>
+      <div id="aiLog" class="ai-log"></div>
+      <div class="ai-compose">
+        <textarea id="aiInput" rows="3" spellcheck="true"></textarea>
+        <button id="aiSend" class="primary">Send</button>
+      </div>
+    </div>
+
     <div id="tab-help" class="tab"><div class="help" id="helpBody"></div></div>
   </section>
 </main>
@@ -393,6 +411,7 @@
 <script src="cutscenes.js"></script>
 <script src="bitstore.js"></script>
 <script src="home.js"></script>
+<script src="ai.js"></script>
 <script src="studio.js"></script>
 </body>
 </html>
