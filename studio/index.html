@@ -94,6 +94,11 @@
 
     <div id="tab-map" class="tab">
       <div class="toolbar">
+        <select id="mapLevel" title="Level to edit"></select>
+        <button id="mapLevelAdd" class="tiny" title="Add a level">+ level</button>
+        <button id="mapLevelEdit" class="tiny" title="Rename, resize, duplicate or delete this level">⚙</button>
+        <button id="mapPlayLevel" class="tiny" title="Run the game starting on this level">▶ play level</button>
+        <span class="sep"></span>
         <select id="mapLayer" title="What to edit"><option value="tiles">Tiles</option><option value="ents">Entities</option></select>
         <select id="mapEnt" hidden title="Entity to place"></select>
         <button data-mtool="paint" class="mtool active" title="Paint (P)">Paint</button>

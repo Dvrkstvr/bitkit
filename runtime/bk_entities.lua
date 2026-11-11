@@ -436,6 +436,7 @@ end
 N.got_hurt = function(e) return (e.inv or 0) > 10 and 1 or 0 end
 N.heard = function(e, n, p) return HEARD[p.event or ""] and 1 or 0 end
 N.emit = function(e, n, p) emit(p.event or "event", e) return 1 end
+N.level = function(e, n, p) level(math.floor(tonumber(p.n) or 1)) return 1 end
 N.damage_touching = function(e, n, p)
   local l, hit = e.touch_now or {}, 0
   for i = 1, #l do
@@ -629,7 +630,51 @@ local function move(e)
   e.ground = e.grav and e.collide and hits(e.x, e.y + 1, e.w, e.h)
 end
 
+-- ---- levels: each has its own map (swapped in by the host) and its own placed entities
+LEVEL, LEVELS = 1, {}
+local LEVEL_PENDING = nil
+
+-- called by the studio's generated data: LEVELS[n] = {name=, w=, h=, placed={...}}
+function ents_levels(list, start)
+  LEVELS = list
+  LEVEL = (list[start or 1] and (start or 1)) or 1
+  local L = LEVELS[LEVEL]
+  if L then
+    ENT_WORLD_W, ENT_WORLD_H = L.w * 8, L.h * 8
+    ents_place(L.placed)
+  end
+end
+
+-- level(n): switch to level n at the start of the next frame. The player keeps its HP and data.
+function level(n)
+  if not LEVELS[n] or LEVEL_PENDING then return false end
+  _level_map(n)
+  LEVEL_PENDING = n
+  return true
+end
+
+local function apply_level()
+  local n = LEVEL_PENDING
+  LEVEL_PENDING = nil
+  local L = LEVELS[n]
+  LEVEL = n
+  ENT_WORLD_W, ENT_WORLD_H = L.w * 8, L.h * 8
+  local old = PLAYER ~= DUMMY and PLAYER.alive and PLAYER or nil
+  PLACED = L.placed
+  ents_reset()
+  if old then
+    if PLAYER ~= DUMMY then
+      PLAYER.hp, PLAYER.data = old.hp, old.data
+    else
+      LIST[#LIST + 1] = old
+      PLAYER = old
+    end
+  end
+  emit("level", n, L.name)
+end
+
 function ents_update()
+  if LEVEL_PENDING then apply_level() end
   HEARD, PENDING = PENDING, {}
   if not PLAYER.dummy and PLAYER.alive then
     TX, TY = PLAYER.x + PLAYER.w / 2, PLAYER.y + PLAYER.h / 2

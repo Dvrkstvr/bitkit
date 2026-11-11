@@ -4,9 +4,9 @@ const fs = require('fs'); global.window = {};
 eval(fs.readFileSync(__dirname + '/../studio/demo.js', 'utf8'));
 eval(fs.readFileSync(__dirname + '/../studio/entities.js', 'utf8'));
 eval(fs.readFileSync(__dirname + '/../studio/home.js', 'utf8'));
-let errors = [];
+let errors = [], logs = [];
 const fail = m => { console.error('FAIL', m); process.exitCode = 1; };
-require('../studio/runtime.js')({ onLog: (m, e) => { if (e) errors.push(m); } }).then(M => {
+require('../studio/runtime.js')({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then(M => {
   const s = x => M.stringToNewUTF8(x);
   M._bkw_init();
   if (M._bkw_load(s('function _draw() cls(1) text("hi",0,0) end')) !== 0) fail('simple cart did not load');
@@ -28,12 +28,29 @@ require('../studio/runtime.js')({ onLog: (m, e) => { if (e) errors.push(m); } })
 
   const cart = { tiles: new Uint8Array(32768), flags: new Uint8Array(512), map: new Uint16Array(32768) };
   window.BK_DEMO.buildGfx(cart);
-  M.HEAPU8.set(cart.tiles, M._bkw_tiles()); M.HEAPU8.set(cart.flags, M._bkw_flags()); M.HEAPU16.set(cart.map, M._bkw_map() >> 1);
-  if (M._bkw_load_ex(s(window.BKEntities.toLua(cart.entities)), s(window.BK_DEMO.code)) !== 0) fail('demo did not load');
+  const levels = cart.levels;
+  if (!levels || levels.length < 2) fail('demo should have two levels');
+  const meta = levels.map(L => ({ name: L.name, w: L.w, h: L.h, placed: L.placed }));
+  // host side of level(n): copy that level's map in before the next frame
+  const frame = mask => { const r = M._bkw_frame(mask, 0); if (M.HEAP32[sys] === 4) M.HEAPU16.set(levels[M.HEAP32[sys + 1] - 1].map, M._bkw_map() >> 1); return r; };
+  M.HEAPU8.set(cart.tiles, M._bkw_tiles()); M.HEAPU8.set(cart.flags, M._bkw_flags()); M.HEAPU16.set(levels[0].map, M._bkw_map() >> 1);
+  if (M._bkw_load_ex(s(window.BKEntities.toLua(cart.entities, meta, 0)), s(window.BK_DEMO.code)) !== 0) fail('demo did not load');
   for (let f = 0; f < 3000; f++) {
     const mask = (1 << 1) | ((f % 30) < 12 ? 1 << 4 : 0) | (f % 20 === 0 ? 1 << 5 : 0);
-    if (M._bkw_frame(mask, 0)) { fail('demo stopped at frame ' + f); break; }
+    if (frame(mask)) { fail('demo stopped at frame ' + f); break; }
   }
+
+  // switching levels: level(2) loads the cave map and its entities, the player keeps its HP
+  const probe = '\nlocal _u = _update\nfunction _update() if t() == 5 then PLAYER.hp = 2; level(2) end _u() if t() == 8 then print("probe", LEVEL, #ents_all("goal"), #ents_all("exit"), PLAYER.hp, mget(0, 0)) end end';
+  M.HEAPU16.set(levels[0].map, M._bkw_map() >> 1);
+  if (M._bkw_load_ex(s(window.BKEntities.toLua(cart.entities, meta, 0)), s(window.BK_DEMO.code + probe)) !== 0) fail('demo with probe did not load');
+  for (let f = 0; f < 12; f++) frame(0);
+  const line = logs.find(l => l.startsWith('probe'));
+  const v = line ? line.split(/\s+/).slice(1).map(Number) : [];
+  if (!line || v[0] !== 2 || v[1] !== 1 || v[2] !== 0 || v[3] !== 2 || v[4] !== 18) fail('level switch probe: ' + line + ' (expected level 2, 1 goal, 0 exits, hp 2, brick tile 18 at 0,0)');
+
+  // playing level 2 from the start
+  for (let f = 0; f < 1500; f++) if (frame((1 << 1) | ((f % 30) < 12 ? 1 << 4 : 0))) { fail('level 2 stopped at frame ' + f); break; }
   errors.forEach(e => fail('Lua error: ' + e));
-  if (!process.exitCode) console.log('ok: runtime checks, home screen and 3000 demo frames passed');
+  if (!process.exitCode) console.log('ok: runtime checks, home screen, 3000 demo frames and level switching passed');
 });
