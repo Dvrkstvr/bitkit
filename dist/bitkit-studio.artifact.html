@@ -22825,16 +22825,21 @@ function draw_model(M, P, p, spin, fast, prop)
       list[#list + 1] = {d = a[3] + b[3] + c[3], a = a, b = b, c = c, col = col}
     end
   end
+  -- the propeller on the nose goes into the same depth order as the triangles, so from the chase camera
+  -- (behind the plane) it is drawn first and the body covers it; seen from the front it is drawn on top
+  local px, py, k, pd = proj(body_to_world(P, M.nose + 0.6, 0, 0.2))
+  if px then list[#list + 1] = {d = pd * 3, prop = true} end
   table.sort(list, function(u, v) return u.d > v.d end)
-  for _, t in ipairs(list) do tri(t.a[1], t.a[2], t.b[1], t.b[2], t.c[1], t.c[2], t.col) end
-  -- the propeller on the nose: a bigger motor turns a bigger prop
-  local px, py, k = proj(body_to_world(P, M.nose + 0.6, 0, 0.2))
-  if px then
-    local r = (prop or 4.6) * k
-    if fast then circ(px, py, r, 29) end
-    local bx, by = math.cos(spin) * r, math.sin(spin) * r * 0.9
-    line(px - bx, py - by, px + bx, py + by, 30)
-    circfill(px, py, math.max(1, 0.8 * k), 31)
+  for _, t in ipairs(list) do
+    if t.prop then
+      -- a bigger motor turns a bigger prop; the blur ring only shows when it faces you
+      local r = (prop or 4.6) * k
+      local _, _, _, td = proj(body_to_world(P, M.nose - 6, 0, 0.2))
+      if fast and td and td > pd then circ(px, py, r, 29) end
+      local bx, by = math.cos(spin) * r, math.sin(spin) * r * 0.9
+      line(px - bx, py - by, px + bx, py + by, 30)
+      circfill(px, py, math.max(1, 0.8 * k), 31)
+    else tri(t.a[1], t.a[2], t.b[1], t.b[2], t.c[1], t.c[2], t.col) end
   end
 end
 
