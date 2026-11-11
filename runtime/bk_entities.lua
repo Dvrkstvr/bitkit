@@ -651,6 +651,61 @@ function saved()
   return nil
 end
 
+-- ---------------------------------------------------------------- player names
+-- Each Bit's owner sets a name and colour in the Settings app (USER). The host puts them in NAMES / NAME_COLORS
+-- (player n's, the same on every linked Bit); on one Bit, player 1 is the owner. player_name(n, [max letters]).
+function player_name(n, max)
+  n = n or (((ME or 0) > 0) and ME or 1)
+  local s = type(NAMES) == "table" and NAMES[n] or nil
+  if type(s) ~= "string" or s == "" then s = "P" .. n end
+  if max and #s > max then s = s:sub(1, max) end
+  return s
+end
+function player_color(n, default)
+  n = n or (((ME or 0) > 0) and ME or 1)
+  local c = type(NAME_COLORS) == "table" and NAME_COLORS[n] or nil
+  return math.type(c) == "integer" and c or (default or 13)
+end
+-- network event games (net_send): every Bit tells the others its owner's name now and then, as a reserved
+-- event (-7700) that net_recv() keeps to itself. net_name(id, [max]) is the name of the Bit with that NET_ID.
+NET_NAMES, NET_COLORS = {}, {}
+do
+  local raw_send, raw_recv, said = net_send, net_recv, -1000
+  local function pack(s, i)
+    local v = 0
+    for k = 0, 2 do v = v * 256 + (s:byte(i + k) or 0) end
+    return v
+  end
+  local function unpack3(v, out)
+    local a, b, c = v // 65536 % 256, v // 256 % 256, v % 256
+    for _, x in ipairs({a, b, c}) do if x >= 32 and x < 127 then out[#out + 1] = string.char(x) end end
+  end
+  function net_send(...)
+    local me = type(NAMES) == "table" and NAMES[1] or ""
+    if me ~= "" and (t() - said >= 120 or t() < said) then
+      said = t()
+      raw_send(-7700, pack(me, 1), pack(me, 4), pack(me, 7), pack(me, 10), type(NAME_COLORS) == "table" and NAME_COLORS[1] or 13)
+    end
+    return raw_send(...)
+  end
+  function net_recv()
+    while true do
+      local r = table.pack(raw_recv())
+      if r[1] == nil then return nil end
+      if r[2] ~= -7700 then return table.unpack(r, 1, r.n) end
+      local out = {}
+      for k = 3, 6 do unpack3(r[k] or 0, out) end
+      NET_NAMES[r[1]] = table.concat(out); NET_COLORS[r[1]] = r[7]
+    end
+  end
+end
+function net_name(id, max)
+  local s = id == NET_ID and type(NAMES) == "table" and NAMES[1] or NET_NAMES[id]
+  if type(s) ~= "string" or s == "" then return nil end
+  if max and #s > max then s = s:sub(1, max) end
+  return s
+end
+
 -- ---------------------------------------------------------------- cutscenes
 -- A cutscene is a list of steps made on the studio's Cutscenes tab (or by hand):
 --   ents_cutscenes({ intro = {level = 1, steps = {{t = "say", p = {who = "sage", text = "Hi!"}}, ...}} })

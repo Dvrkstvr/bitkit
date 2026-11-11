@@ -347,7 +347,7 @@ function start_match(seed, ids, nb, host)
     slots[k] = { k = k, id = human and ids[k] or 0, bot = not human, owner = human and ids[k] or host,
       x = spawns[k].x, y = spawns[k].y, score = 0, hearts = 3, out = false, stun = 0, shield = false,
       item = 0, storm = 0, col = PCOL[k], wait = 60 + k * 7, flags = {}, lastsent = -99 }
-    slots[k].name = human and ("P" .. k) or ("Bot " .. k)
+    slots[k].name = human and (net_name(ids[k], 8) or ("P" .. k)) or ("Bot " .. k)
     if (human and ids[k] == NET_ID) or (NET_ID == 0 and k == 1) then me = slots[k] end
   end
   match = { seed = seed, nh = nh, nb = nb, host = host, hosting = host == NET_ID, n = n, mt = 0, over = false }
@@ -837,7 +837,7 @@ function draw_match()
         local c = q.out and 28 or q.col
         rect(x - 1, y - 1, 10, 10, c)
         if q.stun > 0 and (t() // 4) % 2 == 0 then rect(x - 2, y - 2, 12, 12, 22) end
-        local s = q.bot and ("B" .. q.k) or ("P" .. q.k)
+        local s = q.bot and ("B" .. q.k) or (net_name(q.id, 6) or ("P" .. q.k))
         text(s, x + 4 - #s * 2, y - 9, c)
       end
     end

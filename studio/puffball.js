@@ -220,7 +220,7 @@ end
 function side_name(s)
   if NP == 1 then return s == 1 and "You" or "The crab" end
   local names = {}
-  for _, p in ipairs(P) do if p.side == s and p.pl > 0 then names[#names + 1] = "P" .. p.pl end end
+  for _, p in ipairs(P) do if p.side == s and p.pl > 0 then names[#names + 1] = player_name(p.pl, 8) end end
   if #names == 0 then return "The crabs" end
   return table.concat(names, " + ")
 end
@@ -370,7 +370,7 @@ function draw_player(p, i)
   end
   if p.dive_t > 0 then line(p.x - p.face * 14, cy, p.x - p.face * 22, cy, 13) line(p.x - p.face * 14, cy + 5, p.x - p.face * 19, cy + 5, 13) end
   if p.pl > 0 and (ME or 0) == p.pl then text("v", p.x - 4, cy - 26 + (gt // 12) % 2, 13) end
-  if p.pl > 0 and NP > 1 then text("P" .. p.pl, p.x - 7, GROUND + 9, 8) text("P" .. p.pl, p.x - 8, GROUND + 8, 13) end
+  if p.pl > 0 and NP > 1 then local nm = player_name(p.pl, 6) text(nm, p.x - #nm * 4 + 1, GROUND + 9, 8) text(nm, p.x - #nm * 4, GROUND + 8, 13) end
 end
 
 function draw_puffer(x, y, r, spin, face)

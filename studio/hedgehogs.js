@@ -357,7 +357,7 @@ end
 function hog_name(h)
   if h.pl == 0 then return "CPU " .. h.id end
   if NP == 1 then return "You" end
-  return "P" .. h.pl
+  return player_name(h.pl, 8)
 end
 
 function _update()
@@ -467,7 +467,7 @@ function draw_field()
     if h.alive then
       draw_hog(h, x, y)
       if h.pl > 0 and (ME or 0) == h.pl then text("v", x - 4, y - 16 + (gt // 12) % 2, 13)
-      elseif h.pl > 0 and NP > 1 and state == "ready" then text("P" .. h.pl, x - 8, y + 8, 13) end
+      elseif h.pl > 0 and NP > 1 and state == "ready" then local nm = player_name(h.pl, 6) text(nm, x - #nm * 4, y + 8, 13) end
       if h.gain_t and h.gain_t > 0 then text("+" .. h.gain, x - 8, y - 14 - (50 - h.gain_t) // 5, 13) end
     elseif h.dead_t < 40 and (gt // 4) % 2 == 0 then
       circ(h.hx * 8 + 4, TOP + h.hy * 8 + 4, 6, PC[h.id])
@@ -496,7 +496,7 @@ function draw_hud()
       local x = 52 + (i - 1) * w
       rectfill(x, 5, w - 4, 22, 2)
       rectfill(x, 5, 4, 22, PC[h.id])
-      text(h.pl > 0 and "P" .. h.pl or "CPU", x + 7, 7, (ME or 0) == h.pl and h.pl > 0 and 27 or 29)
+      text(h.pl > 0 and player_name(h.pl, math.max(2, (w - 12) // 8)) or "CPU", x + 7, 7, (ME or 0) == h.pl and h.pl > 0 and 27 or 29)
       text(percent(h.team) .. "%", x + 7, 17, 13)
     end
   end
