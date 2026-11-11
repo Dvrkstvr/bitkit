@@ -166,6 +166,10 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
     if (errors.length) { errors.forEach(e => fail('2.5D: ' + e)); errors = []; }
   }
 
+  // Kart Lab menus: A on the main menu (Race), A twice on the rules screen (jump to Next, then Next),
+  // A in the garage. KGO(f) is true on the frames that press A.
+  const KGO = f => f === 10 || f === 25 || f === 40 || f === 55;
+
   // Kart Lab: start a race from the garage, an autopilot drives your kart; it should finish a lap
   {
     logs = [];
@@ -175,7 +179,7 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
     M.HEAPU8.set(kc.tiles, M._bkw_tiles()); M.HEAPU8.set(kc.flags, M._bkw_flags()); M.HEAPU16.set(kc.map, M._bkw_map() >> 1);
     const auto = '\nlocal _sr = start_race\nfunction start_race() _sr() player.ai, player.skill, player.lane, player.lane_want = true, 1, 0, 0 end\nlocal _u = _update\nfunction _update() _u() if mode == "race" and gt % 150 == 0 then player.item, player.roll = (gt // 150) % #ITEMS + 1, 0 use_item(player) used = (used or 0) + 1 if #shots + #hazards > 0 then fired = true end end if t() == 2299 then print("kart", mode, player.lap, #karts, used, fired) end end';
     if (M._bkw_load(s('GAME_BOOT = 3 ' + kd.code + auto)) !== 0) fail('Kart Lab did not load');
-    for (let f = 0; f < 2300; f++) if (M._bkw_frame(f === 10 ? 1 << 4 : (f > 400 && f < 700 ? (1 << 8) | (f % 90 < 45 ? 1 : 2) : 0), 0)) { fail('Kart Lab stopped at frame ' + f); break; }
+    for (let f = 0; f < 2300; f++) if (M._bkw_frame(KGO(f) ? 1 << 4 : (f > 400 && f < 700 ? (1 << 8) | (f % 90 < 45 ? 1 : 2) : 0), 0)) { fail('Kart Lab stopped at frame ' + f); break; }
     const kl = (logs.find(x => x.startsWith('kart')) || '').split(/\s+/);
     if (kl[1] !== 'race' || !(+kl[2] >= 2) || kl[3] !== '8' || !(+kl[4] >= 5) || kl[5] !== 'true') fail('Kart Lab race: ' + kl.join(' ') + ' (expected racing on lap 2 with 8 karts, every item used)');
     if (errors.length) { errors.forEach(e => fail('Kart Lab: ' + e)); errors = []; }
@@ -187,7 +191,7 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
     const kd = window.BK_DEMOS.find(d => d.name === 'Kart Lab');
     const probe = '\nlocal _i = _init\nfunction _init() _i() sel.track = 2 end\nlocal _u = _update\nfunction _update() _u() if mode == "count" and gt == 1 then local lo, hi = 999, 0 for y = 0, 1016, 64 do for x = 0, 2040, 64 do local h = hget(x, y) lo, hi = math.min(lo, h), math.max(hi, h) end end print("track2", TRACKS[sel.track].name, NWP > 100, #CRATES, hi - lo > 20, mget(WP[1].x // 8, WP[1].y // 8)) end end';
     if (M._bkw_load(s('GAME_BOOT = 3 ' + kd.code + probe)) !== 0) fail('Kart Lab (track 2) did not load');
-    for (let f = 0; f < 200; f++) if (M._bkw_frame(f === 10 ? 1 << 4 : 0, 0)) { fail('Kart Lab (track 2) stopped at frame ' + f); break; }
+    for (let f = 0; f < 300; f++) if (M._bkw_frame(KGO(f) ? 1 << 4 : 0, 0)) { fail('Kart Lab (track 2) stopped at frame ' + f); break; }
     const l = (logs.find(x => x.startsWith('track2')) || '').split('\t').slice(1).join(',');
     if (l !== 'Quarry Hills,true,12,true,5') fail('Kart Lab track 2: ' + l + ' (expected Quarry Hills,true,12,true,5)');
     if (errors.length) { errors.forEach(e => fail('Kart Lab track 2: ' + e)); errors = []; }
@@ -201,11 +205,11 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
     const fin = '\nlocal _sr = start_race\nfunction start_race() _sr() player.lap = LAPS end\nlocal _u = _update\nfunction _update() local m = mode _u() if m ~= mode then print("mode", mode) end end';
     if (M._bkw_load(s('GAME_BOOT = 3 ' + kd.code + fin)) !== 0) fail('Kart Lab (finish) did not load');
     for (let f = 0; f < 1500; f++) {
-      const mask = f === 10 ? 1 << 4 : (f > 200 && f < 1000 ? 1 << 9 : 0) | (f === 1400 ? 1 << 4 : 0);
+      const mask = KGO(f) ? 1 << 4 : (f > 250 && f < 1000 ? 1 << 9 : 0) | (f === 1400 ? 1 << 4 : 0);
       if (M._bkw_frame(mask, 0)) { fail('Kart Lab (finish) stopped at frame ' + f); break; }
     }
     const modes = logs.filter(x => x.startsWith('mode')).map(x => x.split(/\s+/)[1]).join(',');
-    if (modes !== 'loading,count,race,results,garage') fail('Kart Lab race end: modes ' + modes + ' (expected loading,count,race,results,garage)');
+    if (modes !== 'setup,garage,loading,count,race,results,setup') fail('Kart Lab race end: modes ' + modes + ' (expected setup,garage,loading,count,race,results,setup)');
     if (errors.length) { errors.forEach(e => fail('Kart Lab finish: ' + e)); errors = []; }
   }
 
@@ -287,11 +291,38 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
       'if gt == 80 then print("kitems", R.swap, R.gold, R.oil, R.hit, #ITEMS) end end';
     if (M._bkw_load(s(kd.code + probe)) !== 0) fail('Kart Lab items did not load: ' + errors.join(' '));
     for (let f = 0; f < 600; f++) {
-      if (M._bkw_frame(f === 10 ? 16 : (f > 20 && f % 2 ? 1 << 7 : 0), 0)) { fail('Kart Lab items stopped at frame ' + f); break; }   // then Y now and then
+      if (M._bkw_frame(KGO(f) ? 16 : (f > 70 && f % 2 ? 1 << 7 : 0), 0)) { fail('Kart Lab items stopped at frame ' + f); break; }   // then Y now and then
     }
     const ki = (logs.find(x => x.startsWith('kitems')) || '').split('\t').slice(1).join(' ');
     if (ki !== 'true true true true 7') fail('Kart Lab items: ' + ki + ' (expected Y swap, Golden Tires, slippery oil, a tire hit, 7 items)');
     if (errors.length) { errors.forEach(e => fail('Kart Lab items: ' + e)); errors = []; }
+  }
+
+  // Kart Lab Rumble: the arena builds, rivals fight (helmets come off), a kart with no helmets is KO,
+  // and the match ends when one kart is left
+  {
+    logs = [];
+    const kd = window.BK_DEMOS.find(d => d.name === 'Kart Lab');
+    const kc = { tiles: new Uint8Array(32768), flags: new Uint8Array(512), map: new Uint16Array(32768) };
+    kd.buildGfx(kc);
+    M._bkw_players(1, 0);
+    M.HEAPU8.set(kc.tiles, M._bkw_tiles()); M.HEAPU8.set(kc.flags, M._bkw_flags()); M.HEAPU16.set(kc.map, M._bkw_map() >> 1);
+    const probe = '\nlocal _u = _update\nfunction _update() local m = mode _u() if m ~= mode then print("rmode", mode) end ' +
+      'if mode == "race" and gt == 1 then print("rstart", GMODE, ARENA.name, #karts, karts[2].helmets, math.floor(arena_d(ARENA, player.x, player.y))) end ' +
+      'if mode == "race" and gt == 1500 then local lost = 0 for _, k in ipairs(karts) do lost = lost + rules.helmets - k.helmets end print("rfight", lost) ' +
+      'local v = karts[1] == player and karts[2] or karts[1] while not v.ko do v.spin = 0 v.shield = 0 hit(v, player) end print("rko", v.ko, v.helmets) ' +
+      'for _, k in ipairs(karts) do if k ~= player then k.ko = true k.ko_t = race_t end end end end';
+    if (M._bkw_load(s('GAME_BOOT = 3 ' + kd.code + probe)) !== 0) fail('Kart Lab Rumble did not load: ' + errors.join(' '));
+    for (let f = 0; f < 2200; f++) {
+      if (M._bkw_frame(f === 5 ? 1 << 3 : KGO(f) ? 1 << 4 : (f > 250 ? 1 << 9 : 0), 0)) { fail('Kart Lab Rumble stopped at frame ' + f); break; }
+    }
+    const g = k => (logs.find(x => x.startsWith(k)) || '').split('\t').slice(1).join(' ');
+    if (g('rstart') !== 'rumble Quarry Bowl 8 3 ' + g('rstart').split(' ').pop() || !(+g('rstart').split(' ').pop() < 0)) fail('Kart Lab Rumble start: ' + g('rstart') + ' (expected 8 karts with 3 helmets inside Quarry Bowl)');
+    if (!(+g('rfight') > 0)) fail('Kart Lab Rumble: no helmets lost in 25 s of fighting (' + g('rfight') + ')');
+    if (g('rko') !== 'true 0') fail('Kart Lab Rumble KO: ' + g('rko'));
+    const rm = logs.filter(x => x.startsWith('rmode')).map(x => x.split('\t')[1]).join(',');
+    if (rm !== 'setup,garage,loading,count,race,results') fail('Kart Lab Rumble modes: ' + rm);
+    if (errors.length) { errors.forEach(e => fail('Kart Lab Rumble: ' + e)); errors = []; }
   }
 
   // Kart Lab with two players: both karts race in the same race. Linked Bits (each sees its own player)
@@ -309,7 +340,7 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
       R.HEAP32[(R._bkw_save() >> 2)] = -1;              // no save data: every Bit starts the same
       return R._bkw_load(R.stringToNewUTF8('GAME_BOOT = 3 ' + kd.code + probe));
     };
-    const inputs = f => [f === 10 ? 1 << 4 : (f > 200 ? 1 << 9 : 0), f === 12 || f === 14 ? 1 << 4 : (f > 200 ? 1 << 4 : 0)];
+    const inputs = f => [KGO(f) ? 1 << 4 : (f > 245 ? 1 << 9 : 0), f === 57 || f === 59 ? 1 << 4 : (f > 245 ? 1 << 4 : 0)];
     logs = [];
     if (boot(M, 1) || boot(M2, 2)) fail('Kart Lab linked did not load');
     for (let f = 0; f < 1100; f++) {
@@ -328,7 +359,7 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
     if (boot(M, 0)) fail('Kart Lab 2 players did not load');
     for (let f = 0; f < 1100; f++) {
       const [m1, m2] = inputs(f);
-      M._bkw_input(2, f === 12 ? 0 : m2, 0);
+      M._bkw_input(2, f === 57 ? 0 : m2, 0);
       if (M._bkw_frame(m1, 0)) { fail('Kart Lab 2 players stopped at frame ' + f); break; }
     }
     const k3 = (logs.find(l => l.startsWith('k2p')) || '').split(/\s+/).slice(1).join(' ');
