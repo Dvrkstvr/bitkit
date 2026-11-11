@@ -2,6 +2,8 @@
 (function () {
   const code = `-- Puffball: keep the puffer off your sand (1-8 players, on one screen or on linked Bits)
 --   Left / right: run. A: jump. B: dive (a quick lunge along the sand).
+--   Serve: the server carries the puffer above their head, walks to a good spot and jumps. A moment later
+--   the puffer lets go. Nobody is frozen after a point, and the side that lost the point serves.
 --   Match: two sides, the puffer lands on your sand and the other side scores. 3 touches a side at most.
 --   Rally: everyone works together and passes the puffer over the net as often as they can.
 -- Every touch puffs the puffer up: it gets bigger and faster until somebody misses.
@@ -13,6 +15,9 @@ GRAV, JUMP = tune("Gravity", 0.3, 0.1, 0.6, 0.01), -tune("Jump power", 5.6, 3, 8
 SPEED, DIVE = tune("Run speed", 2.3, 1, 4, 0.1), tune("Dive speed", 5, 3, 8, 0.5)
 BALL_G, HIT = tune("Puffer gravity", 0.14, 0.05, 0.3, 0.01), tune("Hit power", 4.7, 3, 7, 0.1)
 HEAT = tune("Speed-up per touch", 0.07, 0, 0.2, 0.01)
+SERVE_T = tune("Serve timer (frames)", 10, 0, 40)   -- after the server jumps, how long until the puffer lets go
+SERVE_WAIT = 300                            -- a server who never jumps: the puffer goes by itself after this long
+CARRY = 36                                  -- how far above the server's feet the puffer is carried
 RALLY_GOAL = 30
 PR = 12                                     -- body radius of a player
 PC = { 10, 21, 17, 5, 27, 26, 22, 13 }      -- player colours
@@ -27,6 +32,7 @@ function _init()
     goal = "Win a Match before the other side does, or pass the puffer " .. RALLY_GOAL .. " times in a row in a Rally.",
     help = {
       "Left / right: run. A: jump. B: dive.",
+      "Serving: you carry the puffer. Walk to where you want to serve from and jump: it lets go a moment later.",
       "Match: if the puffer lands on your sand, the other side scores. A side may touch it 3 times in a row.",
       "Rally: everyone plays together. Every pass over the net counts; 3 drops end the run.",
       "Every touch puffs the puffer up and speeds it up.",
@@ -96,6 +102,7 @@ function start(m, cp)
   target = setting("points") or 7
   if score[1] >= target or score[2] >= target then score = { 0, 0 } end
   state, state_t, winner = "play", 0, 0
+  serves, banner_t = { 0, 0 }, 0
   serve(1)
 end
 
@@ -106,8 +113,15 @@ function new_player(side, n, k, pl)
            dive_t = 0, cd = 0, hit_cd = 0, err = 0, jump_ok = true, squash = 0 }
 end
 
+-- A serve: one player of the side carries the puffer above their head and walks to where they want to
+-- serve from. Nobody is frozen. When the server jumps, a short timer runs and then the puffer lets go,
+-- carrying on up and the way the server was moving. The players of a side take turns.
 function serve(side)
-  ball = { x = side == 1 and 84 or 236, y = 84, vx = 0, vy = 0, r = 8, hold = 50, spin = 0 }
+  serves[side] = serves[side] + 1
+  local team = {}
+  for _, p in ipairs(P) do if p.side == side then team[#team + 1] = p end end
+  local s = team[(serves[side] - 1) % #team + 1]
+  ball = { x = s.x, y = s.y - CARRY, vx = 0, vy = 0, r = 8, spin = 0, carry = s, wait = 0, count = nil }
   touches, last_side, hits = 0, 0, 0
   for _, p in ipairs(P) do p.err, p.jump_ok = 0, true end
 end
@@ -116,7 +130,7 @@ end
 -- where the puffer comes down to height y, and in how many frames
 function predict(y)
   local x, by, vx, vy = ball.x, ball.y, ball.vx, ball.vy
-  if ball.hold > 0 then return x, 60 end
+  if ball.carry then return x, 60 end
   for n = 1, 240 do
     vy = vy + BALL_G
     x, by = x + vx, by + vy
@@ -132,7 +146,13 @@ function cpu(p)
   local lx, lt = predict(GROUND - 34)
   local mine = (lx < NETX) == (p.side == 1)
   local tx = p.home
-  if mine then
+  if ball.carry == p then
+    -- my serve: walk up towards the net, then jump
+    tx = (p.side == 1 and 104 or 216) + p.err
+    if p.ground and not ball.count and (math.abs(tx - p.x) <= 3 or ball.wait > 70) then I.jump = true end
+  elseif ball.carry then
+    -- somebody else's serve: back to my spot
+  elseif mine then
     -- the one closest to the landing spot goes for it
     local go = true
     for _, o in ipairs(P) do
@@ -169,7 +189,8 @@ function move(p, I)
     sfx("C3", 3, 0.25, 6, nil, pan(p.x))
     burst(p.x, GROUND, 11, 5, 1.2)
   end
-  if I.jump and p.ground then p.vy, p.ground = JUMP, false; sfx("C4", 1, 0.2, 5, nil, pan(p.x), 500) end
+  p.jumped = false
+  if I.jump and p.ground then p.vy, p.ground, p.jumped = JUMP, false, true; sfx("C4", 1, 0.2, 5, nil, pan(p.x), 500) end
   p.vy = p.vy + GRAV
   p.x, p.y = p.x + p.vx, p.y + p.vy
   if p.y >= GROUND then
@@ -215,7 +236,8 @@ function fault(side, why)
     streak = 0
     if lives <= 0 then state, state_t = "over", 0 return end
   end
-  state, state_t, serve_to = "point", 0, side
+  banner_t = 60
+  serve(side)            -- the side that lost the point serves next, so it can't be scored on again right away
 end
 
 function side_name(s)
@@ -228,7 +250,19 @@ end
 
 function ball_step()
   local b = ball
-  if b.hold > 0 then b.hold = b.hold - 1
+  if b.carry then
+    local s = b.carry
+    b.x, b.y = s.x, s.y - CARRY
+    b.wait = b.wait + 1
+    if s.jumped and not b.count then b.count = SERVE_T end
+    if b.count then b.count = b.count - 1 end
+    if (b.count and b.count <= 0) or b.wait > SERVE_WAIT then
+      b.carry = nil
+      b.vx, b.vy = s.vx * 1.4, math.min(s.vy, 0) - 2.2
+      if not b.count then b.vy = -4 end
+      sfx("E5", 4, 0.35, 6, nil, pan(b.x), 300)
+    end
+    return
   else
     b.vy = b.vy + BALL_G
     local ox = b.x
@@ -273,7 +307,6 @@ function ball_step()
       local sp = HIT + math.min(hits, 24) * HEAT
       b.vx = nx * sp + p.vx * 0.45
       b.vy = math.min(ny * sp + p.vy * 0.3, -1.6)
-      b.hold = 0
       p.hit_cd = 10
       touch(p)
       if state ~= "play" then return end
@@ -312,14 +345,9 @@ function _update()
     end
     return
   end
-  if state == "point" then
-    if state_t > 70 then state = "play"; serve(serve_to) end
-    ball.vx, ball.vy = ball.vx * 0.9, 0
-  end
-  for _, p in ipairs(P) do
-    move(p, state == "play" and (p.pl > 0 and human(p) or cpu(p)) or { mx = 0 })
-  end
-  if state == "play" then ball_step() end
+  if banner_t > 0 then banner_t = banner_t - 1 end
+  for _, p in ipairs(P) do move(p, p.pl > 0 and human(p) or cpu(p)) end
+  ball_step()
 end
 
 -- ---------------------------------------------------------------- drawing (never calls rnd)
@@ -435,8 +463,15 @@ function _draw()
     return
   end
   draw_hud()
-  if state == "point" and state_t < 60 then stext(why_text or "", 70, 27, 2) end
-  if ball.hold > 20 and state == "play" and hits == 0 then stext("READY", 60, 13, 2) end
+  if state == "play" and banner_t > 0 then stext(why_text or "", 70, 27, 2) end
+  local s = ball.carry
+  if s and state == "play" then
+    if ball.count then circ(ball.x, ball.y, ball.r + 3 + ball.count, 13)             -- the serve timer closing in
+    elseif s.pl > 0 and (gt // 20) % 2 == 0 then
+      local hint = "A: serve"
+      text(hint, mid(2, ball.x - #hint * 4, 318 - #hint * 8), ball.y - ball.r - 14, 13)
+    end
+  end
   if state == "over" then
     rectfill(40, 70, 240, 80, 1) rect(40, 70, 240, 80, 13)
     if mode == 1 then

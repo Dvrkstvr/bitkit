@@ -208,6 +208,7 @@ Three games for 1 to 8 players, on one screen or on linked Bits. Each one opens 
 Beach volleyball with a pufferfish. Every touch puffs it up: it gets bigger and faster until somebody misses.
 
 - **Left / right** run, **A** jumps, **B** dives along the sand.
+- **Serving:** nobody is frozen after a point. The side that lost it serves: the server carries the puffer above their head, walks to where they want to serve from, and jumps. A moment later the puffer lets go, flying on the way the server was moving. A server who waits 5 seconds serves by itself.
 - **Match** (against each other): odd players on the left, even players on the right, and crabs fill the empty spots. If the puffer lands on your sand, the other side scores. A side may touch it 3 times in a row. Alone you play a crab (Easy, Normal or Hard in Settings).
 - **Rally** (together): everyone keeps the puffer flying, and every pass over the net counts. Three drops end the run.
 - **Goal:** win a Match, or pass the puffer 30 times in a row in a Rally.

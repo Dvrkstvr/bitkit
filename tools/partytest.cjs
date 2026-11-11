@@ -124,28 +124,38 @@ const runtime = require('../studio/runtime.js');
   // ================================================================ Puffball
   use('Puffball');
   // the puffer lands on the left sand: the right side scores, and the next serve goes to the left
-  expect('puffball: landing scores', { players: 2, setup: 'start(1)', every: 'if t() == 10 then ball.x, ball.y, ball.hold = 30, 150, 0 end',
-    check: 'score[1], score[2], state, GAME.state', at: 80 }, '0 1 point play');
+  expect('puffball: landing scores', { players: 2, setup: 'start(1)', every: 'if t() == 10 then ball.x, ball.y, ball.carry = 30, 150, nil end',
+    check: 'score[1], score[2], state, GAME.state, ball.carry and ball.carry.side', at: 80 }, '0 1 play play 1');
   // a fourth touch in a row on one side is a fault
-  expect('puffball: 4 touches', { players: 2, setup: 'start(1)', every: 'if t() == 10 then touches, last_side = 3, 1 ball.x, ball.y, ball.hold = P[1].x, 150, 0 end',
+  expect('puffball: 4 touches', { players: 2, setup: 'start(1)', every: 'if t() == 10 then touches, last_side = 3, 1 ball.x, ball.y, ball.carry = P[1].x, 150, nil end',
     check: 'score[2], why_text', at: 60 }, '1 4 TOUCHES!');
   // a touch sends the puffer up, puffs it up and counts
-  expect('puffball: touch', { players: 2, setup: 'start(1)', every: 'if t() == 10 then ball.x, ball.y, ball.hold = P[1].x, 150, 0 end',
+  expect('puffball: touch', { players: 2, setup: 'start(1)', every: 'if t() == 10 then ball.x, ball.y, ball.carry = P[1].x, 150, nil end',
     check: 'hits, touches, last_side, ball.vy < 0, ball.r > 8', at: 40 }, '1 1 1 true true');
   // rally: a pass over the net counts once it has been touched, a drop costs a life, three drops end the run
-  expect('puffball: rally pass', { players: 2, setup: 'start(2)', every: 'if t() == 10 then ball.x, ball.y, ball.vx, ball.vy, ball.hold, last_side = 150, 60, 3, 0, 0, 1 end',
+  expect('puffball: rally pass', { players: 2, setup: 'start(2)', every: 'if t() == 10 then ball.x, ball.y, ball.vx, ball.vy, ball.carry, last_side = 150, 60, 3, 0, nil, 1 end',
     check: 'streak, best, lives', at: 20 }, '1 1 3');
-  expect('puffball: rally drops', { players: 2, setup: 'start(2)', every: 'if state == "play" then ball.x, ball.y, ball.hold = 30, 190, 0 end',
+  expect('puffball: rally drops', { players: 2, setup: 'start(2)', every: 'if state == "play" then ball.x, ball.y, ball.carry = 30, 190, nil end',
     check: 'lives, state', at: 400 }, '0 over');
-  expect('puffball: rally goal', { players: 2, setup: 'start(2) streak = 29', every: 'if t() == 10 then ball.x, ball.y, ball.vx, ball.vy, ball.hold, last_side = 150, 60, 3, 0, 0, 1 end',
+  expect('puffball: rally goal', { players: 2, setup: 'start(2) streak = 29', every: 'if t() == 10 then ball.x, ball.y, ball.vx, ball.vy, ball.carry, last_side = 150, 60, 3, 0, nil, 1 end',
     check: 'streak, GAME.state', at: 30 }, '30 won');
+  // serving: nobody is frozen after a point. The side that lost it carries the puffer, walks where it likes,
+  // and a jump starts the timer that lets the puffer go
+  expect('puffball: carry the serve', { players: 2, setup: 'start(1)', every: 'if t() == 10 then ball.x, ball.y, ball.carry = 30, 150, nil x0, x2 = P[1].x, P[2].x end',
+    check: 'score[2], state, ball.carry == P[1], ball.x == P[1].x, ball.y == P[1].y - CARRY, P[1].x > x0 + 40, P[2].x < x2 - 40', at: 80,
+    input: f => [f > 20 ? bit('right') : 0, f > 20 ? bit('left') : 0] }, '1 play true true true true true');
+  expect('puffball: jump serves', { players: 2, setup: 'start(1)', every: 'if t() == 40 + SERVE_T - 2 then held = ball.carry == P[1] and ball.count ~= nil end',
+    check: 'held, ball.carry, ball.vy < 0 or ball.y < 100, ball.vx > 0, hits', at: 40 + 10 + 4,
+    input: f => [(f > 20 ? bit('right') : 0) | (f === 40 ? bit('a') : 0), 0] }, 'true nil true true 0');
+  // a server who never jumps doesn't hold the game up
+  expect('puffball: serve by itself', { players: 2, setup: 'start(1)', check: 'ball.carry, SERVE_WAIT', at: 330 }, 'nil 300');
   // A jumps, B dives, and nobody gets past the net
-  expect('puffball: moves', { players: 2, setup: 'start(1) ball.hold = 9999',
+  expect('puffball: moves', { players: 2, setup: 'start(1)',
     check: 'P[1].x <= NETX - NET_W - PR, P[2].x >= NETX + NET_W + PR, jumped, P[1].cd > 0 or dived', at: 200,
     every: 'if not P[1].ground then jumped = true end if P[1].dive_t > 0 then dived = true end',
     input: f => [bit('right') | (f === 30 ? bit('a') : 0) | (f === 90 ? bit('b') : 0), bit('left')] }, 'true true true true');
   // alone, an idle player loses the match to the crab; the win only counts for the player's side
-  expect('puffball: crab wins', { players: 1, setup: 'start(1)', check: 'state, winner, score[2], GAME.state', at: 4000,
+  expect('puffball: crab wins', { players: 1, setup: 'start(1)', check: 'state, winner, score[2], GAME.state', at: 9000,
     every: 'P[1].x = 20', shot: [300, 'puffball-match'] }, 'over 2 7 play');
   // two crabs keep a rally going (the crab on the player's side is switched on for the test)
   {
