@@ -36,21 +36,28 @@ The game runtime and browser studio for **PocketBit**, a DIY ESP32-S3 handheld.
 
 <img src="docs/media/studio-entities.png" alt="BitKit Studio entity editor with behavior tree">
 
+**Edit** and **Play** at the top switch between making a game and playing it on a Bit, the emulated PocketBit. Play can show two linked Bits side by side, each with its own controls, to try a game for two. **Games** has the demos and your own games, and each one keeps its own changes.
+
 | Tab | What it does |
 |---|---|
-| **Code** | Lua editor with syntax highlighting, error-line markers and a console |
-| **Sprites** | 512 tiles of 8×8 pixels; pen, fill, pick, flip, rotate and tile behaviours (named flags: tick `solid`, `water`… and ask `fget(tile, "water")`); a 256-colour palette editor |
-| **Map** | 256×128 tile map with Tiles and Entities layers. A ghost of your last 3 play routes shows where the player actually goes |
-| **Track** | For racing games (shows up when a cart has tracks): spline road editor, items along the lap, elevation brush and the road's segment tiles |
-| **Entities** | Sprites, animations, team, HP, stats, effects (heal, slow…) and a behavior tree with presets |
+| **Game** | Sliders, switches and lists for every number a game declares with `tune()`, the player's hearts and stats, and the game checklist |
+| **Code** | Lua editor with syntax highlighting, completion with a line of help for every function, find (Ctrl+F), error-line markers and a console |
+| **Sprites** | 512 tiles of 8×8 pixels; pen, fill, pick, flip, rotate and tile behaviours (named chips: switch on `solid`, `water`… and ask `fget(tile, "water")`); a 256-colour palette editor |
+| **Map** | 256×128 tile map with Tiles and Entities layers, paint, eraser, box and fill tools, zoom with the wheel. A ghost of your last 3 play routes shows where the player actually goes |
+| **Track** | For racing games: spline road editor, items along the lap, elevation brush and the road's segment tiles |
+| **Entities** | Sprites, animations, team, HP, stats, effects (heal, slow…) and a behavior tree with presets, where every step says what it does |
 | **Cutscenes** | Dialog with portraits, camera pans, walks, fades and screen shake. Play them when a level starts, from a trigger zone on the map, or from code |
 | **Controller** | Live view of every button, remapping, threshold and deadzone |
-| **Help** | Full API reference |
+| **Help** | Getting started, and the full API reference with search |
+
+Tabs a game does not use (Track for a platformer, Map for a racer) wait under **More**. Undo and redo work on every tab.
 
 <details>
 <summary>📸 More screenshots</summary>
 
 <img src="docs/media/studio-map.png" alt="Map editor with the player route overlay">
+
+<img src="docs/media/studio-two-bits.png" alt="Play: two linked Bits side by side">
 
 </details>
 
