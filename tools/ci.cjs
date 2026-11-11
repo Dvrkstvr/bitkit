@@ -49,8 +49,27 @@ require('../studio/runtime.js')({ onLog: (m, e) => { if (e) errors.push(m); else
   const v = line ? line.split(/\s+/).slice(1).map(Number) : [];
   if (!line || v[0] !== 2 || v[1] !== 1 || v[2] !== 0 || v[3] !== 2 || v[4] !== 18) fail('level switch probe: ' + line + ' (expected level 2, 1 goal, 0 exits, hp 2, brick tile 18 at 0,0)');
 
+  // cutscenes: the intro plays when level 1 starts, freezes the player, A advances it, START skips the rest
+  logs = [];
+  const cutProbe = '\nlocal _u = _update\nfunction _update() _u() local on_, nm = cutscene_playing() if t() == 2 then x0 = PLAYER.x print("cut", on_ and 1 or 0, nm) end if t() == 60 then print("frozen", PLAYER.x == x0 and 1 or 0) end end\non("cutscene_end", function(n) print("cutend", n, t()) end)';
+  M.HEAPU16.set(levels[0].map, M._bkw_map() >> 1);
+  if (M._bkw_load_ex(s(window.BKEntities.toLua(cart.entities, meta, 0)), s(window.BK_DEMO.code + cutProbe)) !== 0) fail('demo with cutscene probe did not load');
+  for (let f = 0; f < 1200 && !logs.some(l => l.startsWith('cutend')); f++) frame((1 << 1) | ((f % 20) < 2 ? 1 << 4 : 0));
+  const cl = logs.find(l => /^cut\s/.test(l)), fz = logs.find(l => l.startsWith('frozen')), ce = logs.find(l => l.startsWith('cutend'));
+  if (!cl || cl.split(/\s+/)[1] !== '1' || cl.split(/\s+/)[2] !== 'intro') fail('intro cutscene did not start: ' + cl);
+  if (!fz || fz.split(/\s+/)[1] !== '1') fail('player moved during a cutscene: ' + fz);
+  if (!ce || ce.split(/\s+/)[1] !== 'intro') fail('intro cutscene did not finish with A presses: ' + ce);
+  // START skips; a trigger-only cutscene plays from code
+  logs = [];
+  M.HEAPU16.set(levels[0].map, M._bkw_map() >> 1);
+  M._bkw_load_ex(s(window.BKEntities.toLua(cart.entities, meta, 0)), s(window.BK_DEMO.code + '\non("cutscene_end", function(n) print("cutend", n, t()) end)\nlocal _u = _update\nfunction _update() _u() if t() == 30 then cutscene("gate") end end'));
+  for (let f = 0; f < 40; f++) frame(f === 5 || f === 35 ? 1 << 10 : 0);
+  const ends = logs.filter(l => l.startsWith('cutend')).map(l => l.split(/\s+/)[1]);
+  if (ends.join() !== 'intro,gate') fail('START did not skip cutscenes: ' + ends.join());
+  if (errors.length) { errors.forEach(e => fail('cutscene: ' + e)); errors = []; }
+
   // playing level 2 from the start
   for (let f = 0; f < 1500; f++) if (frame((1 << 1) | ((f % 30) < 12 ? 1 << 4 : 0))) { fail('level 2 stopped at frame ' + f); break; }
   errors.forEach(e => fail('Lua error: ' + e));
-  if (!process.exitCode) console.log('ok: runtime checks, home screen, 3000 demo frames and level switching passed');
+  if (!process.exitCode) console.log('ok: runtime checks, home screen, 3000 demo frames, level switching and cutscenes passed');
 });

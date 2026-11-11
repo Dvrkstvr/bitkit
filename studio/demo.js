@@ -7,6 +7,7 @@
 -- Stay next to a sapling until it grows into a tree: that's your new checkpoint.
 -- Water drops heal you, mud and sticky seeds slow you down.
 -- Reach the red flag to go to the next level (levels are made on the Map tab).
+-- Cutscenes (Cutscenes tab) play when a level starts, when you walk into a trigger zone, or from code.
 
 function _init()
   score, total, defeated = 0, #ents_all("drop"), 0
@@ -20,7 +21,7 @@ function _init()
     banner, banner_t = name, 120
   end)
   on("win", function()
-    if not won then won = true; sfx("C6", 4, 0.4, 30) end
+    if not won then won = true; sfx("C6", 4, 0.4, 30); cutscene("ending") end
   end)
 
   -- events sent by entities (their behavior trees use "Send event")
@@ -265,6 +266,7 @@ end
     [58, 112].forEach(c => place('flower', c));
     place('guide', 73); place('button', 77); place('gate', 82, 0, 4);
     place('exit', 156, 0, 2);
+    place('cut_gate', 66, 0, 4);
 
     // the exit flag and the goal flag
     const flag = { sh: 2, hp: 0, team: 'neutral', damage: 0, grav: false, collide: false, anims: [A('idle', [30])] };
@@ -273,7 +275,47 @@ end
         tree: N('sequence', {}, [N('touching', { what: 'player' }), N('sound', { note: 'C6', wave: 4 }), N('level', { n: 2 })]) }),
       Object.assign({}, base, flag, { name: 'goal',
         tree: N('selector', {}, [N('sequence', {}, [N('touching', { what: 'player' }), N('emit', { event: 'win' })]),
-          N('sequence', {}, [N('near', { dist: 48 }), N('say', { text: 'Almost there!' })])]) }));
+          N('sequence', {}, [N('near', { dist: 48 }), N('say', { text: 'Almost there!' })])]) }),
+      // an invisible zone on the map that plays the "gate" cutscene the first time the player walks in
+      Object.assign({}, base, { name: 'cut_gate', sh: 4, hp: 0, team: 'neutral', damage: 0, grav: false, collide: false, hidden: true, anims: [A('idle', [])],
+        tree: N('sequence', {}, [N('touching', { what: 'player' }), N('cutscene', { name: 'gate', once: true })]) }));
+
+    // cutscenes (Cutscenes tab). level: plays when that level starts (0 = only when triggered)
+    const S = (t, p) => ({ t, p });
+    cart.entities.cutscenes = [
+      { name: 'intro', level: 1, steps: [
+        S('wait', { frames: 20 }),
+        S('say', { who: 'sage', text: 'Good morning, little sprout! Did you sleep well?' }),
+        S('say', { who: 'sprout', text: 'Mm-hm! What is that red thing, far away?' }),
+        S('camera', { target: 'exit', frames: 150 }),
+        S('say', { who: '', text: 'Far across the meadow, a red flag waves in the wind.' }),
+        S('camera', { target: 'player', frames: 90 }),
+        S('say', { who: 'sage', text: 'Reach the flag and the garden will bloom. Mind the slugs!' }),
+        S('jump', { who: 'sprout', power: 3.5 }),
+        S('wait', { frames: 30 }),
+      ] },
+      { name: 'gate', level: 0, steps: [
+        S('camera', { target: 'tile', x: 82, y: 19, frames: 60 }),
+        S('say', { who: 'guide', text: 'This gate is shut tight. Step on the button to open it!' }),
+        S('camera', { target: 'player', frames: 50 }),
+      ] },
+      { name: 'cave', level: 2, steps: [
+        S('fade', { to: 'black', frames: 0 }),
+        S('fade', { to: 'clear', frames: 60 }),
+        S('say', { who: 'sprout', text: 'It is so dark in here...' }),
+        S('move', { who: 'sage', x: 5, speed: 0.6 }),
+        S('say', { who: 'sage', text: 'Follow the glowing moss. The last flag is at the far end!' }),
+        S('camera', { target: 'goal', frames: 120 }),
+        S('wait', { frames: 40 }),
+        S('camera', { target: 'player', frames: 80 }),
+      ] },
+      { name: 'ending', level: 0, steps: [
+        S('wait', { frames: 10 }),
+        S('jump', { who: 'sprout', power: 3.5 }),
+        S('sound', { note: 'E6', wave: 4 }),
+        S('say', { who: '', text: 'You made it! The whole garden is blooming. Thanks for playing Sprout Hop!' }),
+      ] },
+    ];
 
     // ---- level 2: a short mossy cave
     const map2 = new Uint16Array(256 * 128), CW = 84;
