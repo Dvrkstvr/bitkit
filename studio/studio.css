@@ -61,6 +61,8 @@ select { background: var(--panel2); border: 1px solid var(--line); border-radius
 .game-bar { display: flex; gap: 6px; align-items: center; }
 .pad-status { font-size: 12px; color: var(--dim); }
 .pad-status.on { color: var(--accent); }
+.pad-pick { font-size: 12px; max-width: 165px; min-width: 0; }
+.pad-pick.on { color: var(--accent); }
 .console-head { display: flex; justify-content: space-between; align-items: center; color: var(--dim); font-size: 12px; margin-top: 4px; }
 .console {
   flex: 1; min-height: 60px; margin: 0; padding: 6px 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
