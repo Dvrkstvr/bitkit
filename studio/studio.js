@@ -191,7 +191,7 @@ end
   /* ------------------------------------------------------------ code editor */
   const API_NAMES = ['cls', 'pset', 'pget', 'line', 'rect', 'rectfill', 'circ', 'circfill', 'text', 'spr', 'map', 'mget', 'mset',
     'fget', 'fset', 'camera', 'clip', 'pal', 'palt', 'palette', 'btn', 'btnp', 'btnr', 'press', 't', 'time', 'rnd', 'srand',
-    'sfx', 'tone', 'stop', 'print', '_init', '_update', '_draw', 'cutscene', 'cutscene_playing'];
+    'sfx', 'tone', 'stop', 'print', '_init', '_update', '_draw', 'cutscene', 'cutscene_playing', 'tune', 'game', 'checkpoint', 'game_win', 'save', 'saved'];
   let cm = null, ta = null, errLine = null;
   if (window.CodeMirror) {
     // highlight the engine API on top of the lua mode
@@ -216,6 +216,78 @@ end
       }
     });
     cm.on('change', () => { markDirty(); clearErrLine(); });
+    // ---- autocomplete (the API from the Help tab, Lua keywords, words already in the code) and a line of help
+    const KEYWORDS = ['and', 'break', 'do', 'else', 'elseif', 'end', 'false', 'for', 'function', 'if', 'in', 'local', 'nil', 'not', 'or', 'repeat', 'return', 'then', 'true', 'until', 'while',
+      'math.floor', 'math.abs', 'math.min', 'math.max', 'math.sin', 'math.cos', 'math.sqrt', 'math.pi', 'ipairs', 'pairs', 'tostring', 'tonumber', 'type', 'table.insert', 'table.remove', 'string.format'];
+    let apiDocs = null;
+    const docs = () => {
+      if (apiDocs) return apiDocs;
+      apiDocs = {};
+      HELP.forEach(([, rows]) => rows.forEach(([sig, desc]) => {
+        let args = '';
+        sig.split(' / ').forEach((part, pi) => {
+          const m = /^([A-Za-z_][\w.]*)\s*([({].*)?$/.exec(part.trim());
+          if (!m) return;
+          if (!m[2] && !(pi > 0 && args) && !/^[A-Z][A-Z_.a-z]*$/.test(m[1])) return;     // a heading like "Why", not a name
+          if (!m[2] && pi === 0 && !/^[A-Z_]+(\.\w+)?$/.test(m[1])) return;
+          if (m[2] && pi === 0) args = m[2];
+          if (!apiDocs[m[1]]) apiDocs[m[1]] = { sig: m[1] + (m[2] || (pi > 0 ? args : '')), desc };
+        });
+      }));
+      return apiDocs;
+    };
+    const docBar = $('codeDoc'), DOC_TIP = 'Ctrl+Space completes a word · Ctrl+F finds · Ctrl+/ comments a line · click an error in the console to jump to it';
+    const showDoc = name => {
+      const d = name && docs()[name];
+      docBar.innerHTML = d ? `<code>${escapeHtml(d.sig)}</code> ${escapeHtml(d.desc)}` : `<span class="dim">${DOC_TIP}</span>`;
+      docBar.title = d ? d.desc : '';
+    };
+    const luaHint = c => {
+      const cur = c.getCursor(), line = c.getLine(cur.line), tok = c.getTokenAt(cur);
+      if (tok.type === 'comment' || tok.type === 'string') return null;
+      let st = cur.ch; while (st > 0 && /\w/.test(line[st - 1])) st--;
+      const word = line.slice(st, cur.ch), lw = word.toLowerCase(), member = st > 0 && /[.:]/.test(line[st - 1]);
+      if (!word) return null;
+      const list = [], seen = new Set([word]);
+      const render = (el, self, it) => { el.innerHTML = `<span class="h-name">${escapeHtml(it.text)}</span>${it.sig ? `<span class="h-sig">${escapeHtml(it.sig.slice(it.text.length))}</span>` : ''}`; };
+      if (!member) Object.keys(docs()).sort().forEach(n => { if (n.toLowerCase().startsWith(lw) && !seen.has(n)) { seen.add(n); list.push({ text: n, sig: docs()[n].sig, render }); } });
+      const extra = [];
+      (member ? [] : KEYWORDS).concat(c.getValue().match(/[A-Za-z_]\w{2,}/g) || []).forEach(n => { if (n.toLowerCase().startsWith(lw) && !seen.has(n)) { seen.add(n); extra.push({ text: n, render }); } });
+      list.push(...extra.slice(0, 14));
+      if (!list.length) return null;
+      const res = { list, from: CodeMirror.Pos(cur.line, st), to: cur };
+      CodeMirror.on(res, 'select', it => showDoc(it.text));
+      CodeMirror.on(res, 'close', () => codeDocHere());
+      return res;
+    };
+    const codeDocHere = () => {      // the function the cursor is on, or the call it is inside
+      const cur = cm.getCursor(), line = cm.getLine(cur.line);
+      let a = cur.ch, b = cur.ch;
+      while (a > 0 && /[\w.]/.test(line[a - 1])) a--;
+      while (b < line.length && /[\w.]/.test(line[b])) b++;
+      if (docs()[line.slice(a, b)]) return showDoc(line.slice(a, b));
+      for (let i = cur.ch - 1, depth = 0; i >= 0; i--) {
+        if (line[i] === ')' || line[i] === '}') depth++;
+        else if (line[i] === '(' || line[i] === '{') {
+          if (depth) { depth--; continue; }
+          let e = i; while (e > 0 && line[e - 1] === ' ') e--;
+          let st = e; while (st > 0 && /[\w.]/.test(line[st - 1])) st--;
+          if (docs()[line.slice(st, e)]) return showDoc(line.slice(st, e));
+        }
+      }
+      showDoc(null);
+    };
+    if (CodeMirror.showHint) {
+      cm.addKeyMap({ 'Ctrl-Space': c => c.showHint({ hint: luaHint, completeSingle: false }) });
+      cm.on('inputRead', (c, ch) => {
+        if (c.state.completionActive || !ch.text || ch.text.length !== 1 || !/^\w$/.test(ch.text[0])) return;
+        const cur = c.getCursor(), line = c.getLine(cur.line);
+        let st = cur.ch; while (st > 0 && /\w/.test(line[st - 1])) st--;
+        if (cur.ch - st >= 2 && /[A-Za-z_]/.test(line[st])) c.showHint({ hint: luaHint, completeSingle: false });
+      });
+    }
+    cm.on('cursorActivity', () => { if (!cm.state.completionActive) codeDocHere(); });
+    setTimeout(() => showDoc(null), 0);
   } else {
     ta = document.createElement('textarea');
     ta.spellcheck = false; ta.value = cart.code;
@@ -2534,6 +2606,10 @@ LEVEL = tune("Rivals", "Normal", {"Easy", "Normal", "Hard"})   -- a list</pre>
       ['mus(note, ...)', 'sfx() for music: also turned down by the Music level (game{music=true}).'],
       ['game_play()', 'Skip the menus and go straight to gameplay.'],
       ['GAME.state', '"title", "play", "pause", "settings", "help", "confirm" or "won".']]],
+    ['Game tab: numbers to play with', [
+      ['tune(name, default, [min, max, step])', 'A number the Game tab shows as a slider: SPEED = tune("Speed", 2, 1, 6). Returns the value picked there, or the default. The picked values are saved with the game.'],
+      ['tune(name, true)', 'A switch on the Game tab. Returns true or false.'],
+      ['tune(name, "b", {"a", "b"})', 'A list on the Game tab. Returns the picked text.']]],
     ['Graphics (320x240, 256 colours)', [
       ['cls([c])', 'Clear the screen with colour c (default 0).'],
       ['pset(x,y,c) / pget(x,y)', 'Set or read a pixel.'],
@@ -2604,8 +2680,8 @@ LEVEL = tune("Rivals", "Normal", {"Easy", "Normal", "Hard"})   -- a list</pre>
       ['Trigger zones', 'An invisible entity with the "Play cutscene" step. "Place a trigger zone" on the Cutscenes tab makes one for you. Level intros play when their level starts.'],
       ['Needs', 'ents_update() in _update (it runs the cutscene) and ents_camera() if the camera should pan. The dialog box, bars and fades are drawn for you on top of _draw. START skips.']]],
     ['Multiplayer', [
-      ['Players menu', '"2 players": both play on this screen. Player 2 uses the second controller, or I J K L to move, N = A, M = B, H = X, U = Y, Y = L, O = R.'],
-      ['Linked Bits', '"+ Add a Bit" opens another Bit window. Bits link by themselves like PocketBits over ESP-NOW and the home screen shows them. A game started on one Bit starts on every Bit on its home screen (up to 8 players), each with its own camera. Start+Select (or home()) on any Bit takes all of them home, paused; picking the game again carries on together. A Bit that reloads gets its seat back.'],
+      ['2 players on this screen', 'Pick it in the list under the game screen: both play on one screen. Player 2 uses the second controller, or I J K L to move, N = A, M = B, H = X, U = Y, Y = L, O = R. The keys are shown under the screen.'],
+      ['Linked Bits', 'Play (at the top) with "2 Bits side by side" shows two Bits next to each other, each with its own screen and controls. "+ Bit in a new window" opens more. Bits link by themselves like PocketBits over ESP-NOW and the home screen shows them. A game started on one Bit starts on every Bit on its home screen (up to 8 players), each with its own camera. Start+Select (or home()) on any Bit takes all of them home, paused; picking the game again carries on together. A Bit that reloads gets its seat back.'],
       ['btn(b, [p]) / btnp / btnr / press', 'The last argument picks the player (1-8, default 1). Player entities read their own player\'s buttons by themselves.'],
       ['PLAYERS / ME', 'How many play, and which player this screen belongs to (0 when everyone shares this screen). Use ME only for what you draw, never for game logic, or linked Bits drift apart.'],
       ['ents_players()', 'The player entities, player 1 first. PLAYER is player 1. Extra players start next to player 1 as copies of its entity; e.pnum is the player number.'],
@@ -2622,10 +2698,10 @@ LEVEL = tune("Rivals", "Normal", {"Easy", "Normal", "Hard"})   -- a list</pre>
       ['saved()', 'The table from the last save(), or nil if there is none.'],
       ['clock()', 'Real time in unix seconds (the RTC on PocketBit). Use it for idle games and offline progress. It is not deterministic, so keep it out of multiplayer game logic.']]],
     ['The Bit (emulated PocketBit)', [
-      ['⏻ Bit button', 'Turns on the emulated PocketBit: a home screen with the studio cart and every game on its memory card. D-pad chooses, A plays, Y opens a game in the studio.'],
+      ['Play (at the top)', 'Switches from editing to the emulated PocketBit: a home screen with the game you are editing and every game on its memory card. D-pad chooses, A plays, Y opens a game in the studio. Edit takes you back to the editors.'],
       ['Start + Select', 'Hold both in a game to go back to the home screen, like on the device.'],
       ['Paused games', 'Hold Start+Select (or call home()) to go back to the home screen: the game is paused, not closed. Pick it again and it carries on where you were, even after a reload. X on the home screen starts a paused game over. Changing a game\'s code or art starts it fresh.'],
-      ['Library', 'The Bit\'s memory card: a folder on your computer (Chrome/Edge) or this browser. Save carts to it, then play or open them from the home screen. Ctrl+S saves the open cart back to its file.'],
+      ['Memory card (Games menu)', 'The Bit\'s memory card: a folder on your computer (Chrome/Edge) or this browser. Save / share puts a game on it, then play or open it from the Games menu or the home screen. Ctrl+S saves the open game back to its file.'],
       ['launch(n, [edit]) / home()', 'System calls used by the home screen: start game n, or return home. A game can call home() from its own menu.']]],
     ['Time and randomness', [
       ['t()', 'Frames since the cart started (60 per second).'],
@@ -2633,15 +2709,43 @@ LEVEL = tune("Rivals", "Normal", {"Easy", "Normal", "Hard"})   -- a list</pre>
       ['rnd() / rnd(n) / rnd(a,b)', 'Random float 0-1, integer 1..n, or integer a..b. Deterministic: the same seed gives the same game, which multiplayer relies on.'],
       ['srand(seed)', 'Set the random seed. math.random uses the same generator.']]],
     ['Studio keys', [
-      ['Ctrl+Enter', 'Run the cart (works anywhere).'],
-      ['Ctrl+S', 'Save to this browser (it also autosaves). Use Save / share to keep a file.'],
-      ['Ctrl+/', 'Comment or uncomment lines in the code editor.'],
-      ['Sprites: P / F / I', 'Pen, fill, pick colour. Ctrl+Z undo.'],
-      ['Map: P / F / I, WASD', 'Paint, fill, pick tile; pan the view (Shift = faster).'],
+      ['Ctrl+Enter', 'Run the game (works anywhere).'],
+      ['Ctrl+S', 'Save to this browser (it also saves by itself). Use Save / share to keep a file.'],
+      ['Ctrl+Z / Ctrl+Shift+Z', 'Undo and redo, on every tab.'],
+      ['Code: Ctrl+Space', 'Complete the word you are typing. The line under the code says what a function does and what it needs.'],
+      ['Code: Ctrl+F', 'Find in the code. Enter jumps to the next match, Ctrl+Shift+F replaces.'],
+      ['Code: Ctrl+/', 'Comment or uncomment lines.'],
+      ['Sprites: P / F / I', 'Pen, fill, pick colour.'],
+      ['Map: P / E / R / F / I', 'Paint, eraser, box, fill, pick tile. WASD or the arrows move the view (Shift = faster), scrolling zooms.'],
       ['Keyboard as controller', 'Arrows, Z=A, X=B, A=X, S=Y, Q=L, W=R, Enter=Start, Shift=Select. Click the game screen first.']]]
   ];
-  $('helpBody').innerHTML = `<h2>${APP} API</h2><p class="dim">Lua 5.4. The same runtime (C, compiled to WebAssembly here) runs on the PocketBit handheld. Carts are deterministic: no clock, no file access, seeded random.</p>` +
-    HELP.map(([h, rowsH]) => `<h3>${h}</h3><table>${rowsH.map(([a, b]) => `<tr><td>${escapeHtml(a)}</td><td>${escapeHtml(b)}</td></tr>`).join('')}</table>`).join('');
+  // Help: getting started first, then everything the code can call. The search box filters both.
+  const FIRST_STEPS = [
+    ['Pick a game', 'The <b>Games</b> menu at the top has the built-in games and your own. Open one to look inside, or start a new one. Each game keeps its own changes.', 'Open the Games menu', () => showGames()],
+    ['Press Run', '<b>▶ Run</b> (or Ctrl+Enter) plays it on the left. Click the game screen, then use the arrow keys and Z / X. A controller works as soon as you press a button on it.', 'Run it', () => run()],
+    ['Change something', 'The <b>Game</b> tab has sliders for how the game feels. <b>Sprites</b> is for drawing, <b>Map</b> for building levels, <b>Code</b> for everything else. Undo works on every tab.', 'Show the Game tab', () => showTab('game')],
+    ['Play it like on the device', '<b>Play</b> at the top shows the game on a Bit, the emulated PocketBit, with its home screen. Pick <b>2 Bits side by side</b> to try a game that is played together.', 'Switch to Play', () => setMode('play')],
+    ['Keep it', 'The studio saves as you go, in this browser. <b>Save / share</b> puts the game on the memory card or gives you a file to share.', null, null],
+    ['Finish it', 'The <b>Checklist</b> at the top says what every BitKit game needs, like a title screen and a goal.', null, null],
+  ];
+  $('helpBody').innerHTML = `<input id="helpSearch" class="help-search" type="search" placeholder="Search the help: try spr, jump, save, controller..." spellcheck="false">
+    <div id="helpStart"><h2>Getting started</h2><ol class="start-list">${FIRST_STEPS.map(([h, t, b], i) => `<li><b>${h}</b><span>${t}</span>${b ? `<button class="tiny" data-start="${i}">${b}</button>` : ''}</li>`).join('')}</ol></div>
+    <h2 id="helpApiHead">Everything your code can use</h2><p class="dim" id="helpApiIntro">Lua 5.4. The same runtime (C, compiled to WebAssembly here) runs on the PocketBit handheld. Carts are deterministic: no clock, no file access, seeded random.</p>` +
+    HELP.map(([h, rowsH]) => `<div class="help-sec"><h3>${h}</h3><table>${rowsH.map(([a, b]) => `<tr><td>${escapeHtml(a)}</td><td>${escapeHtml(b)}</td></tr>`).join('')}</table></div>`).join('') +
+    '<p id="helpNone" class="dim" hidden>Nothing found. Try a shorter word.</p>';
+  $('helpBody').querySelectorAll('[data-start]').forEach(b => { b.onclick = () => FIRST_STEPS[+b.dataset.start][3](); });
+  $('helpSearch').oninput = e => {
+    const words = e.target.value.toLowerCase().split(/\s+/).filter(Boolean);
+    let any = false;
+    $('helpStart').hidden = words.length > 0; $('helpApiIntro').hidden = words.length > 0; $('helpApiHead').hidden = words.length > 0;
+    $('helpBody').querySelectorAll('.help-sec').forEach(sec => {
+      const head = sec.querySelector('h3').textContent.toLowerCase();
+      let shown = 0;
+      sec.querySelectorAll('tr').forEach(tr => { const t = head + ' ' + tr.textContent.toLowerCase(), ok = words.every(w => t.includes(w)); tr.hidden = !ok; if (ok) shown++; });
+      sec.hidden = !shown; if (shown) any = true;
+    });
+    $('helpNone').hidden = any;
+  };
 
   /* ------------------------------------------------------------ start */
   try { localStorage.removeItem('bitkit.ai'); } catch (e) { /* storage unavailable */ }   // forget API keys the removed AI tab stored

@@ -464,3 +464,23 @@ body.bt-no-help .bt-help { display: none; }
 /* ---------------------------------------------------------------- Track tab: tools in named groups */
 .tgroup { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; padding: 3px 6px 3px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
 .tg-l { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); margin-right: 2px; }
+
+/* ---------------------------------------------------------------- code: completion list, the help line, search */
+.code-doc { flex: none; padding: 4px 10px; border-top: 1px solid var(--line); background: var(--panel); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.code-doc code { font-family: ui-monospace, Menlo, Consolas, monospace; color: #6ec3f0; margin-right: 6px; }
+.CodeMirror-hints { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 6px 20px rgba(0,0,0,.5); font: 12px/1.5 ui-monospace, Menlo, Consolas, monospace; max-height: 16em; z-index: 60; padding: 3px; }
+.CodeMirror-hint { color: var(--text); padding: 1px 8px; border-radius: 4px; max-width: 60ch; }
+li.CodeMirror-hint-active { background: #3a2e5c; color: #fff; }
+.h-name { color: #bff0ff; } .h-sig { color: var(--dim); }
+.CodeMirror-dialog { background: var(--panel2); color: var(--text); border-bottom: 1px solid var(--line); padding: 4px 10px; font: 12px/1.6 system-ui, sans-serif; }
+.CodeMirror-dialog input { background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 2px 6px; color: var(--text); font: 12px ui-monospace, Menlo, Consolas, monospace; width: 22em; }
+.CodeMirror-dialog button { font-size: 11px; }
+.cm-searching { background: rgba(255,210,63,.3); }
+/* ---------------------------------------------------------------- help: search and getting started */
+.help-search { width: 100%; max-width: 480px; background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; margin: 2px 0 10px; }
+.start-list { margin: 0 0 18px; padding: 0; list-style: none; counter-reset: st; display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 8px; }
+.start-list li { counter-increment: st; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+.start-list li > b::before { content: counter(st) ". "; color: var(--accent); }
+.start-list li > span { color: var(--dim); }
+.start-list li > span b { color: var(--text); font-weight: 600; }
+.start-list li button { margin-top: auto; }
