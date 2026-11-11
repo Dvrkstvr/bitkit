@@ -120,7 +120,7 @@ ESP-IDF 5.3 ships doesn't emulate PSRAM, which every game needs. So there are tw
 | Sweep Storm | 1.15 | 34–69 ms | unlikely | 1.3 MB |
 | Kart Lab | 2.94 | 88–177 ms | unlikely | 3.1 MB |
 | Crossgate | 0.09 | 3–5 ms | likely | 0.6 MB |
-| Tinwing | 1.80 | 54–108 ms | unlikely | 1.8 MB |
+| Tinwing | 2.10 | 63–126 ms | unlikely | 2.0 MB |
 | Deepglow | 0.56 | 17–34 ms | unlikely | 0.5 MB |
 | Puffball | 0.06 | 2–3 ms | likely | 0.5 MB |
 | Hedge Hogs | 0.15 | 5–9 ms | likely | 0.6 MB |
