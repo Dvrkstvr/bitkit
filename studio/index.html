@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MiniBoi Studio</title>
+<link rel="stylesheet" href="vendor/codemirror/codemirror.css">
+<link rel="stylesheet" href="studio.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="logo"></span><span id="appName">MiniBoi</span> <span class="dim">Studio</span></div>
+  <input id="cartName" class="cartname" spellcheck="false" title="Cart name">
+  <div class="actions">
+    <button id="btnRun" class="primary" title="Run (Ctrl+Enter)">&#9654; Run</button>
+    <button id="btnStop" title="Stop">&#9632; Stop</button>
+    <span class="sep"></span>
+    <button id="btnNew" title="New cart">New</button>
+    <button id="btnDemo" title="Load the demo cart">Demo</button>
+    <button id="btnOpen" title="Open a .mboi cart file">Open</button>
+    <button id="btnSave" title="Download or copy this cart">Save / share</button>
+    <input type="file" id="fileOpen" accept=".mboi,.json" hidden>
+  </div>
+</header>
+
+<main class="layout">
+  <section class="left">
+    <div id="gameWrap" class="game-wrap">
+      <canvas id="screen" width="320" height="240" tabindex="0" aria-label="Game screen"></canvas>
+      <div id="gameOverlay" class="overlay hidden"></div>
+    </div>
+    <div class="game-bar">
+      <span id="padStatus" class="pad-status">No controller (press any button on it)</span>
+      <span class="grow"></span>
+      <span id="fps" class="dim">&nbsp;</span>
+      <button id="btnMute" title="Mute">Sound on</button>
+      <button id="btnFull" title="Fullscreen">Fullscreen</button>
+    </div>
+    <div class="console-head">Console <button id="btnClear" class="tiny">clear</button></div>
+    <pre id="console" class="console"></pre>
+  </section>
+
+  <section class="right">
+    <nav class="tabs" role="tablist">
+      <button data-tab="code" class="active">Code</button>
+      <button data-tab="sprites">Sprites</button>
+      <button data-tab="map">Map</button>
+      <button data-tab="input">Controller</button>
+      <button data-tab="help">Help</button>
+    </nav>
+
+    <div id="tab-code" class="tab active">
+      <div id="codeHost" class="code-host"></div>
+    </div>
+
+    <div id="tab-sprites" class="tab">
+      <div class="spr-layout">
+        <div class="spr-left">
+          <div class="toolbar">
+            <button data-tool="pen" class="tool active" title="Pen (P)">Pen</button>
+            <button data-tool="fill" class="tool" title="Fill (F)">Fill</button>
+            <button data-tool="pick" class="tool" title="Pick colour (I, or Alt+click)">Pick</button>
+            <span class="sep"></span>
+            <label class="dim">Size</label>
+            <select id="sprSize"><option value="1">8x8</option><option value="2">16x16</option><option value="4">32x32</option></select>
+          </div>
+          <canvas id="sprEdit" width="320" height="320" class="pix checker"></canvas>
+          <div class="toolbar">
+            <button id="sprFlipH">Flip H</button><button id="sprFlipV">Flip V</button><button id="sprRot">Rotate</button>
+            <button id="sprCopy">Copy</button><button id="sprPaste">Paste</button><button id="sprClear">Clear</button>
+            <button id="sprUndo" title="Ctrl+Z">Undo</button>
+          </div>
+          <div class="info"><b id="sprInfo">Tile 0</b> <code id="sprHint"></code></div>
+          <div class="flags"><span class="dim">Flags</span> <span id="sprFlags"></span></div>
+          <div class="pal-head">
+            <span class="dim">Colour</span> <span id="colInfo"></span>
+            <input type="color" id="colEdit" title="Change this palette colour">
+            <button id="palReset" class="tiny" title="Restore the default palette">reset palette</button>
+          </div>
+          <canvas id="palette" width="288" height="288" class="pix"></canvas>
+          <p class="dim small">Left click paints, right click erases (colour 0 is transparent). Alt+click picks a colour.</p>
+        </div>
+        <div class="spr-right">
+          <div class="dim small">Sprite sheet: 512 tiles, 16 per row</div>
+          <div class="sheet-scroll"><canvas id="sheet" width="256" height="512" class="pix"></canvas></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-map" class="tab">
+      <div class="toolbar">
+        <button data-mtool="paint" class="mtool active" title="Paint (P)">Paint</button>
+        <button data-mtool="fill" class="mtool" title="Fill (F)">Fill</button>
+        <button data-mtool="pick" class="mtool" title="Pick tile (I, or Alt+click)">Pick</button>
+        <span class="sep"></span>
+        <label class="dim">Zoom</label>
+        <select id="mapZoom"><option value="2">2x</option><option value="1">1x</option></select>
+        <label class="chk"><input type="checkbox" id="mapGrid" checked> grid</label>
+        <span class="sep"></span>
+        <button id="mapUndo" title="Ctrl+Z">Undo</button>
+        <span class="grow"></span>
+        <span id="mapPos" class="dim"></span>
+      </div>
+      <div class="map-layout">
+        <div class="map-view-wrap">
+          <canvas id="mapView" width="640" height="480" class="pix" tabindex="0"></canvas>
+          <div class="dim small">Left click paints, right click erases, Alt+click picks. Pan with WASD/arrow keys or middle-drag. Dashed lines show 40x30-tile screens.</div>
+        </div>
+        <div class="map-picker">
+          <div class="dim small">Tile: <b id="mapTileInfo">1</b></div>
+          <div class="sheet-scroll small-sheet"><canvas id="mapSheet" width="256" height="512" class="pix"></canvas></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-input" class="tab">
+      <div class="input-page">
+        <div id="padList" class="pad-list"></div>
+        <table class="btn-table">
+          <thead><tr><th>Button</th><th>btn()</th><th>press() 0-255</th><th>Keyboard</th><th>Controller</th><th></th></tr></thead>
+          <tbody id="btnRows"></tbody>
+        </table>
+        <div class="toolbar">
+          <button id="padReset">Reset controller mapping</button>
+          <label class="dim">Digital threshold</label>
+          <input type="range" id="padThresh" min="10" max="200" value="64"><span id="padThreshVal"></span>
+          <label class="dim">Stick deadzone</label>
+          <input type="range" id="padDead" min="5" max="60" value="25"><span id="padDeadVal"></span>
+        </div>
+        <details class="raw"><summary>Raw controller data</summary><pre id="padRaw"></pre></details>
+      </div>
+    </div>
+
+    <div id="tab-help" class="tab"><div class="help" id="helpBody"></div></div>
+  </section>
+</main>
+<div id="modal" class="modal" hidden><div class="m-box" role="dialog" aria-modal="true"><h3></h3><div class="m-body"></div><div class="m-buttons"></div></div></div>
+<div id="toast" class="toast"></div>
+
+<script src="vendor/codemirror/codemirror.js"></script>
+<script src="vendor/codemirror/lua.js"></script>
+<script src="vendor/codemirror/matchbrackets.js"></script>
+<script src="vendor/codemirror/comment.js"></script>
+<script src="runtime.js"></script>
+<script src="demo.js"></script>
+<script src="studio.js"></script>
+</body>
+</html>
