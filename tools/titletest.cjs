@@ -2,7 +2,7 @@
 // the shell's menu still works on it, and nothing errors while it animates.
 // `node tools/titletest.cjs shots/` also writes a screenshot of each title screen.
 const fs = require('fs'), zlib = require('zlib'); global.window = {};
-for (const f of ['demo', 'harbour', 'sweep', 'tracks', 'kart', 'crossgate', 'tinwing', 'deepglow', 'windrow', 'puffball', 'hedgehogs', 'cauldron', 'entities']) eval(fs.readFileSync(__dirname + '/../studio/' + f + '.js', 'utf8'));
+for (const f of ['demo', 'harbour', 'sweep', 'tracks', 'kart', 'crossgate', 'tinwing', 'deepglow', 'windrow', 'puffball', 'hedgehogs', 'cauldron', 'mindlaps', 'entities']) eval(fs.readFileSync(__dirname + '/../studio/' + f + '.js', 'utf8'));
 const shotDir = process.argv[2];
 const SHOTS = (process.argv[3] || '150').split(',').map(Number);   // which frames to shoot
 const fail = m => { console.error('FAIL', m); process.exitCode = 1; };

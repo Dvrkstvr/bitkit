@@ -1,6 +1,6 @@
 /* Two PocketBits linked over a socket pair instead of ESP-NOW, as two processes, with packets lost on purpose:
-     bitsim --link <flash dir> <data dir> [--loss percent] [-v]
-   Bit A and Bit B find each other, A starts Crossgate from its home screen and both play it in lockstep with
+     bitsim --link <flash dir> <data dir> [--loss percent] [--game name] [-v]
+   Bit A and Bit B find each other, A starts Crossgate (or the --game one) from its home screen and both play it in lockstep with
    random buttons; A's Start+Select pauses it on both on the same frame (the lockstep hash must match);
    A picks it again and both carry on; this time B leaves; then both play Sweep Storm on their own and hear
    each other's net_send events; last, B switches off in the middle of a linked game and A goes home by itself.
@@ -11,6 +11,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 
+static const char *lk_game = "Crossgate";
 static int lk_fd = -1, lk_loss = 0, lk_sent = 0, lk_lost = 0;
 static uint64_t lk_rs;
 static uint32_t lk_r(void) { lk_rs ^= lk_rs << 13; lk_rs ^= lk_rs >> 7; lk_rs ^= lk_rs << 17; return (uint32_t)lk_rs; }
@@ -57,8 +58,8 @@ static int link_bit(int is_a, const char *flash, const char *data, const char *r
   const char *me = is_a ? "Bit A" : "Bit B";
   FILE *out = fopen(result, "w");
   uint32_t h1 = 0, f1 = 0, h2 = 0, f2 = 0;
-  const int cross = find_game("Crossgate"), sweep = find_game("Sweep Storm");
-  if (!cross || !sweep) { FAIL("%s: Crossgate or Sweep Storm missing", me); return 1; }
+  const int cross = find_game(lk_game), sweep = find_game("Sweep Storm");
+  if (!cross || !sweep) { FAIL("%s: %s or Sweep Storm missing", me, lk_game); return 1; }
 
   /* 1. they find each other; then A starts Crossgate for both */
   if (!lk_until(lk_two, lk_none, 6)) FAIL("%s: never saw the other Bit", me);
@@ -75,7 +76,9 @@ static int link_bit(int is_a, const char *flash, const char *data, const char *r
   /* 3. A picks it again: both carry on; B leaves this time */
   if (is_a) { if (!lk_until(lk_ready, lk_none, 6)) FAIL("Bit A: Bit B did not come home"); bk_host_launch(cross); }
   if (!lk_until(lk_in_game, lk_none, 6)) FAIL("%s: the paused linked game did not carry on", me);
-  if (!logged("carrying on with \"Crossgate\" on 2 Bits")) FAIL("%s: carried on, but not from the paused copy (%s)", me, lastlog);
+  char carry[160];
+  snprintf(carry, sizeof(carry), "carrying on with \"%s\" on 2 Bits", lk_game);
+  if (!logged(carry)) FAIL("%s: carried on, but not from the paused copy (%s)", me, lastlog);
   lk_target = 300;
   lk_until(lk_frame_reached, lk_rand_mask, 60);
   if (!is_a) lk_until(lk_at_home, lk_combo, 10); else lk_until(lk_at_home, lk_rand_mask, 15);
@@ -107,8 +110,10 @@ static int link_test(int argc, char **argv) {
   const char *flash = argv[2], *data = argv[3];
   for (int i = 4; i < argc; i++) {
     if (!strcmp(argv[i], "--loss") && i + 1 < argc) lk_loss = atoi(argv[++i]);
+    else if (!strcmp(argv[i], "--game") && i + 1 < argc) lk_game = argv[++i];
     else if (!strcmp(argv[i], "-v")) verbose = 1;
   }
+  printf("linked game: %s\n", lk_game);
   char da[600], db[600], ra[700], rb[700];
   snprintf(da, sizeof(da), "%s/bit-a", data); snprintf(db, sizeof(db), "%s/bit-b", data);
   mkdir(data, 0755);
