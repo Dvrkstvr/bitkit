@@ -1,7 +1,10 @@
 /* PocketBit home screen. Runs as a normal cart inside the BitKit runtime.
    The host fills BIT = { games = {{name, file, icon, studio, paused}, ...}, sel, source, studio }
    and draws each game's 16x16 icon into this cart's tiles. A paused game carries on where it was left
-   when launched; track(-1, n) is the host's private signal to forget game n's pause and start it over.
+   when launched; track(-1, n) is the host's private signal to forget game n's pause and start it over,
+   track(-2, n) tells the host game n is selected. With BIT.link the host keeps the linked Bits in map rows 0-1:
+   mget(0,0) how many, mget(1,0) which one is this Bit, mget(1+i,0) Bit i's number, mget(1+i,1) 1 home 2 in a game 3 idle.
+   A game started here starts on every linked Bit that is on its home screen.
    MIT License. */
 window.BK_HOME = `
 local sel, tt, slide = 1, 0, 0
@@ -15,6 +18,34 @@ end
 local function ctext(s, y, c, sc)
   sc = sc or 1
   text(s, 160 - #s * 4 * sc, y, c, sc)
+end
+
+-- linked Bits: how many are here, and how many would join a game started now
+local function linked()
+  if not BIT.link then return 0, 0 end
+  local n, ready = mget(0, 0), 0
+  for i = 1, n do if mget(1 + i, 1) ~= 2 then ready = ready + 1 end end
+  return n, ready
+end
+
+local function draw_linked()
+  local n, ready = linked()
+  if n < 2 then return end
+  local me = mget(1, 0)
+  text("LINKED", 8, 23, 28)
+  local x = 58
+  for i = 1, math.min(n, 12) do
+    local num, st = mget(1 + i, 0), mget(1 + i, 1)
+    local s = tostring(num)
+    local w = #s * 8 + 6
+    rectfill(x, 21, w, 11, i == me and 17 or (st == 2 and 30 or 19))
+    if i == me then rect(x - 1, 20, w + 2, 13, 13) end
+    text(s, x + 3, 23, st == 2 and 28 or 13)
+    x = x + w + 4
+  end
+  if n > 12 then text("+" .. (n - 12), x, 23, 28) end
+  local busy = n - ready
+  if busy > 0 then text(busy .. " in a game", 320 - 8 - #(busy .. " in a game") * 8, 23, 28) end
 end
 
 local function icon(g, x, y, sc, ghost)
@@ -40,8 +71,10 @@ function _update()
   slide = slide * 0.7
   local n = #BIT.games
   if n == 0 then return end
+  local was = sel
   if btnp("right") then sel = sel % n + 1; slide = 24; sfx("E5", 4, 0.2, 4) end
   if btnp("left") then sel = (sel - 2) % n + 1; slide = -24; sfx("E5", 4, 0.2, 4) end
+  if sel ~= was then track(-2, sel) end
   if btnp("a") or btnp("start") then sfx("C6", 1, 0.3, 10); launch(sel) end
   if BIT.games[sel].paused and btnp("x") then sfx("C5", 1, 0.3, 10); track(-1, sel) end
   if BIT.studio and btnp("y") then sfx("G5", 1, 0.3, 6); launch(sel, true) end
@@ -58,6 +91,7 @@ function _draw()
   rect(290, 5, 20, 9, 29) rectfill(310, 7, 2, 5, 29) rectfill(292, 7, 13, 5, 17)
   local src = BIT.source or ""
   text(src, 284 - #src * 8, 5, 28)
+  draw_linked()
 
   local n = #BIT.games
   if n == 0 then
@@ -98,7 +132,8 @@ function _draw()
 
   -- bottom bar
   rectfill(0, 222, 320, 18, 31)
-  local hint = n > 0 and "A play   < > choose" or ""
+  local _, ready = linked()
+  local hint = n > 0 and (ready > 1 and ("A play on " .. math.min(ready, 8) .. " Bits") or "A play   < > choose") or ""
   if n > 0 and BIT.games[sel].paused then hint = "A continue   X restart" end
   if BIT.studio and n > 0 then hint = hint .. "   Y edit" end
   text(hint, 8, 227, 29)

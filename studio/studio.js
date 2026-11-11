@@ -39,6 +39,7 @@
     pal: RT._bkw_palette(), tiles: RT._bkw_tiles(), flags: RT._bkw_flags(), map: RT._bkw_map(),
     press: RT._malloc(16), track: RT._bkw_track() >> 2, sys: RT._bkw_sys() >> 2, save: RT._bkw_save() >> 2, press2: RT._malloc(16)
   };
+  ptr.pressN = [0, ptr.press, ptr.press2].concat([3, 4, 5, 6, 7, 8].map(() => RT._malloc(16)));   // button pressure, per player
   const DEFAULT_PAL = RT.HEAPU8.slice(ptr.pal, ptr.pal + 768);
 
   /* ------------------------------------------------------------ cart */
@@ -163,7 +164,7 @@ end
 
   let dirtySave = false;
   function markDirty() { dirtySave = true; }
-  setInterval(() => { if (dirtySave && !/[?&]bit=2\b/.test(location.search)) { saveLocal(); dirtySave = false; } }, 2000);
+  setInterval(() => { if (dirtySave && !/[?&]bit=\d/.test(location.search)) { saveLocal(); dirtySave = false; } }, 2000);
   function saveLocal() { lsSet(LS.cart, JSON.stringify(serialize())); }
 
   /* ------------------------------------------------------------ code editor */
@@ -769,8 +770,10 @@ end
   const keys = new Uint8Array(12), keys2 = new Uint8Array(12);
   const input = { mask: 0, press: new Uint8Array(12), pads: [], mine: [] };
   const input2 = { mask: 0, press: new Uint8Array(12) };
-  const IS_BIT2 = /[?&]bit=2\b/.test(location.search);   // a linked second Bit window: just the screen
-  let playMode = IS_BIT2 ? 'link' : (lsGet('bitkit.players') || '1');
+  // Every studio window is a Bit. Extra Bits open as ?bit=N windows that show just the screen.
+  const BIT_NO = Math.max(1, Math.min(99, parseInt((location.search.match(/[?&]bit=(\d+)/) || [])[1], 10) || 1));
+  const IS_BIT2 = BIT_NO > 1;   // an extra Bit window (not the studio)
+  let playMode = lsGet('bitkit.players') === '2' ? '2' : '1';   // '2' = two players on this one screen
   const screen = $('screen');
   function gameHasFocus() { const a = document.activeElement; return a === screen || a === document.body || a === null; }
   window.addEventListener('keydown', e => {
@@ -804,7 +807,7 @@ end
   }
   // which input drives each player in this tab: 'auto', 'kb' (keyboard only) or one controller.
   // Kept per tab (sessionStorage), so two studio windows can each take their own controller, or one the keyboard.
-  const PICK_KEY = 'bitkit.inputPick.' + (IS_BIT2 ? 'bit2' : 'bit1');
+  const PICK_KEY = 'bitkit.inputPick.bit' + BIT_NO;
   const picks = [{ k: 'auto' }, { k: 'auto' }];
   try { const v = JSON.parse(sessionStorage.getItem(PICK_KEY) || 'null'); if (Array.isArray(v)) v.slice(0, 2).forEach((o, i) => { if (o && o.k) picks[i] = o; }); } catch (e) { /* ignore */ }
   function savePicks() { try { sessionStorage.setItem(PICK_KEY, JSON.stringify(picks)); } catch (e) { /* ignore */ } }
@@ -816,14 +819,17 @@ end
     const kb = n === 0 ? keys : (picks[0].k === 'pad' ? orKeys() : keys2);   // player 2 gets the arrow keys too when player 1 is on a controller
     if (pk.k === 'kb') return { pads: [], kb };
     if (n === 1) return { pads: pads.slice(1, 2), kb };   // auto, player 2: the second controller + I J K L
-    if (playMode === '2') return { pads: pads.slice(0, 1), kb };
-    if (playMode === 'link') {          // two Bit windows: one controller each
-      const peer = link.peerPick && link.peerPick.k === 'pad' ? pickedPad(pads, link.peerPick) : null;
-      if (peer) return { pads: pads.filter(p => p !== peer), kb };   // the other Bit chose a controller: use the rest
-      if (pads.length > 1) return { pads: pads.slice(IS_BIT2 ? 1 : 0, IS_BIT2 ? 2 : 1), kb };
+    if (link.peers.size) {              // linked Bit windows: one controller each
+      const taken = peerPads(pads);
+      if (taken.length) return { pads: pads.filter(p => !taken.includes(p)), kb };   // other Bits chose controllers: use the rest
+      if (pads.length > 1) { const r = linkRank(); return { pads: pads.slice(r, r + 1), kb }; }
     }
+    if (playMode === '2') return { pads: pads.slice(0, 1), kb };
     return { pads, kb };
   }
+  // controllers other Bits picked for themselves
+  function peerPads(pads) { const out = []; for (const p of link.peers.values()) { const q = p.pick && p.pick.k === 'pad' ? pickedPad(pads, p.pick) : null; if (q) out.push(q); } return out; }
+  function padOwner(pad) { for (const p of link.peers.values()) if (p.pick && p.pick.k === 'pad' && pickedPad(input.pads, p.pick) === pad) return p.num; return 0; }
   const keysBoth = new Uint8Array(12), noKeys = new Uint8Array(12);
   function orKeys() { for (let i = 0; i < 12; i++) keysBoth[i] = keys[i] | keys2[i]; return keysBoth; }
   function pollInput() {
@@ -846,7 +852,7 @@ end
   function closeChooser() { chooser.open = false; chooser.el.hidden = true; screen.focus(); }
   function choose(pk) {
     picks[0] = pk; savePicks(); buildPickers(); sendPick(); closeChooser();
-    toast(`${IS_BIT2 ? 'Bit 2' : playMode === 'link' ? 'Bit 1' : 'This tab'} uses ${pk.k === 'pad' ? padName(pk.id) : pk.k === 'kb' ? 'the keyboard' : 'auto input'}`);
+    toast(`${link.peers.size || IS_BIT2 ? 'Bit ' + BIT_NO : 'This tab'} uses ${pk.k === 'pad' ? padName(pk.id) : pk.k === 'kb' ? 'the keyboard' : 'auto input'}`);
   }
   function chooserPoll(pads) {
     // check presses first: a controller the browser only now shows (after its first press) is taken by that press
@@ -858,11 +864,11 @@ end
     for (const p of pads) if (!chooser.base.has(p.index + '|' + p.id)) chooser.base.set(p.index + '|' + p.id, p.buttons.map(b => b.value));
   }
   function chooserDraw() {
-    const pads = input.pads, peer = link.peerPick && link.peerPick.k === 'pad' ? pickedPad(pads, link.peerPick) : null;
-    const who = IS_BIT2 ? 'Bit 2' : playMode === 'link' ? 'Bit 1' : 'this tab';
+    const pads = input.pads;
+    const who = link.peers.size || IS_BIT2 ? 'Bit ' + BIT_NO : 'this tab';
     chooser.el.innerHTML = `<div class="pc-box"><b>Which controller plays on ${who}?</b>
       <div class="dim">Press any button on it, or press a key to use the keyboard.</div>
-      <div class="pc-list">${pads.map(p => `<button data-i="${p.index}">🎮 ${p.index + 1}: ${escapeHtml(padName(p.id))}${p === peer ? ` <span class="dim">(${IS_BIT2 ? 'Bit 1' : 'Bit 2'} has it)</span>` : ''}</button>`).join('')}
+      <div class="pc-list">${pads.map(p => `<button data-i="${p.index}">🎮 ${p.index + 1}: ${escapeHtml(padName(p.id))}${padOwner(p) ? ` <span class="dim">(Bit ${padOwner(p)} has it)</span>` : ''}</button>`).join('')}
         <button data-k="kb">⌨ Keyboard</button><button data-k="auto" class="dim">Auto</button></div>
       <div class="dim">Controller missing? Press a button on it while this window is in front: browsers only show a controller to a window after a press there.</div></div>`;
     chooser.el.querySelectorAll('button').forEach(b => b.onclick = () => {
@@ -876,7 +882,7 @@ end
     e.preventDefault(); e.stopImmediatePropagation();
     if (e.key === 'Escape') closeChooser(); else choose({ k: 'kb' });
   }, true);
-  function sendPick() { if (link.peer) linkSend({ t: 'pick', to: link.peer, pick: picks[0] }); }
+  function sendPick() { linkHi(); }
 
   // controller tab UI
   const rows = $('btnRows'), rowEls = [];
@@ -1054,6 +1060,11 @@ end
     if (typeof startLevel === 'number' && !/GAME_BOOT/.test(extraLua || '')) extraLua = 'GAME_BOOT = 3\n' + (extraLua || '');
     syncLevel();
     if (BKTracks.beforeRun(cart)) atlasDirty = true;   // track carts: edge tiles come from the road segment tiles
+    if (linkWanted()) {        // other Bits are linked: they all play it too
+      linkLaunch({ cart: decodeCart(serialize()), level: start, extra: extraLua, saveKey: cart.name || 'untitled',
+        key: gameKey(bit.games.find(g => g.studio) || { studio: true }), studio: true });
+      return;
+    }
     newRouteSegment(start);
     startAudio();
     overlay.classList.add('hidden');
@@ -1063,19 +1074,14 @@ end
     log(`▶ running "${cart.name}"` + (start ? ` from ${cart.levels[start].name}` : ''), 'sys');
     playingEditor = true; playingLevels = cart.levels; playingLevel = start;
     if (bit.on) bit.playing = 'studio';
-    bit.cur = bit.on && playMode !== 'link' ? gameKey(bit.games.find(g => g.studio) || { studio: true }) : null;
-    let np = playMode === '2' ? 2 : 1, me = 0;
-    if (playMode === 'link' && link.peer) {        // linked: this window is Bit 1 and sends the cart to Bit 2
-      linkSend({ t: 'start', to: link.peer, cart: serialize(), level: start });
-      linkBegin(1); np = 2; me = 1;
-      log('🔗 playing linked: you are player 1', 'sys');
-    } else if (playMode === 'link') log('🔗 no other Bit is linked yet, so this runs for one player. Press "Open a 2nd Bit".', 'sys');
+    bit.cur = bit.on ? gameKey(bit.games.find(g => g.studio) || { studio: true }) : null;
+    const np = playMode === '2' ? 2 : 1, me = 0;
     running = loadCode(getCode(), BKEntities.toLua(cart.entities, levelsMeta(cart.levels), start, extraLua), cart.name || 'untitled', np, me) === 0;
     acc = 0; last = performance.now();
     screen.focus();
   }
   function stop(quiet) {
-    if (link.running) { link.running = false; linkSend({ t: 'stop', to: link.peer }); linkUI(); }
+    if (link.s) { linkSend({ t: 'end', sid: link.s.sid }); link.s = null; link.running = false; linkUI(); linkHi(); }
     if (activeTab === 'map') setTimeout(drawMap, 0);
     running = false; RT._bkw_stop();
     if (quiet !== true) log('■ stopped', 'sys');
@@ -1103,20 +1109,24 @@ end
     requestAnimationFrame(frame);
     pollInput();
     if (running) {
-      if (gfxDirtyRT && playingEditor && !link.running) syncToRuntime(false);   // live sprite edits while the game runs
+      if (gfxDirtyRT && playingEditor && !link.s) syncToRuntime(false);   // live sprite edits while the game runs
       acc += Math.min(now - last, 100);
       let ticks = 0;
-      if (link.running) linkPump();
-      while (acc >= STEP && running) {
+      const ls = link.s;
+      if (ls && ls.ready) linkPump();
+      while (running && (acc >= STEP || (ls && ls.catching && ticks < 600))) {
         let m1 = input.mask, p1 = input.press;
         if (bit.hold) {             // a resumed game sees no buttons until the one that resumed it is let go
           if (m1) { m1 = 0; p1 = NO_PRESS; } else bit.hold = false;
         }
-        if (link.running) {          // lockstep: only run a frame once both Bits' input for it is here
-          const f = linkTake();
-          if (!f) { acc = Math.min(acc, STEP * 3); linkWaiting(now); break; }
-          [m1, p1] = f[0];
-          RT.HEAPU8.set(f[1][1], ptr.press2); RT._bkw_input(2, f[1][0], ptr.press2);
+        if (ls) {                    // lockstep: only run a frame once every Bit's input for it is here
+          if (!ls.ready || link.s !== ls) break;
+          const r = linkTake(ls);
+          if (!r) { ls.catching = false; acc = Math.min(acc, STEP * 3); linkWaiting(ls, now); break; }
+          if (r.leave) { linkLeave(true); break; }
+          const e = r.e;
+          [m1, p1] = e[1];
+          for (let k = 2; k <= ls.np; k++) { RT.HEAPU8.set(e[k][1], ptr.pressN[k]); RT._bkw_input(k, e[k][0], ptr.pressN[k]); }
         } else if (playMode === '2') {
           RT.HEAPU8.set(input2.press, ptr.press2); RT._bkw_input(2, input2.mask, ptr.press2);
         }
@@ -1125,140 +1135,395 @@ end
         takeSave();
         const tr = RT.HEAP32;
         if (playingEditor && tr[ptr.track + 2] && route.cur) route.cur.push(tr[ptr.track], tr[ptr.track + 1]);
-        if (bit.playing === 'home' && tr[ptr.track + 2] && tr[ptr.track] === -1) {   // home screen: start game n over
-          const n = tr[ptr.track + 1]; tr[ptr.track + 2] = 0; bitRestart(n); break;
+        if (bit.playing === 'home' && tr[ptr.track + 2] && tr[ptr.track] < 0) {   // home screen: -1 = start game n over, -2 = n is selected
+          const k = tr[ptr.track], n = tr[ptr.track + 1]; tr[ptr.track + 2] = 0;
+          if (k === -2) bit.sel = n; else if (k === -1) { bitRestart(n); break; }
         }
         if (tr[ptr.sys]) { const cmd = tr[ptr.sys], arg = tr[ptr.sys + 1]; tr[ptr.sys] = 0; bitRequest(cmd, arg); break; }
-        acc -= STEP; ticks++; fpsCount++;
+        if (acc >= STEP) acc -= STEP;
+        ticks++; fpsCount++;
       }
       if (ticks) blit();
       if (ticks && activeTab === 'map' && route.show && (++routeTick % 10) === 0) drawMap();
     }
     last = now;
+    if (bit.playing === 'home' && running) homeRoster();
     bitCombo();
     if (now - fpsT >= 1000) { $('fps').textContent = running ? `${fpsCount} fps` : ''; fpsCount = 0; fpsT = now; }
     updateInputUI();
   }
 
-  /* ------------------------------------------------------------ multiplayer: players and linked Bits */
-  // Linked Bits work like PocketBits over ESP-NOW: both windows run the same cart in lockstep, and each frame
-  // runs only when both Bits' buttons for that frame have arrived. Each window shows its own player's camera.
-  const link = { id: Math.random().toString(36).slice(2), ch: null, peer: null, peerSeen: 0, running: false, me: 0,
-    f: 0, sent: 0, mine: new Map(), theirs: new Map(), waitSince: 0, DELAY: 3 };
+  /* ------------------------------------------------------------ multiplayer: linked Bits */
+  // Every studio window is a Bit, and Bits find each other by themselves, like PocketBits over ESP-NOW
+  // (here a BroadcastChannel). The home screen shows the linked Bits. Starting a game on one Bit starts it on
+  // every Bit that is on its home screen (or idle), up to MAXP players: a session.
+  // Deterministic lockstep: every Bit runs the same cart, and a frame runs only once every player's buttons for
+  // it have arrived (sent DELAY frames ahead to hide the link's lag). Each Bit draws its own player's view (ME).
+  // Start+Select or home() by any player takes every Bit home on the same frame, and each Bit keeps the game
+  // paused, so picking it again carries on together.
+  // The Bit that started the session (the host) keeps a copy of every other player's memory every CK_EVERY
+  // frames (a checkpoint) and the buttons since. A Bit that reloads, or falls out of the session, gets its seat
+  // back from there and fast-forwards to the others.
+  const MAXP = 8, CK_EVERY = 600, DELAY = 3;
+  const link = { id: Date.now().toString(36).slice(-4) + Math.random().toString(36).slice(2, 8), num: BIT_NO,
+    ch: null, inbox: null, out: new Map(), peers: new Map(), s: null, running: false, early: new Map() };
   function linkSend(o) { if (link.ch) { o.from = link.id; link.ch.postMessage(o); } }
+  function linkSendTo(id, o) {           // to one Bit (big messages like checkpoints go only where they are needed)
+    if (!link.ch) return;
+    let c = link.out.get(id);
+    if (!c) { c = new BroadcastChannel('bitkit-link-' + id); link.out.set(id, c); }
+    o.from = link.id; c.postMessage(o);
+  }
+  function myState() { return link.s ? 'game' : bit.playing === 'home' ? 'home' : running ? 'game' : 'idle'; }
+  function linkHi(to) {
+    const o = { t: 'hi', num: link.num, pick: picks[0], st: myState(), sid: link.s ? link.s.sid : null };
+    if (to) linkSendTo(to, o); else linkSend(o);
+  }
   function linkOpen() {
-    if (link.ch) return;
-    if (!window.BroadcastChannel) { toast('This browser cannot link windows'); return; }
+    if (link.ch || !window.BroadcastChannel) return;
     link.ch = new BroadcastChannel('bitkit-link');
     link.ch.onmessage = e => linkMsg(e.data || {});
-    linkSend({ t: 'hello' });
-    linkUI();
+    link.inbox = new BroadcastChannel('bitkit-link-' + link.id);
+    link.inbox.onmessage = e => linkMsg(e.data || {});
+    linkHi();
   }
-  function linkClose() {
-    if (!link.ch) return;
-    if (link.running) stop(true);
-    linkSend({ t: 'bye' });
-    link.ch.close(); link.ch = null; link.peer = null; link.peerPick = null;
-    linkUI();
+  // every Bit (this one too) as [id, number], in number order
+  function bitsSorted() {
+    return [[link.id, link.num]].concat([...link.peers].map(([id, p]) => [id, p.num]))
+      .sort((a, b) => a[1] - b[1] || (a[0] < b[0] ? -1 : 1));
   }
-  function linkBegin(me) {
-    Object.assign(link, { running: true, me, f: 0, sent: 0, waitSince: 0 });
-    link.mine.clear(); link.theirs.clear();
-    linkUI();
+  function linkRank() { return bitsSorted().findIndex(b => b[0] === link.id); }
+  function peerNum(id) { return id === link.id ? link.num : (link.peers.get(id) || {}).num || 0; }
+  // who plays when this Bit starts a game: itself, then every Bit on its home screen (or idle, or in this Bit's game)
+  function linkRoster() {
+    const s = link.s;
+    const others = [...link.peers].filter(([id, p]) => p.st === 'home' || p.st === 'idle' || (s && p.sid === s.sid))
+      .sort((a, b) => a[1].num - b[1].num || (a[0] < b[0] ? -1 : 1)).map(x => x[0]);
+    return [link.id].concat(others).slice(0, MAXP);
   }
-  function linkPump() {        // send this Bit's buttons a few frames ahead (input delay hides the link's lag)
-    while (link.sent <= link.f + link.DELAY) {
-      const p = Array.from(input.press);
-      link.mine.set(link.sent, [input.mask, Uint8Array.from(p)]);
-      linkSend({ t: 'in', to: link.peer, f: link.sent, m: input.mask, p });
-      link.sent++;
-    }
+  function linkWanted() { return !!link.ch && linkRoster().length > 1; }
+  const linkSnapId = (np, id, slot) => `link${np}:${id}#${slot}`;
+  // the runtime memory without its unused (zero) end, and back
+  function heapCopy() {
+    const h = RT.HEAPU8, w = new Uint32Array(h.buffer, h.byteOffset, h.length >> 2);
+    let n = w.length;
+    while (n > 0 && w[n - 1] === 0) n--;
+    return h.slice(0, n * 4);
   }
-  function linkTake() {
-    const a = link.mine.get(link.f), b = link.theirs.get(link.f);
-    if (!a || !b) return null;
-    link.mine.delete(link.f); link.theirs.delete(link.f); link.f++;
-    if (link.waitSince) { link.waitSince = 0; linkUI(); }
-    return link.me === 1 ? [a, b] : [b, a];
+  function heapRestore(heap) {
+    if (!heap || heap.length > RT.HEAPU8.length) return false;
+    RT.HEAPU8.set(heap); RT.HEAPU8.fill(0, heap.length);
+    return true;
   }
-  function linkWaiting(now) {
-    if (!link.waitSince) link.waitSince = now;
-    else if (now - link.waitSince > 600) linkUI('Waiting for the other Bit…');
-  }
+
   function linkMsg(m) {
-    if (m.from === link.id || (m.to && m.to !== link.id)) return;
+    if (!m.from || m.from === link.id) return;
     const now = performance.now();
-    if (m.t === 'hello') {
-      if (link.peer && link.peer !== m.from) return;          // already linked to another window
-      const isNew = !link.peer;
-      link.peer = m.from; link.peerSeen = now;
-      if (isNew) { linkSend({ t: 'hello', to: m.from }); sendPick(); log('🔗 linked with another Bit', 'sys'); }
-      linkUI();
+    let p = link.peers.get(m.from);
+    if (m.t === 'bye') { if (p) { link.peers.delete(m.from); log(`🔗 Bit ${p.num} left`, 'sys'); peersChanged(); } return; }
+    if (!p && m.t === 'hi') {
+      p = { num: m.num | 0, pick: null, st: 'idle', sid: null, seen: now };
+      link.peers.set(m.from, p);
+      linkHi(m.from);   // answer straight away, so both know each other
+      log(`🔗 Bit ${p.num} linked`, 'sys');
+    }
+    if (p) p.seen = now;
+    if (m.t === 'hi') {
+      const pickChanged = JSON.stringify(p.pick) !== JSON.stringify(m.pick || null), stChanged = p.st !== m.st || p.num !== (m.num | 0);
+      p.num = m.num | 0; p.pick = m.pick || null; p.st = m.st; p.sid = m.sid || null;
+      if (p.isNew !== false) { p.isNew = false; peersChanged(); }
+      else {
+        if (pickChanged) { buildPickers(); if (chooser.open) chooserDraw(); }
+        if (stChanged) { linkUI(); if (bit.playing === 'home') refreshHomeSoon(); }
+      }
+      hostCheck(m.from);
       return;
     }
-    if (m.from !== link.peer) return;
-    link.peerSeen = now;
-    if (m.t === 'pick') { link.peerPick = m.pick || null; buildPickers(); if (chooser.open) chooserDraw(); }
-    else if (m.t === 'in') { if (link.running) link.theirs.set(m.f, [m.m, Uint8Array.from(m.p)]); }
-    else if (m.t === 'start') linkJoin(m.cart, m.level | 0);
-    else if (m.t === 'stop') { if (link.running) { link.running = false; stop(true); log('■ the other Bit stopped the game', 'sys'); linkUI(); } }
-    else if (m.t === 'bye') {
-      link.peer = null; link.peerPick = null;
-      if (link.running) { link.running = false; stop(true); log('🔗 the other Bit left', 'sys'); }
-      linkUI();
+    const s = link.s;
+    if (m.t === 'start') linkEnter(m);
+    else if (m.t === 'rejoin') linkRejoin(m);
+    else if (m.t === 'in') {
+      if (s && m.sid === s.sid) putInput(s, m.f, m.slot, m.m, m.p);
+      else {   // a frame of a session whose start has not arrived here yet
+        let q = link.early.get(m.sid);
+        if (!q) { q = []; link.early.set(m.sid, q); if (link.early.size > 4) link.early.delete(link.early.keys().next().value); }
+        if (q.length < 4000) q.push(m);
+      }
+    } else if (m.t === 'end') {
+      if (s && m.sid === s.sid) { log(`■ Bit ${peerNum(m.from)} ${m.why || 'stopped the game'}`, 'sys'); linkLeave(false); }
+    } else if (m.t === 'roster') {
+      if (s && m.sid === s.sid) { s.roster = m.roster; s.nums = m.nums; linkUI(); }
+    } else if (m.t === 'ck') {
+      if (s && m.sid === s.sid && s.host === link.id) {
+        const o = s.ck.get(m.slot);
+        if (!o || o.f <= m.f) s.ck.set(m.slot, { f: m.f, heap: m.heap });
+        pruneLog(s);
+      }
+    } else if (m.t === 'paused') { if (bit.playing === 'home') refreshHomeSoon(); }
+  }
+  function peersChanged() {
+    const s = link.s;
+    if (s && s.host !== link.id && !link.peers.has(s.host)) {
+      log(`🔗 Bit ${s.nums[s.roster.indexOf(s.host)] || ''} started this game and is gone, so it ended`, 'sys');
+      linkLeave(false);
     }
+    buildPickers(); if (chooser.open) chooserDraw();
+    linkUI();
+    if (bit.playing === 'home') refreshHomeSoon();
   }
-  // Bit 2: play the cart Bit 1 sent, as player 2
-  function linkJoin(data, level) {
-    let c;
-    try { c = decodeCart(data); } catch (e) { log('🔗 could not read the cart from the other Bit: ' + e.message, 'err'); return; }
-    if (running) { link.running = false; stop(true); }
-    startAudio();
-    overlay.classList.add('hidden');
-    const L = c.levels[level] ? level : 0;
-    RT.HEAPU8.set(c.palette, ptr.pal); RT.HEAPU8.set(c.tiles, ptr.tiles); RT.HEAPU8.set(c.flags, ptr.flags);
-    RT.HEAPU16.set(c.levels[L].map, ptr.map >> 1);
-    gfxDirtyRT = true; playingEditor = false; playingLevels = c.levels;
-    linkBegin(2);
-    log(`🔗 playing "${c.name}" linked: you are player 2`, 'sys');
-    running = loadCode(c.code, BKEntities.toLua(c.entities, levelsMeta(c.levels), L), null, 2, 2) === 0;
-    acc = 0; last = performance.now();
-    screen.focus();
-  }
-  setInterval(() => {          // heartbeat: notice a closed window
+  setInterval(() => {          // heartbeat: tell the others how this Bit is doing, notice Bits that are gone
     if (!link.ch) return;
-    linkSend({ t: link.peer ? 'ping' : 'hello', to: link.peer || undefined });
-    if (link.peer && performance.now() - link.peerSeen > 4000) {
-      link.peer = null; link.peerPick = null;
-      if (link.running) { link.running = false; stop(true); log('🔗 lost the other Bit', 'sys'); }
-      linkUI();
-    }
+    linkHi();
+    const now = performance.now();
+    let gone = false;
+    for (const [id, p] of link.peers) if (now - p.seen > 4000) { link.peers.delete(id); gone = true; log(`🔗 lost Bit ${p.num}`, 'sys'); }
+    if (gone) peersChanged();
   }, 1000);
-  window.addEventListener('pagehide', () => { if (link.ch) linkSend({ t: 'bye' }); });
+  window.addEventListener('pagehide', () => linkSend({ t: 'bye' }));
+
+  /* sessions */
+  function newSession(st, slot) {
+    const s = { sid: st.sid, host: st.from, start: st, roster: st.roster.slice(), nums: st.nums.slice(), np: st.np, slot,
+      f: 0, sent: 0, inp: new Map(), log: new Map(), ck: new Map(), rj: new Map(), combo: [], at: performance.now(),
+      ready: false, catching: false, waitSince: 0, hold: false, ckDone: -1, gameId: st.gameId, fp: st.fp, name: st.cart.name };
+    link.s = s; link.running = true;
+    const q = link.early.get(s.sid);
+    if (q) { link.early.delete(s.sid); for (const m of q) putInput(s, m.f, m.slot, m.m, m.p); }
+    return s;
+  }
+  // leave whatever this Bit is doing for a linked game: a game of its own is paused first
+  function clearForSession() {
+    if (link.s) { link.s = null; link.running = false; }
+    else if (bit.on && running && bit.cur && bit.playing !== 'home') suspendGame();
+    if (chooser.open) closeChooser();
+    running = false;
+  }
+  // this Bit starts a game for every Bit in linkRoster()
+  // o: { cart (decoded), level, extra (Lua), saveKey, key {id, fp}, studio, resume (token), nums (seats when paused) }
+  function linkLaunch(o) {
+    let roster = linkRoster();
+    const np = roster.length;
+    if (o.resume && o.nums) {   // carry on with the same Bits in the same seats where they are all here
+      const byNum = new Map(roster.map(id => [peerNum(id), id]));
+      if (new Set(o.nums).size === np && o.nums.every(n => byNum.has(n)) && byNum.size === np) roster = o.nums.map(n => byNum.get(n));
+    }
+    const st = { t: 'start', sid: Date.now().toString(36) + '-' + link.id, roster, nums: roster.map(peerNum), np, cart: o.cart,
+      level: o.level | 0, extra: o.extra || '', saveKey: o.saveKey || null, gameId: o.key.id, fp: o.key.fp, studio: !!o.studio, resume: o.resume || null };
+    linkSend(st);
+    linkEnter(st);
+  }
+  // the game shell's restart (retry, new game): the host starts the same game again for the same Bits
+  function linkRelaunch(extra) {
+    const st = link.s.start;
+    linkLaunch({ cart: st.cart, level: st.level, extra: extra + (st.extra || '').replace(/^GAME_BOOT = \d+\n/, ''), saveKey: st.saveKey,
+      key: { id: st.gameId, fp: st.fp }, studio: st.studio });
+  }
+  async function linkFromHome(g, c, key, fresh) {
+    const np = linkRoster().length;
+    let resume = null, nums = null;
+    if (!fresh) {             // paused before with this many Bits? every seat must still have its copy
+      bit.busy = true;
+      try {
+        const snaps = await Promise.all(Array.from({ length: np }, (_, i) => BKSnap.get(linkSnapId(np, key.id, i + 1), key.fp)));
+        if (snaps.every(x => x && x.meta.token && x.meta.token === snaps[0].meta.token)) { resume = snaps[0].meta.token; nums = snaps[0].meta.nums; }
+      } catch (e) { /* start fresh */ } finally { bit.busy = false; }
+      if (bit.playing !== 'home' || linkRoster().length !== np) return;
+    }
+    linkLaunch({ cart: g.studio ? decodeCart(serialize()) : c, level: 0, saveKey: g.studio ? (cart.name || 'untitled') : (c.name || g.name),
+      key, studio: !!g.studio, resume, nums });
+  }
+  // a start: every Bit in its roster (the starter too) begins the game
+  async function linkEnter(st) {
+    const slot = st.roster.indexOf(link.id) + 1, cur = link.s;
+    if (!slot || (cur && cur.sid === st.sid)) return;
+    if (st.from !== link.id) {
+      if (cur && !cur.roster.includes(st.from)) return;                                   // a Bit from outside this game
+      if (cur && cur.host !== st.from && performance.now() - cur.at < 300 && st.sid > cur.sid) return;   // two Bits started at the same moment: the first start wins
+      if (!cur && myState() === 'game') return;                                           // busy with a game of its own
+    }
+    clearForSession();
+    const s = newSession(st, slot), c = st.cart, L = c.levels[st.level] ? st.level : 0;
+    startAudio(); overlay.classList.add('hidden'); clearErrLine();
+    playingLevels = c.levels; playingLevel = L;
+    playingEditor = st.from === link.id && st.studio;
+    bit.playing = 'link'; bit.cur = null; bit.hold = false;
+    if (st.resume) {
+      const snap = await BKSnap.get(linkSnapId(st.np, st.gameId, slot), st.fp).catch(() => null);
+      if (link.s !== s) return;
+      if (!snap || snap.meta.token !== st.resume || !heapRestore(snap.heap)) {
+        log('🔗 this Bit has no paused copy of that game, so the Bits cannot carry on together', 'err');
+        linkSend({ t: 'end', sid: s.sid, why: 'could not carry on the paused game' }); linkLeave(false);
+        return;
+      }
+      saveKey = snap.meta.saveKey || null; playingLevel = snap.meta.level | 0;
+      gfxDirtyRT = true; mapDirtyRT = false;
+      s.hold = true; running = true;
+      log(`▶ carrying on with "${c.name}" on ${st.np} Bits: you are player ${slot}`, 'sys');
+    } else {
+      RT.HEAPU8.set(c.palette, ptr.pal); RT.HEAPU8.set(c.tiles, ptr.tiles); RT.HEAPU8.set(c.flags, ptr.flags);
+      RT.HEAPU16.set(c.levels[L].map, ptr.map >> 1);
+      gfxDirtyRT = !playingEditor; mapDirtyRT = false;
+      if (playingEditor) newRouteSegment(L);
+      log(`🔗 playing "${c.name}" on ${st.np} Bits: you are player ${slot}`, 'sys');
+      running = loadCode(c.code, BKEntities.toLua(c.entities, levelsMeta(c.levels), L, st.extra), slot === 1 ? st.saveKey : null, st.np, slot) === 0;
+    }
+    s.ready = true; acc = 0; last = performance.now();
+    linkUI(); linkHi(); screen.focus();
+  }
+  // back in a game after a reload (or after falling out of it): from the host's checkpoint of this seat
+  function linkRejoin(m) {
+    const st = m.start;
+    if (link.s && link.s.sid === st.sid && link.s.ready) return;
+    clearForSession();
+    const s = newSession(st, m.slot);
+    s.roster = m.roster; s.nums = m.nums;
+    if (!heapRestore(m.ck.heap)) { link.s = null; link.running = false; log('🔗 could not take the seat back (memory too small)', 'err'); return; }
+    startAudio(); overlay.classList.add('hidden'); clearErrLine();
+    playingLevels = st.cart.levels; playingLevel = 0; playingEditor = false;
+    bit.playing = 'link'; bit.cur = null; bit.hold = false; saveKey = null;
+    gfxDirtyRT = true; mapDirtyRT = false;
+    s.f = s.sent = m.ck.f; s.ckDone = s.f;
+    for (const [f, e] of m.entries) for (let k = 1; k <= s.np; k++) if (e[k]) {
+      putInput(s, f, k, e[k][0], e[k][1]);
+      if (k === s.slot) s.sent = Math.max(s.sent, f + 1);   // buttons this seat already sent stay as they were
+    }
+    s.catching = true; s.ready = true; running = true; acc = 0; last = performance.now();
+    log(`🔗 back in "${st.cart.name}" as player ${m.slot}, catching up…`, 'sys');
+    linkUI(); linkHi(); screen.focus();
+  }
+  // host: a Bit says hello. Give a missing seat back, to a Bit that reloaded or fell out of the game.
+  function hostCheck(id) {
+    const s = link.s, p = link.peers.get(id), now = performance.now();
+    if (!s || s.host !== link.id || !p || p.sid === s.sid || now - s.at < 2500 || (s.rj.get(id) || 0) > now - 3000) return;
+    let slot = s.roster.indexOf(id) + 1;   // still in the roster: it fell out of step (or missed the start)
+    if (!slot) {
+      if (p.st === 'game') return;         // busy with another game
+      for (let k = 1; k <= s.np && !slot; k++) if (s.roster[k - 1] !== link.id && !link.peers.has(s.roster[k - 1])) slot = k;
+      if (!slot) return;
+    }
+    const ck = s.ck.get(slot);
+    if (!ck) return;
+    s.rj.set(id, now);
+    const entries = [];
+    for (const [f, e] of s.log) if (f >= ck.f) entries.push([f, e]);
+    for (const [f, e] of s.inp) if (f >= ck.f) entries.push([f, e]);
+    s.roster[slot - 1] = id; s.nums[slot - 1] = p.num;
+    linkSend({ t: 'roster', sid: s.sid, roster: s.roster, nums: s.nums });
+    linkSendTo(id, { t: 'rejoin', start: s.start, slot, roster: s.roster, nums: s.nums, ck, entries });
+    log(`🔗 Bit ${p.num} takes seat ${slot} back`, 'sys');
+    linkUI();
+  }
+  // everyone goes home together (pause: each Bit keeps its copy of the game)
+  function linkLeave(pause) {
+    const s = link.s;
+    if (!s) return;
+    link.s = null; link.running = false;
+    if (pause && s.ready && running) {
+      takeSave();
+      BKSnap.put(linkSnapId(s.np, s.gameId, s.slot), s.fp, heapCopy(), { token: s.sid, nums: s.nums, level: playingLevel, saveKey })
+        .then(() => linkSend({ t: 'paused' }));
+      log(`⏸ "${s.name}" paused on every Bit`, 'sys');
+    }
+    running = false; RT._bkw_stop(); playingEditor = false;
+    if (activeTab === 'map') setTimeout(drawMap, 0);
+    if (bit.on) bootHome(); else { bit.playing = null; bootScreen(); }
+    linkUI(); linkHi();
+  }
+
+  /* lockstep */
+  function putInput(s, f, slot, m, p) {
+    if (f < s.f || slot < 1 || slot > s.np) return;
+    let e = s.inp.get(f);
+    if (!e) { e = []; s.inp.set(f, e); }
+    if (!e[slot]) e[slot] = [m, Uint8Array.from(p)];
+  }
+  function linkPump() {        // send this Bit's buttons a few frames ahead (input delay hides the link's lag)
+    const s = link.s;
+    while (s.sent <= s.f + DELAY) {
+      let m = input.mask, p = input.press;
+      if (s.hold) { if (m) { m = 0; p = NO_PRESS; } else s.hold = false; }   // a resumed game ignores the button that resumed it
+      const pa = Array.from(p);
+      putInput(s, s.sent, s.slot, m, pa);
+      linkSend({ t: 'in', sid: s.sid, slot: s.slot, f: s.sent, m, p: pa });
+      s.sent++;
+    }
+  }
+  function sendCk(s) { linkSendTo(s.host, { t: 'ck', sid: s.sid, slot: s.slot, f: s.f, heap: heapCopy() }); }
+  function pruneLog(s) {        // host: buttons older than every seat's checkpoint are not needed any more
+    let lo = Infinity;
+    for (let k = 1; k <= s.np; k++) if (s.roster[k - 1] !== link.id) { const c = s.ck.get(k); lo = Math.min(lo, c ? c.f : 0); }
+    for (const f of s.log.keys()) { if (f >= lo) break; s.log.delete(f); }
+  }
+  // the next frame's buttons for every player, or null while some are still on the way
+  function linkTake(s) {
+    if (s.f % CK_EVERY === 0 && s.ckDone !== s.f) { s.ckDone = s.f; if (s.host !== link.id) sendCk(s); }
+    const e = s.inp.get(s.f);
+    if (!e) return null;
+    for (let k = 1; k <= s.np; k++) if (!e[k]) return null;
+    s.inp.delete(s.f);
+    if (s.host === link.id) s.log.set(s.f, e);
+    s.f++;
+    if (s.waitSince) { s.waitSince = 0; linkUI(); }
+    let leave = false;
+    for (let k = 1; k <= s.np; k++) {   // Start+Select by any player: every Bit goes home on this same frame
+      const both = (e[k][0] & (START | SELECT)) === (START | SELECT);
+      if (both && !s.combo[k]) leave = true;
+      s.combo[k] = both;
+    }
+    return { e, leave };
+  }
+  function linkWaiting(s, now) {
+    if (!s.waitSince) { s.waitSince = now; return; }
+    if (now - s.waitSince < 500 || now - (s.uiAt || 0) < 500) return;
+    s.uiAt = now;
+    const e = s.inp.get(s.f) || [], miss = [];
+    for (let k = 1; k <= s.np; k++) if (!e[k]) miss.push('Bit ' + s.nums[k - 1]);
+    const msg = `Waiting for ${miss.join(', ') || 'the other Bits'}…`;
+    linkUI(msg + ' (Start+Select leaves the game)');
+    if (now - s.waitSince > 1000) { const w = $('linkWait'); w.textContent = msg + '\nStart+Select leaves the game'; w.style.whiteSpace = 'pre-line'; w.hidden = false; }
+  }
+
+  /* home screen and link bar */
+  // the home screen reads the linked Bits from map row 0 and 1 (it has no map of its own):
+  // (0,0) how many Bits, (1,0) which one is this, (1+i,0) Bit i's number, (1+i,1) 1 home, 2 in a game, 3 idle
+  function homeRoster() {
+    const b = bitsSorted(), base = ptr.map >> 1, H16 = RT.HEAPU16;
+    H16[base] = b.length; H16[base + 1] = b.findIndex(x => x[0] === link.id) + 1;
+    b.slice(0, 40).forEach((x, i) => {
+      const p = link.peers.get(x[0]), st = p ? p.st : 'home';
+      H16[base + 2 + i] = x[1]; H16[base + MAPW + 2 + i] = st === 'home' ? 1 : st === 'game' ? 2 : 3;
+    });
+  }
+  let homeRefreshT = 0;
+  function refreshHomeSoon() {     // paused badges depend on who is linked: draw the home screen again
+    clearTimeout(homeRefreshT);
+    homeRefreshT = setTimeout(() => { if (bit.on && bit.playing === 'home' && !bit.busy && !link.s) bootHome(); }, 400);
+  }
   function linkUI(msg) {
-    const bar = $('linkBar');
-    bar.hidden = playMode !== 'link';
-    bar.classList.toggle('ok', !!link.peer);
-    $('linkStatus').textContent = msg || (!link.peer
-      ? (IS_BIT2 ? 'Bit 2: looking for Bit 1…' : 'Not linked yet. Open a 2nd Bit, or pick "2 Bits, linked" in another studio window.')
-      : link.running ? `Linked · you are player ${link.me}`
-      : IS_BIT2 ? 'Linked. Waiting for Bit 1 to press Run…' : 'Linked with a 2nd Bit. Press Run to play together.');
+    $('linkBar').hidden = false;
+    if (!msg) $('linkWait').hidden = true;
+    $('linkBar').classList.toggle('ok', link.peers.size > 0);
+    const s = link.s, others = bitsSorted().filter(b => b[0] !== link.id).map(b => 'Bit ' + b[1]);
+    $('linkStatus').textContent = msg || (!link.ch ? 'This browser cannot link Bits'
+      : s ? `Bit ${link.num} · playing with ${s.nums.filter((n, i) => s.roster[i] !== link.id).map(n => 'Bit ' + n).join(', ')} · you are player ${s.slot}`
+      : others.length ? `Bit ${link.num} · linked with ${others.join(', ')}. A game started on one Bit starts on every Bit that is on its home screen.`
+      : `Bit ${link.num} · no other Bits yet. Add a Bit to play together.`);
   }
   $('players').value = playMode;
   $('players').onchange = e => {
-    if (running) stop(true);
+    if (running && !link.s) stop(true);
     playMode = e.target.value; lsSet('bitkit.players', playMode);
-    if (playMode === 'link') linkOpen(); else linkClose();
-    linkUI(); buildPickers();
-    if (playMode === '2') log('2 players: player 2 uses the second controller, or I J K L to move, N to jump, M to throw.', 'sys');
+    buildPickers();
+    if (playMode === '2') log('2 players on this screen: player 2 uses the second controller, or I J K L to move, N to jump, M to throw. Linked Bits play one player each instead.', 'sys');
   };
   $('linkPad').onclick = () => openChooser();
   $('linkOpen').onclick = () => {
-    const w = window.open(location.pathname + '?bit=2', 'bitkit-bit2', 'width=720,height=640');
+    const used = new Set(bitsSorted().map(b => b[1]));
+    let n = 2;
+    while (used.has(n)) n++;
+    const w = window.open(location.pathname + '?bit=' + n, 'bitkit-bit' + n, 'width=720,height=640');
     if (!w) toast('The browser blocked the new window. Allow pop-ups, or open this page again in another window.');
   };
-  if (playMode === 'link') linkOpen();
-  linkUI();
 
   /* ------------------------------------------------------------ boot screen */
   function bootScreen() {
@@ -1439,7 +1704,9 @@ end
   function bitRestart(n) {
     const g = bit.games[n - 1];
     if (!g) return;
-    BKSnap.forget(gameKey(g).id);
+    const id = gameKey(g).id;
+    BKSnap.forget(id);
+    for (let np = 2; np <= MAXP; np++) for (let k = 1; k <= np; k++) BKSnap.forget(linkSnapId(np, id, k));
     bitRequest(1, n, true);
   }
   // pause the game when the page is hidden (tab switched or closed), so a reload can carry on too
@@ -1457,7 +1724,7 @@ end
     const taken = new Set([cart.name].concat(libGames.map(g => g.name)));
     const demos = DEMOS().filter(d => !taken.has(d.name)).map(d => ({ name: d.name, demo: d }));
     bit.games = [{ name: cart.name, studio: true, cart: null }].concat(libGames, demos);
-    const paused = await BKSnap.list();
+    const paused = await BKSnap.list(), np = linkRoster().length;   // linked: a game is paused when every player's Bit kept it
     const tiles = new Uint8Array(TILES * 64);
     const COLORS = [3, 8, 15, 20, 25, 4, 9, 16];
     const rows = bit.games.slice(0, 96).map((g, i) => {
@@ -1465,11 +1732,11 @@ end
       let c = null;
       if (g.studio) c = cart; else if (g.demo) { try { c = demoCart(g.demo); } catch (e) { c = null; } } else { try { c = decodeCart(g.data); } catch (e) { c = null; } }
       const has = c && iconFor(c, slot, tiles);
-      const k = gameKey(g), p = paused.get(k.id) === k.fp;
+      const k = gameKey(g), p = np > 1 ? Array.from({ length: np }, (_, j) => paused.get(linkSnapId(np, k.id, j + 1)) === k.fp).every(Boolean) : paused.get(k.id) === k.fp;
       return `{name=${luaStr(g.name)}, file=${luaStr(g.file || '')}, studio=${g.studio ? 'true' : 'false'}, paused=${p}, ${has ? `icon=${slot}` : `color=${COLORS[i % COLORS.length]}`}}`;
     });
     if (bit.sel > bit.games.length) bit.sel = 1;
-    const data = `BIT = { games = {${rows.join(',')}}, sel = ${bit.sel}, studio = true, source = ${luaStr(BKStore.state === 'folder' ? BKStore.label() : '')} }`;
+    const data = `BIT = { games = {${rows.join(',')}}, sel = ${bit.sel}, studio = ${!IS_BIT2}, link = true, source = ${luaStr(BKStore.state === 'folder' ? BKStore.label() : '')} }`;
     startAudio();
     overlay.classList.add('hidden');
     RT.HEAPU8.set(DEFAULT_PAL, ptr.pal); RT.HEAPU8.set(tiles, ptr.tiles);
@@ -1494,7 +1761,7 @@ end
   }
   // _restart(mode) from the game shell: load the playing game again (GAME_BOOT: 1 title, 2 new game, 3 play)
   function restartGame(mode) {
-    if (link.running) return;
+    if (link.s) { if (link.s.host === link.id) linkRelaunch(`GAME_BOOT = ${mode | 0}\n`); return; }   // linked: the Bit that started it starts it again for all
     const extra = `GAME_BOOT = ${mode | 0}\n`;
     const onBit = bit.on && bit.cur && bit.playing && bit.playing !== 'home' && bit.playing !== 'studio' && lastPlayed;
     if (onBit) {
@@ -1515,7 +1782,7 @@ end
       if (L) { RT.HEAPU16.set(L.map, ptr.map >> 1); playingLevel = arg - 1; if (playingEditor) newRouteSegment(arg - 1); }
       return;
     }
-    if (cmd === 2) { if (bit.on) { suspendGame(); bootHome(); } return; }
+    if (cmd === 2) { if (link.s) linkLeave(true); else if (bit.on) { suspendGame(); bootHome(); } return; }
     const g = bit.games[arg - 1];
     if (!bit.on || bit.playing !== 'home' || !g || bit.busy) return;
     bit.sel = arg;
@@ -1524,6 +1791,7 @@ end
       key.name = g.name;
       let c = null;
       try { c = g.studio ? cart : g.demo ? demoCart(g.demo) : decodeCart(g.data); } catch (e) { log(`Could not start ${g.name}: ${e.message}`, 'err'); return; }
+      if (linkWanted()) { linkFromHome(g, c, key, fresh); return; }   // other Bits are on their home screens: play it together
       if (!fresh) {
         bit.busy = true;
         let snap = null;
@@ -1547,14 +1815,19 @@ end
   }
   function bitCombo() {
     const both = (input.mask & (START | SELECT)) === (START | SELECT);
-    if (both && !comboHeld && bit.on && bit.playing !== 'home') { suspendGame(); stop(true); bootHome(); }
+    if (link.s) {   // linked: Start+Select travels with the buttons (see linkTake); here only a stuck game is left
+      const s = link.s;
+      if (both && !comboHeld && (!running || (s.waitSince && performance.now() - s.waitSince > 1000))) {
+        linkSend({ t: 'end', sid: s.sid, why: 'left the game' }); linkLeave(false);
+      }
+    } else if (both && !comboHeld && bit.on && bit.playing !== 'home') { suspendGame(); stop(true); bootHome(); }
     comboHeld = both;
   }
   function setBitPower(on) {
     bit.on = on;
     $('btnBit').classList.toggle('active', on);
     $('btnBit').textContent = on ? '⏻ Bit on' : '⏻ Bit';
-    lsSet('bitkit.bitOn', on ? '1' : '0');
+    if (!IS_BIT2) lsSet('bitkit.bitOn', on ? '1' : '0');
     if (on) { log('Bit on: home screen. Hold Start+Select in a game to pause it and come back; picking it again carries on.', 'sys'); bootHome(); }
     else { suspendGame(); stop(true); bit.playing = null; bit.cur = null; bootScreen(); }
   }
@@ -1763,11 +2036,12 @@ end
       ['Trigger zones', 'An invisible entity with the "Play cutscene" step. "Place a trigger zone" on the Cutscenes tab makes one for you. Level intros play when their level starts.'],
       ['Needs', 'ents_update() in _update (it runs the cutscene) and ents_camera() if the camera should pan. The dialog box, bars and fades are drawn for you on top of _draw. START skips.']]],
     ['Multiplayer', [
-      ['Players menu', '"2 players": both play on this screen. Player 2 uses the second controller, or I J K L to move, N = A, M = B, H = X, U = Y, Y = L, O = R. "2 Bits, linked": two windows play together like two PocketBits over ESP-NOW, each with its own camera.'],
-      ['btn(b, [p]) / btnp / btnr / press', 'The last argument picks the player (1-4, default 1). Player entities read their own player\'s buttons by themselves.'],
+      ['Players menu', '"2 players": both play on this screen. Player 2 uses the second controller, or I J K L to move, N = A, M = B, H = X, U = Y, Y = L, O = R.'],
+      ['Linked Bits', '"+ Add a Bit" opens another Bit window. Bits link by themselves like PocketBits over ESP-NOW and the home screen shows them. A game started on one Bit starts on every Bit on its home screen (up to 8 players), each with its own camera. Start+Select (or home()) on any Bit takes all of them home, paused; picking the game again carries on together. A Bit that reloads gets its seat back.'],
+      ['btn(b, [p]) / btnp / btnr / press', 'The last argument picks the player (1-8, default 1). Player entities read their own player\'s buttons by themselves.'],
       ['PLAYERS / ME', 'How many play, and which player this screen belongs to (0 when everyone shares this screen). Use ME only for what you draw, never for game logic, or linked Bits drift apart.'],
       ['ents_players()', 'The player entities, player 1 first. PLAYER is player 1. Extra players start next to player 1 as copies of its entity; e.pnum is the player number.'],
-      ['ents_player_pal(n, {from = to})', 'Recolour player n\'s sprite. Players 2-4 get blue, red and yellow leaves by default.'],
+      ['ents_player_pal(n, {from = to})', 'Recolour player n\'s sprite. Players 2-8 get their own leaf colours by default.'],
       ['Lockstep rules', 'Linked games run the same frames with the same buttons on every Bit, so the game must be deterministic: use rnd() and t(), not clock(), and avoid pairs() order in game logic. Enemies chase the nearest player; cutscenes listen to every player.']]],
     ['Save data and clock', [
       ['save(t)', 'Keep a table (numbers, strings, booleans, nested tables; up to 4 KB) for the next time the cart runs. save(nil) deletes it. The studio keeps it per cart name in this browser; PocketBit keeps it in flash.'],
@@ -1851,12 +2125,12 @@ end
   applyCart();
   log(`${APP} Studio ready${window.BK_BUILD ? ` (build ${window.BK_BUILD})` : ''}. ${restored ? 'Restored your last cart.' : 'Loaded the demo cart.'} Press Run (Ctrl+Enter).`, 'sys');
   showTab(lsGet(LS.settings + '.tab') || 'code');
-  if (IS_BIT2) {
+  linkOpen(); linkUI();          // link with the other Bit windows
+  if (IS_BIT2) {                 // an extra Bit: just its screen, on its home screen
     document.body.classList.add('bit-only');
-    document.title = `${APP} · Bit 2`;
-    loadCode(`function _draw() cls(1) text("BIT 2", 120, 84, 22, 3) text("Linked to the studio window", 52, 130, 29) text("Press Run there to play together", 32, 144, 29) end`);
-    RT._bkw_frame(0, ptr.press); blit(); RT._bkw_stop();
-    if (picks[0].k === 'auto') openChooser();   // a new Bit 2 window: ask which controller plays on it
+    document.title = `${APP} · Bit ${BIT_NO}`;
+    setBitPower(true);
+    if (picks[0].k === 'auto') openChooser();   // a new Bit window: ask which controller plays on it
   } else if (lsGet('bitkit.bitOn') !== '0') setBitPower(true);   // start on the Bit's home screen (turn it off with the Bit button)
   else bootScreen();
   // browsers only start sound after a click or key press: wake the audio up on the first one
@@ -1866,7 +2140,7 @@ end
   requestAnimationFrame(frame);
 
   // expose for tests / debugging
-  window.bkStudio = { cart, run, stop, input, input2, picks, link, RT, isRunning: () => running, bit, setBitPower, showLibrary, saveToBit, BKStore };
+  window.bkStudio = { cart, run, stop, input, input2, picks, link, RT, bitRequest, bootHome, ptrMap: () => ptr.map >> 1, isRunning: () => running, bit, setBitPower, showLibrary, saveToBit, BKStore };
 })().catch(e => {
   document.body.innerHTML = `<pre style="color:#ff6b5e;padding:20px">Studio failed to start: ${e && e.stack || e}</pre>`;
 });

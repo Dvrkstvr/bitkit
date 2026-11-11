@@ -33,26 +33,26 @@
       <canvas id="screen" width="320" height="240" tabindex="0" aria-label="Game screen"></canvas>
       <div id="gameOverlay" class="overlay hidden"></div>
       <div id="padChooser" class="pad-chooser" hidden></div>
+      <div id="linkWait" class="link-wait" hidden></div>
     </div>
     <div class="game-bar">
       <select id="inputPick" class="pad-pick" title="Input for this tab: pick a controller or the keyboard, so two studio windows can each have their own"></select>
       <select id="inputPick2" class="pad-pick" title="Player 2's input" hidden></select>
       <span class="grow"></span>
       <span id="fps" class="dim">&nbsp;</span>
-      <select id="players" title="Players. Linked: two Bit windows play together like PocketBits over ESP-NOW">
+      <select id="players" title="Players on this screen. To play on several Bits, add a Bit below: linked Bits play one player each">
         <option value="1">1 player</option>
         <option value="2">2 players</option>
-        <option value="link">2 Bits, linked</option>
       </select>
       <button id="btnBit" title="Turn on the emulated PocketBit: a home screen with the games on its memory card">⏻ Bit</button>
       <button id="btnMute" title="Mute">Sound on</button>
       <button id="btnFull" title="Fullscreen">Fullscreen</button>
     </div>
-    <div id="linkBar" class="link-bar" hidden>
+    <div id="linkBar" class="link-bar">
       <span id="linkStatus">Not linked</span>
       <span class="grow"></span>
       <button id="linkPad" class="tiny" title="Choose the controller (or keyboard) for this Bit">🎮 Controller</button>
-      <button id="linkOpen" class="tiny" title="Open a second Bit in a new window">Open a 2nd Bit</button>
+      <button id="linkOpen" class="tiny" title="Open another Bit in a new window. Linked Bits play together like PocketBits over ESP-NOW">＋ Add a Bit</button>
     </div>
     <div class="console-head">Console <button id="btnClear" class="tiny">clear</button></div>
     <pre id="console" class="console"></pre>
