@@ -193,3 +193,13 @@ canvas.pix { image-rendering: pixelated; }
 .np { display: inline-flex; align-items: center; gap: 4px; }
 .np input[type=number] { width: 60px; }
 .np input[type=text] { width: 120px; }
+
+.fx-head { margin-top: 12px; }
+.ent-stats { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; }
+.stat-chip, .fx-mod { display: inline-flex; gap: 4px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 2px 4px; }
+.stat-chip input, .fx-mod input, .fx-mod select { background: var(--panel2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 4px; }
+.stat-chip input:first-child { width: 70px; } .stat-chip input[type=number], .fx-mod input[type=number] { width: 60px; }
+.fx-mods { display: flex; flex-direction: column; gap: 4px; margin: 4px 0; align-items: flex-start; }
+.swatch { display: inline-block; width: 16px; height: 16px; border: 1px solid var(--line); border-radius: 3px; }
+#fxForm input[type=number] { width: 64px; }
+#fxName { width: 120px; }
