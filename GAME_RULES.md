@@ -131,6 +131,6 @@ game{
 
 The checkpoint and settings are stored in the game's save next to (not inside) what you keep with `save()`, so `save()` and `saved()` keep working as before.
 
-The studio skips the title screen when you start a level, a cutscene or a track from an editor (▶ play level, ▶ race it), and when the AI helper tests your game. **Run** shows the title screen, like the Bit does.
+The studio skips the title screen when you start a level, a cutscene or a track from an editor (▶ play level, ▶ race it). **Run** shows the title screen, like the Bit does.
 
 The shell lives in [`runtime/bk_game.lua`](runtime/bk_game.lua), part of the runtime on both the web and the PocketBit.
