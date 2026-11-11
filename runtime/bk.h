@@ -7,6 +7,10 @@
 #include <stdint.h>
 #include <stddef.h>
 
+/* big static arrays go in external RAM on the device (EXT_RAM_BSS_ATTR on the ESP32-S3); nothing on the web */
+#ifndef BK_BIG_BSS
+#define BK_BIG_BSS
+#endif
 #define BK_W 320
 #define BK_H 240
 #define BK_TILES 512          /* 8x8 tiles in the sprite sheet */
@@ -173,6 +177,16 @@ void bk_font(int style, int outline);           /* text style: 0 classic 1 bold 
 int  bk_display_preset(const char *name);         /* 0 = unknown name */
 void bk_to_rgba(uint32_t *out);       /* for hosts that want RGBA8888 */
 void bk_to_rgb565(uint16_t *out);     /* for the ST7789 on device */
+void bk_graded_palette(uint8_t *rgb); /* the palette with display{} colour grading (bright, contrast, sat, warm) */
+/* capture (bk_capture.c): photos and clips of screen[], for the Share hub. Output goes through write(ctx, data, len),
+   which returns 0 when it worked (an fwrite to the SD card on the device, a growing buffer in the browser). */
+typedef int (*bk_write_fn)(void *ctx, const void *data, int len);
+int  bk_shot_png(int scale, bk_write_fn write, void *ctx);  /* PNG photo, scale 1..4. 0 ok */
+int  bk_clip_begin(bk_write_fn write, void *ctx);          /* start an animated GIF clip. 0 ok */
+int  bk_clip_frame(int frames60);     /* add the screen; it stays frames60 sixtieths of a second (host passes 2 at 30 fps) */
+int  bk_clip_end(void);               /* finish the GIF: frames written, or -1 */
+int  bk_clip_recording(void);
+int  bk_clip_seconds(void);
 
 /* input: call once per frame before update */
 void bk_set_input(int player, uint16_t mask, const uint8_t *press);   /* player 0..3 */

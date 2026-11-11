@@ -312,6 +312,14 @@ The full reference is in the studio's **Help** tab.
 | Scripting | Lua 5.4 in a sandbox with a per-frame instruction budget |
 | Target | 60 fps locked |
 
+## 🌍 Share hub
+
+The **🌍 Share hub** button in the studio is where games, photos and clips are shared.
+
+- **Photos and clips.** 📷 (or F8) takes a photo of the screen, ⏺ (or F9) records a clip of up to 60 seconds. On the Bit (and the PocketBit): hold **Select** and press **L** for a photo or **R** for a clip. Photos are PNG, clips are GIF at 30 fps. They are made by `runtime/bk_capture.c`, plain C shared with the device, and land on the memory card in `captures/` (on the PocketBit: the SD card). Point the studio's memory card at the SD card and the Bit's photos and clips show up in the hub.
+- **Play links and QR codes, no server.** *Share this game* packs the whole game into a link (`…/bitkit/#play=1.…`, compressed): opening it plays the game. Small games fit a QR code; every hub post gets a short link (`#hub=12`) that always does.
+- **The hub.** *Post to the hub* opens a short GitHub form filled in by the studio (a free GitHub account is needed). A GitHub Action (`.github/workflows/hub.yml`, `tools/hub_publish.cjs`) checks the post and writes it to the `hub` branch, which the studio reads. No server, no keys and no cost. Posts by maintainers show at once; others show when a maintainer adds the label `hub-ok`. Close the issue or add `hub-hide` to take a post down.
+
 ## 🛠️ Build from source
 
 Needs [Emscripten](https://emscripten.org/docs/getting_started/downloads.html) and Node.
@@ -324,7 +332,7 @@ cd studio && python3 -m http.server 8000       # dev server
 ```
 
 ```
-runtime/        C core shared by device and web (bk.h, bk_core.c, bk_lua.c, bk_entities.lua)
+runtime/        C core shared by device and web (bk.h, bk_core.c, bk_capture.c, bk_lua.c, bk_entities.lua)
 platform/web/   Emscripten host glue
 studio/         Browser studio (plain HTML/JS, no build step)
 third_party/    Lua 5.4.7
@@ -346,6 +354,7 @@ docs/media/     README images
 - [ ] ESP32-S3 host (PocketBit firmware)
 - [ ] Local multiplayer over ESP-NOW
 - [ ] Launcher, save states and utility apps
+- [x] Share hub: photos, clips, play links, QR codes and a hub on GitHub
 
 ## 🤝 Contributing
 

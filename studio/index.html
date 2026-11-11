@@ -24,7 +24,8 @@
     <button id="btnRun" class="primary" title="Run the game on the test screen (Ctrl+Enter)">&#9654; Run</button>
     <button id="btnStop" title="Stop the game">&#9632; Stop</button>
     <span class="sep edit-only"></span>
-    <button id="btnSave" title="Download this game as a file, or copy it as text">Save / share</button>
+    <button id="btnSave" title="Download this game as a file, or copy it as text">Save</button>
+    <button id="btnHub" title="Share hub: share this game by link or QR code, post it with photos and clips, and play what others made">🌍 Share hub</button>
     <button id="btnRules" title="The things every BitKit game has: title screen, goal, pause menu...">Checklist</button>
     <input type="file" id="fileOpen" accept=".bitkit,.mboi,.json" hidden>
   </div>
@@ -74,6 +75,8 @@
         <option value="2">2 players on this screen</option>
         <option value="win">＋ Bit in a new window…</option>
       </select>
+      <button id="btnShot" title="Take a photo of the screen (F8; on the Bit: hold Select, press L). It goes to My photos and clips in the Share hub">📷</button>
+      <button id="btnClip" title="Record a clip of the screen, up to 60 seconds (F9; on the Bit: hold Select, press R). Press again to stop">⏺ Clip</button>
       <button id="btnMute" title="Sound on or off">Sound on</button>
       <button id="btnFull" title="Fullscreen">Fullscreen</button>
     </div>
@@ -543,6 +546,7 @@
 <script src="snapshots.js"></script>
 <script src="home.js"></script>
 <script src="rules.js"></script>
+<script src="share.js"></script>
 <script src="studio.js"></script>
 </body>
 </html>

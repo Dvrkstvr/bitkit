@@ -42,6 +42,10 @@ jobs:
         run: node tools/windrowtest.cjs
       - name: Themes and player names
         run: node tools/themetest.cjs
+      - name: Photos and clips (capture module)
+        run: node tools/capturetest.cjs
+      - name: Share hub publisher
+        run: node tools/hubtest.cjs
 
   linked-bits:
     runs-on: ubuntu-latest
@@ -58,3 +62,5 @@ jobs:
           npx playwright install --with-deps chromium || npx playwright install chromium
       - name: Linked Bits (browser)
         run: node tools/linktest.cjs
+      - name: Share hub (browser)
+        run: node tools/sharetest.cjs

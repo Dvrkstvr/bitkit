@@ -787,6 +787,8 @@ static void graded_palette(uint8_t *rgb) {
   }
 }
 
+void bk_graded_palette(uint8_t *rgb) { graded_palette(rgb); }
+
 static int spatial_on(void) {
   const __typeof__(BK->display) *d = &BK->display;
   return d->scan || d->vignette || d->curve || d->split || d->blur || d->grain;
