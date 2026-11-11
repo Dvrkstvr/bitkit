@@ -67,15 +67,31 @@ static int l_floorplane(lua_State *l) {
            (float)luaL_checknumber(l, 4), ci(l, 5), (float)optn(l, 6, 160), opti(l, 7, -1), opti(l, 8, 1));
   return 0;
 }
-/* project(x, y, [z=0]) -> sx, sy, scale   (nil when behind the camera) */
+/* project(x, y, [z=0]) -> sx, sy, scale, dist   (nil when behind the camera) */
 static int l_project(lua_State *l) {
-  float sx, sy, sc;
-  if (!bk_project((float)luaL_checknumber(l, 1), (float)luaL_checknumber(l, 2), (float)optn(l, 3, 0), &sx, &sy, &sc)) {
+  float sx, sy, sc, d;
+  if (!bk_project((float)luaL_checknumber(l, 1), (float)luaL_checknumber(l, 2), (float)optn(l, 3, 0), &sx, &sy, &sc, &d)) {
     lua_pushnil(l); return 1;
   }
-  lua_pushnumber(l, sx); lua_pushnumber(l, sy); lua_pushnumber(l, sc);
-  return 3;
+  lua_pushnumber(l, sx); lua_pushnumber(l, sy); lua_pushnumber(l, sc); lua_pushnumber(l, d);
+  return 4;
 }
+/* floorh(x, y, angle, camz, horizon, [focal=160], [outside=-1], [step=1]): floor with hills, camera at height camz */
+static int l_floorh(lua_State *l) {
+  bk_floorh((float)luaL_checknumber(l, 1), (float)luaL_checknumber(l, 2), (float)luaL_checknumber(l, 3),
+            (float)luaL_checknumber(l, 4), ci(l, 5), (float)optn(l, 6, 160), opti(l, 7, -1), opti(l, 8, 1));
+  return 0;
+}
+/* hset(cx, cy, h): height (0-255 pixels) of tile corner cx 0..256, cy 0..128.  hget(x, y): blended height at a world pixel */
+static int l_hset(lua_State *l) {
+  int x = ci(l, 1), y = ci(l, 2), h = ci(l, 3);
+  if (x >= 0 && y >= 0 && x <= BK_MAP_W && y <= BK_MAP_H) BK->height[y * (BK_MAP_W + 1) + x] = (uint8_t)(h < 0 ? 0 : h > 255 ? 255 : h);
+  return 0;
+}
+static int l_hget(lua_State *l) { lua_pushnumber(l, bk_hget((float)luaL_checknumber(l, 1), (float)luaL_checknumber(l, 2))); return 1; }
+/* depth(dist): sprites drawn after this are hidden behind hills nearer than dist (from project). depth() turns it off. */
+static int l_depth(lua_State *l) { bk_depth(lua_isnoneornil(l, 1) ? -1.f : (float)luaL_checknumber(l, 1)); return 0; }
+
 /* sspr(n, x, y, [w=1], [h=1], [scale=1], [flipx], [flipy]): sprite at any (fractional) scale */
 static int l_sspr(lua_State *l) {
   bk_sspr(ci(l, 1), (float)luaL_checknumber(l, 2), (float)luaL_checknumber(l, 3), opti(l, 4, 1), opti(l, 5, 1),
@@ -306,7 +322,7 @@ static int l_print(lua_State *l) {
 static const luaL_Reg API[] = {
   {"cls", l_cls}, {"pset", l_pset}, {"pget", l_pget}, {"line", l_line},
   {"rect", l_rect}, {"rectfill", l_rectfill}, {"circ", l_circ}, {"circfill", l_circfill},
-  {"text", l_text}, {"spr", l_spr}, {"map", l_map}, {"floor", l_floorplane}, {"project", l_project}, {"sspr", l_sspr}, {"mget", l_mget}, {"mset", l_mset},
+  {"text", l_text}, {"spr", l_spr}, {"map", l_map}, {"floor", l_floorplane}, {"floorh", l_floorh}, {"hset", l_hset}, {"hget", l_hget}, {"depth", l_depth}, {"project", l_project}, {"sspr", l_sspr}, {"mget", l_mget}, {"mset", l_mset},
   {"fget", l_fget}, {"fset", l_fset}, {"camera", l_camera}, {"clip", l_clip},
   {"pal", l_pal}, {"palt", l_palt}, {"palette", l_palette},
   {"btn", l_btn}, {"btnp", l_btnp}, {"btnr", l_btnr}, {"press", l_press},
@@ -381,6 +397,7 @@ int bk_lua_load_ex(const char *data, const char *code) {
   lua_sethook(L, hook, LUA_MASKCOUNT, HOOK_STEP);
 
   bk_reset_draw_state();
+  memset(BK->height, 0, sizeof(BK->height));
   BK->frame = 0;
   for (int c = 0; c < BK_CHANNELS; c++) BK->voice[c].len = 0;
   /* every device in a linked game must start from the same state */

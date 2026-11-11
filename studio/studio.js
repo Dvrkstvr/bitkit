@@ -1439,7 +1439,10 @@ end
       ['palette(i,[r,g,b])', 'Read or change palette colour i (0-255 each).']]],
     ['2.5D (perspective floor)', [
       ['floor(x,y,angle,height,horizon,[focal],[outside],[step])', 'Draw the map as a floor seen in perspective, like a classic kart racer. x,y = camera position in world pixels, angle in radians (0 looks toward +x, turning toward +y), height = camera height in pixels, horizon = screen row of the horizon. focal (default 160) is the zoom. outside = colour past the map edge and far away (-1 leaves those pixels alone, so draw the sky first). step 2 draws every other column (faster on the device). Fills the rows below the horizon inside clip().'],
-      ['project(x,y,[z])', 'Where world point x,y (z = height above the floor) lands on screen with the last floor() camera. Returns sx, sy, scale (screen pixels per world pixel), or nil if it is behind the camera. Draw far things first.'],
+      ['project(x,y,[z])', 'Where world point x,y (z = height above the floor) lands on screen with the last floor() or floorh() camera. Returns sx, sy, scale (screen pixels per world pixel) and dist (how far away it is), or nil if it is behind the camera. Draw far things first.'],
+      ['hset(cx,cy,h) / hget(x,y)', 'Hills: hset sets the height (0-255 pixels) of a tile corner (cx 0-256, cy 0-128). hget gives the smooth height at any world pixel, for putting karts and sprites on the ground. Heights reset to 0 when a cart starts.'],
+      ['floorh(x,y,angle,camz,horizon,[focal],[outside],[step])', 'Like floor() but with the hills from hset(). camz is the camera height above 0, so add the ground height under the camera. Near hills hide far ones.'],
+      ['depth([dist])', 'After floorh(): sspr() hides the pixels of a sprite that are behind a hill nearer than dist (use the dist from project()). depth() turns it off.'],
       ['sspr(n,x,y,[w,h],[scale],[flipx],[flipy])', 'Like spr but at any scale, including fractions (0.5 is half size). Use it with project() for karts, trees and other billboards.']]],
     ['Input', [
       ['btn(b)', 'True while the button is held. b is "left","right","up","down","a","b","x","y","l","r","start","select" or 0-11.'],

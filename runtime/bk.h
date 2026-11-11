@@ -45,6 +45,7 @@ typedef struct {
   uint8_t tiles[BK_TILES * BK_TILE_BYTES];
   uint8_t flags[BK_TILES];
   uint16_t map[BK_MAP_W * BK_MAP_H];
+  uint8_t height[(BK_MAP_W + 1) * (BK_MAP_H + 1)]; /* floor height at each tile corner (pixels), for floorh(); cleared when a cart loads */
 
   /* --- video --- */
   uint8_t screen[BK_W * BK_H];          /* indexed framebuffer */
@@ -107,9 +108,15 @@ void bk_map(int cx, int cy, int cw, int ch, int sx, int sy);
    Camera: world position (pixels), heading angle (radians, 0 = +x, turning toward +y), height above
    the floor, horizon row on screen and focal length (pixels). bk_floor() fills the rows below the
    horizon inside the clip rect; bk_project() maps a world point with the same camera to the screen. */
-typedef struct { float x, y, angle, height, focal, cx; int horizon; float c, s; int valid; } bk_floor_cam;
+typedef struct { float x, y, angle, height, focal, cx; int horizon; float c, s; int valid, hills; } bk_floor_cam;
 void bk_floor(float x, float y, float angle, float height, int horizon, float focal, int outside, int step);
-int  bk_project(float wx, float wy, float wz, float *sx, float *sy, float *scale); /* 0 = behind the camera */
+int  bk_project(float wx, float wy, float wz, float *sx, float *sy, float *scale, float *dist); /* 0 = behind the camera */
+/* Hills: height[] holds a height per tile corner; bk_hget() blends them. bk_floorh() draws the floor with
+   hills (column ray-marching, like voxel terrain) with the camera at absolute height camz. After it,
+   bk_depth(z) makes bk_sspr() hide sprite pixels behind hills nearer than z (bk_depth(-1) turns it off). */
+float bk_hget(float x, float y);
+void bk_floorh(float x, float y, float angle, float camz, int horizon, float focal, int outside, int step);
+void bk_depth(float z);
 void bk_sspr(int n, float x, float y, int w, int h, float sc, int flipx, int flipy);
 void bk_to_rgba(uint32_t *out);       /* for hosts that want RGBA8888 */
 void bk_to_rgb565(uint16_t *out);     /* for the ST7789 on device */

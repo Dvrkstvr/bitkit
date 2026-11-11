@@ -172,12 +172,24 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
     const kc = { tiles: new Uint8Array(512 * 64), flags: new Uint8Array(512), map: new Uint16Array(256 * 128) };
     kd.buildGfx(kc);
     M.HEAPU8.set(kc.tiles, M._bkw_tiles()); M.HEAPU8.set(kc.flags, M._bkw_flags()); M.HEAPU16.set(kc.map, M._bkw_map() >> 1);
-    const auto = '\nlocal _sr = start_race\nfunction start_race() _sr() player.ai, player.skill, player.lane, player.lane_want = true, 1, 0, 0 end\nlocal _u = _update\nfunction _update() _u() if t() == 2299 then print("kart", mode, player.lap, #karts) end end';
+    const auto = '\nlocal _sr = start_race\nfunction start_race() _sr() player.ai, player.skill, player.lane, player.lane_want = true, 1, 0, 0 end\nlocal _u = _update\nfunction _update() _u() if mode == "race" and gt % 150 == 0 then player.item, player.roll = (gt // 150) % #ITEMS + 1, 0 use_item(player) used = (used or 0) + 1 if #shots + #hazards > 0 then fired = true end end if t() == 2299 then print("kart", mode, player.lap, #karts, used, fired) end end';
     if (M._bkw_load(s(kd.code + auto)) !== 0) fail('Kart Lab did not load');
     for (let f = 0; f < 2300; f++) if (M._bkw_frame(f === 10 ? 1 << 4 : (f > 400 && f < 700 ? (1 << 8) | (f % 90 < 45 ? 1 : 2) : 0), 0)) { fail('Kart Lab stopped at frame ' + f); break; }
     const kl = (logs.find(x => x.startsWith('kart')) || '').split(/\s+/);
-    if (kl[1] !== 'race' || !(+kl[2] >= 2) || kl[3] !== '4') fail('Kart Lab race: ' + kl.join(' ') + ' (expected racing on lap 2 with 4 karts)');
+    if (kl[1] !== 'race' || !(+kl[2] >= 2) || kl[3] !== '4' || !(+kl[4] >= 5) || kl[5] !== 'true') fail('Kart Lab race: ' + kl.join(' ') + ' (expected racing on lap 2 with 4 karts, every item used)');
     if (errors.length) { errors.forEach(e => fail('Kart Lab: ' + e)); errors = []; }
+  }
+
+  // Kart Lab, second track: picked in the garage, built with hills
+  {
+    logs = [];
+    const kd = window.BK_DEMOS.find(d => d.name === 'Kart Lab');
+    const probe = '\nlocal _i = _init\nfunction _init() _i() sel.track = 2 end\nlocal _u = _update\nfunction _update() _u() if mode == "count" and gt == 1 then local lo, hi = 999, 0 for y = 0, 1016, 64 do for x = 0, 2040, 64 do local h = hget(x, y) lo, hi = math.min(lo, h), math.max(hi, h) end end print("track2", TRACKS[sel.track].name, NWP > 100, #CRATES, hi - lo > 20, mget(WP[1].x // 8, WP[1].y // 8)) end end';
+    if (M._bkw_load(s(kd.code + probe)) !== 0) fail('Kart Lab (track 2) did not load');
+    for (let f = 0; f < 200; f++) if (M._bkw_frame(f === 10 ? 1 << 4 : 0, 0)) { fail('Kart Lab (track 2) stopped at frame ' + f); break; }
+    const l = (logs.find(x => x.startsWith('track2')) || '').split('\t').slice(1).join(',');
+    if (l !== 'Quarry Hills,true,12,true,5') fail('Kart Lab track 2: ' + l + ' (expected Quarry Hills,true,12,true,5)');
+    if (errors.length) { errors.forEach(e => fail('Kart Lab track 2: ' + e)); errors = []; }
   }
 
   // Kart Lab, race end with your own input: start on the last lap, drive over the line, the autopilot
@@ -192,7 +204,7 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
       if (M._bkw_frame(mask, 0)) { fail('Kart Lab (finish) stopped at frame ' + f); break; }
     }
     const modes = logs.filter(x => x.startsWith('mode')).map(x => x.split(/\s+/)[1]).join(',');
-    if (modes !== 'count,race,results,garage') fail('Kart Lab race end: modes ' + modes + ' (expected count,race,results,garage)');
+    if (modes !== 'loading,count,race,results,garage') fail('Kart Lab race end: modes ' + modes + ' (expected loading,count,race,results,garage)');
     if (errors.length) { errors.forEach(e => fail('Kart Lab finish: ' + e)); errors = []; }
   }
 
