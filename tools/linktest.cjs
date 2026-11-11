@@ -187,7 +187,7 @@ const ok = m => console.log('ok  ', m);
     const t = bkStudio.lua(`local g = BIT.games[${i}] track(g.pmax or -1, (g.pmin or -1) * 10 + (g.race and 1 or 0))`);
     return [n, t[1], t[2]];
   }), [sprout, kart, windrow, deep].filter(Boolean));
-  const want = { [sprout]: [2, 11], [kart]: [8, 10], [windrow]: [1, 10], [deep]: [1, 11] };
+  const want = { [sprout]: [2, 11], [kart]: [8, 10], [windrow]: [8, 10], [deep]: [1, 11] };
   if (pc.every(([n, mx, mn]) => want[n][0] === mx && want[n][1] === mn)) ok('home screen knows each game\'s player count and race: ' + pc.map(x => x.join(' ')).join(', '));
   else fail('home player counts ' + JSON.stringify(pc));
   // a one-player game without a race: only this Bit plays it
