@@ -27,6 +27,11 @@ jobs:
           mkdir -p _site
           cp -r studio/. _site/
           cp dist/bitkit-studio.html _site/bitkit-studio.html
+          # GitHub Pages lets browsers cache files for 10 minutes. Give every script and
+          # stylesheet a per-build address so a reload never mixes old and new files.
+          v="${GITHUB_SHA::7}"
+          sed -i -E "s#(src|href)=\"([^\":]+\.(js|css))\"#\1=\"\2?v=$v\"#g" _site/index.html
+          sed -i "s#<script src=\"runtime.js?v=$v\"></script>#<script>window.BK_BUILD='$v'</script>\n&#" _site/index.html
           touch _site/.nojekyll
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
