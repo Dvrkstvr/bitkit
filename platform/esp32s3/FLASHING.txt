@@ -1,0 +1,16 @@
+PocketBit firmware (BitKit runtime on an ESP32-S3-WROOM-1-N16R8)
+
+Flash it over the USB port (hold BOOT while plugging in if the board doesn't show up):
+
+  pip install esptool
+  esptool.py --chip esp32s3 -b 460800 write_flash @flash_args
+
+storage.bin is the internal flash disk: the built-in games, the apps and the home screen. Flashing it again
+replaces your saves on the internal flash (saves on an SD card are not touched). To update only the firmware:
+
+  esptool.py --chip esp32s3 -b 460800 write_flash 0x10000 pocketbit.bin
+
+Serial console (115200, the same USB port): logs, frame times every 5 seconds, and the commands
+  time <unix seconds>    set the clock (idle games count the time you were away)
+  lua <code>             run Lua in the game that is playing
+  home                   go to the home screen

@@ -1,0 +1,6 @@
+# PocketBit, 16 MB flash (ESP32-S3-WROOM-1-N16R8)
+# Name,   Type, SubType, Offset,   Size
+nvs,      data, nvs,     0x9000,   0x6000,
+phy_init, data, phy,     0xf000,   0x1000,
+factory,  app,  factory, 0x10000,  4M,
+storage,  data, fat,     ,         11M,

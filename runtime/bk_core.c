@@ -227,7 +227,7 @@ void bk_remap(const uint8_t *lut) {
   }
 }
 
-static uint8_t scratch[BK_W * BK_H];   /* copy of the screen for shaders that move pixels */
+BK_BIG_BSS static uint8_t scratch[BK_W * BK_H];   /* copy of the screen for shaders that move pixels */
 
 /* Sine wave: each row slides sideways by amp * sin(2pi * (y / len + phase)) (or each column up and down).
    Edges repeat the last pixel so nothing tears open. Heat haze, underwater, dream sequences. */
@@ -520,11 +520,14 @@ float bk_hget(float x, float y) {
 }
 
 #define OCC_N 40
-static int16_t occ[BK_W][OCC_N];   /* per column: lowest floor row drawn once the ray passed occ_z[k] */
+BK_BIG_BSS static int16_t occ[BK_W][OCC_N];   /* per column: lowest floor row drawn once the ray passed occ_z[k] */
 static float occ_z[OCC_N];
 static float depth_z = -1;
 
 void bk_depth(float z) { depth_z = z; }
+
+void bk_core_ctx_take(bk_ctx *c) { c->sprfx = bk_sprfx; c->fcam = fcam; c->depth_z = depth_z; }
+void bk_core_ctx_put(const bk_ctx *c) { bk_sprfx = c->sprfx; fcam = c->fcam; depth_z = c->depth_z; }
 
 static inline int texel(float wx, float wy) {
   int px = (int)wx, py = (int)wy;
@@ -795,85 +798,100 @@ static int spatial_on(void) {
   return d->scan || d->vignette || d->curve || d->split || d->blur || d->grain;
 }
 
-/* the whole frame through the display shader; put(i, r, g, b) stores pixel i */
-#define PRESENT_BODY(PUT)                                                                                         \
-  uint8_t rgb[256 * 3];                                                                                           \
-  graded_palette(rgb);                                                                                            \
-  const __typeof__(BK->display) *d = &BK->display;                                                               \
-  static int32_t colv[BK_W], rowv[BK_H], colA[BK_W], colB[BK_W], rowA[BK_H], rowB[BK_H], nx2[BK_W], ny2[BK_H];   \
-  const int cx2 = BK_W, cy2 = BK_H;                     /* the middle, in half pixels */                         \
-  const int vig = d->vignette < 0 ? 0 : d->vignette > 100 ? 100 : d->vignette;                                   \
-  const int curve = d->curve < 0 ? 0 : d->curve > 100 ? 100 : d->curve;                                          \
-  for (int x = 0; x < BK_W; x++) {                                                                                \
-    const int n = (2 * x + 1 - cx2) * 256 / cx2;      /* -256..256 */                                           \
-    nx2[x] = n * n >> 8;                               /* 0..256 */                                              \
-    colv[x] = 256 - vig * nx2[x] * 7 / 1000;                                                                      \
-    colA[x] = (int32_t)((2 * x + 1 - cx2) * 32768) + (int32_t)((int64_t)(2 * x + 1 - cx2) * 32768 * curve * nx2[x] / 85333); \
-    colB[x] = (int32_t)((int64_t)(2 * x + 1 - cx2) * 32768 * curve * 3 / 1000);                                    \
-  }                                                                                                               \
-  for (int y = 0; y < BK_H; y++) {                                                                                \
-    const int n = (2 * y + 1 - cy2) * 256 / cy2;                                                                  \
-    ny2[y] = n * n >> 8;                                                                                          \
-    rowv[y] = (256 - vig * ny2[y] * 7 / 1000) * ((y & 1) ? 256 - d->scan * 160 / 100 : 256) >> 8;               \
-    rowA[y] = (int32_t)((2 * y + 1 - cy2) * 32768) + (int32_t)((int64_t)(2 * y + 1 - cy2) * 32768 * curve * ny2[y] / 85333); \
-    rowB[y] = (int32_t)((int64_t)(2 * y + 1 - cy2) * 32768 * curve * 3 / 1000);                                    \
-  }                                                                                                               \
-  const int split = d->split < 0 ? 0 : d->split > 4 ? 4 : d->split;                                              \
-  const int blur = (d->blur < 0 ? 0 : d->blur > 100 ? 100 : d->blur) * 128 / 100;                               \
-  const int grain = (d->grain < 0 ? 0 : d->grain > 100 ? 100 : d->grain) * 60 / 100;                            \
-  const uint32_t fseed = hash32(BK->frame * 0x9E3779B9u);                                                         \
-  for (int y = 0; y < BK_H; y++) {                                                                                \
+/* Tables for one frame through the display shader (bk_present_begin), then rows of pixels (PRESENT_ROWS). */
+static struct {
+  uint8_t rgb[256 * 3];
+  uint16_t lut565[256];
+  int spatial, vig, curve, split, blur, grain;
+  uint32_t fseed;
+  int32_t colv[BK_W], rowv[BK_H], colA[BK_W], colB[BK_W], rowA[BK_H], rowB[BK_H], nx2[BK_W], ny2[BK_H];
+} pv;
+
+void bk_present_begin(void) {
+  graded_palette(pv.rgb);
+  for (int i = 0; i < 256; i++)
+    pv.lut565[i] = (uint16_t)(((pv.rgb[i * 3] & 0xF8) << 8) | ((pv.rgb[i * 3 + 1] & 0xFC) << 3) | (pv.rgb[i * 3 + 2] >> 3));
+  pv.spatial = spatial_on();
+  if (!pv.spatial) return;
+  const __typeof__(BK->display) *d = &BK->display;
+  const int cx2 = BK_W, cy2 = BK_H;                     /* the middle, in half pixels */
+  const int vig = pv.vig = d->vignette < 0 ? 0 : d->vignette > 100 ? 100 : d->vignette;
+  const int curve = pv.curve = d->curve < 0 ? 0 : d->curve > 100 ? 100 : d->curve;
+  for (int x = 0; x < BK_W; x++) {
+    const int n = (2 * x + 1 - cx2) * 256 / cx2;      /* -256..256 */
+    pv.nx2[x] = n * n >> 8;                            /* 0..256 */
+    pv.colv[x] = 256 - vig * pv.nx2[x] * 7 / 1000;
+    pv.colA[x] = (int32_t)((2 * x + 1 - cx2) * 32768) + (int32_t)((int64_t)(2 * x + 1 - cx2) * 32768 * curve * pv.nx2[x] / 85333);
+    pv.colB[x] = (int32_t)((int64_t)(2 * x + 1 - cx2) * 32768 * curve * 3 / 1000);
+  }
+  for (int y = 0; y < BK_H; y++) {
+    const int n = (2 * y + 1 - cy2) * 256 / cy2;
+    pv.ny2[y] = n * n >> 8;
+    pv.rowv[y] = (256 - vig * pv.ny2[y] * 7 / 1000) * ((y & 1) ? 256 - d->scan * 160 / 100 : 256) >> 8;
+    pv.rowA[y] = (int32_t)((2 * y + 1 - cy2) * 32768) + (int32_t)((int64_t)(2 * y + 1 - cy2) * 32768 * curve * pv.ny2[y] / 85333);
+    pv.rowB[y] = (int32_t)((int64_t)(2 * y + 1 - cy2) * 32768 * curve * 3 / 1000);
+  }
+  pv.split = d->split < 0 ? 0 : d->split > 4 ? 4 : d->split;
+  pv.blur = (d->blur < 0 ? 0 : d->blur > 100 ? 100 : d->blur) * 128 / 100;
+  pv.grain = (d->grain < 0 ? 0 : d->grain > 100 ? 100 : d->grain) * 60 / 100;
+  pv.fseed = hash32(BK->frame * 0x9E3779B9u);
+}
+
+/* rows y0..y1-1 through the shader; PUT(i, r, g, b) stores pixel i, counted from the first row asked for */
+#define PRESENT_ROWS(PUT, Y0, Y1)                                                                                 \
+  for (int y = (Y0); y < (Y1); y++) {                                                                             \
     int pr = -1, pg = 0, pb = 0;                                                                                  \
+    const int o = (y - (Y0)) * BK_W;                                                                              \
     for (int x = 0; x < BK_W; x++) {                                                                              \
       int sx = x, sy = y, r, g, b;                                                                                \
-      if (curve) {                                                                                                \
+      if (pv.curve) {                                                                                             \
         /* barrel: the source point is pushed out from the middle by how far the pixel is from the middle */    \
-        const int32_t fx = colA[x] + (int32_t)((int64_t)colB[x] * ny2[y] >> 8);   /* from the middle, 16.16 */            \
-        const int32_t fy = rowA[y] + (int32_t)((int64_t)rowB[y] * nx2[x] >> 8);                                  \
-        sx = (fx + ((BK_W / 2) << 16) - 32768) >> 16; sy = (fy + ((BK_H / 2) << 16) - 32768) >> 16;                              \
-        if (sx < 0 || sy < 0 || sx >= BK_W || sy >= BK_H) { PUT(y * BK_W + x, 0, 0, 0); pr = 0; pg = pb = 0; continue; } \
+        const int32_t fx = pv.colA[x] + (int32_t)((int64_t)pv.colB[x] * pv.ny2[y] >> 8);   /* from the middle, 16.16 */ \
+        const int32_t fy = pv.rowA[y] + (int32_t)((int64_t)pv.rowB[y] * pv.nx2[x] >> 8);                         \
+        sx = (fx + ((BK_W / 2) << 16) - 32768) >> 16; sy = (fy + ((BK_H / 2) << 16) - 32768) >> 16;              \
+        if (sx < 0 || sy < 0 || sx >= BK_W || sy >= BK_H) { PUT(o + x, 0, 0, 0); pr = 0; pg = pb = 0; continue; } \
       }                                                                                                           \
       const uint8_t *row = &BK->screen[sy * BK_W];                                                                \
-      if (split) {                                                                                                \
-        const int a = sx - split < 0 ? 0 : sx - split, c = sx + split >= BK_W ? BK_W - 1 : sx + split;           \
-        r = rgb[row[a] * 3]; g = rgb[row[sx] * 3 + 1]; b = rgb[row[c] * 3 + 2];                                   \
-      } else { const uint8_t *p = &rgb[row[sx] * 3]; r = p[0]; g = p[1]; b = p[2]; }                             \
-      if (blur && pr >= 0) { r = (r * (256 - blur) + pr * blur) >> 8; g = (g * (256 - blur) + pg * blur) >> 8; b = (b * (256 - blur) + pb * blur) >> 8; } \
+      if (pv.split) {                                                                                             \
+        const int a = sx - pv.split < 0 ? 0 : sx - pv.split, c = sx + pv.split >= BK_W ? BK_W - 1 : sx + pv.split; \
+        r = pv.rgb[row[a] * 3]; g = pv.rgb[row[sx] * 3 + 1]; b = pv.rgb[row[c] * 3 + 2];                          \
+      } else { const uint8_t *p = &pv.rgb[row[sx] * 3]; r = p[0]; g = p[1]; b = p[2]; }                          \
+      if (pv.blur && pr >= 0) { r = (r * (256 - pv.blur) + pr * pv.blur) >> 8; g = (g * (256 - pv.blur) + pg * pv.blur) >> 8; b = (b * (256 - pv.blur) + pb * pv.blur) >> 8; } \
       pr = r; pg = g; pb = b;                                                                                     \
-      const int v = colv[x] * rowv[y] >> 8;                                                                       \
+      const int v = pv.colv[x] * pv.rowv[y] >> 8;                                                                 \
       r = r * v >> 8; g = g * v >> 8; b = b * v >> 8;                                                             \
-      if (grain) { const int n = (int)(hash32(fseed ^ (uint32_t)(y * BK_W + x)) & 255) - 128; const int e = n * grain >> 7; r += e; g += e; b += e; } \
-      PUT(y * BK_W + x, clamp255(r), clamp255(g), clamp255(b));                                                   \
+      if (pv.grain) { const int n = (int)(hash32(pv.fseed ^ (uint32_t)(y * BK_W + x)) & 255) - 128; const int e = n * pv.grain >> 7; r += e; g += e; b += e; } \
+      PUT(o + x, clamp255(r), clamp255(g), clamp255(b));                                                          \
     }                                                                                                             \
   }
 
 void bk_to_rgba(uint32_t *out) {
-  if (!spatial_on()) {
-    uint8_t rgb[256 * 3];
-    graded_palette(rgb);
+  bk_present_begin();
+  if (!pv.spatial) {
     uint32_t lut[256];
-    for (int i = 0; i < 256; i++) lut[i] = 0xFF000000u | ((uint32_t)rgb[i * 3 + 2] << 16) | ((uint32_t)rgb[i * 3 + 1] << 8) | rgb[i * 3];
+    for (int i = 0; i < 256; i++) lut[i] = 0xFF000000u | ((uint32_t)pv.rgb[i * 3 + 2] << 16) | ((uint32_t)pv.rgb[i * 3 + 1] << 8) | pv.rgb[i * 3];
     for (int i = 0; i < BK_W * BK_H; i++) out[i] = lut[BK->screen[i]];
     return;
   }
 #define PUT_RGBA(i, r, g, b) out[i] = 0xFF000000u | ((uint32_t)(b) << 16) | ((uint32_t)(g) << 8) | (uint32_t)(r)
-  PRESENT_BODY(PUT_RGBA)
+  PRESENT_ROWS(PUT_RGBA, 0, BK_H)
 #undef PUT_RGBA
 }
 
-void bk_to_rgb565(uint16_t *out) {
-  if (!spatial_on()) {
-    uint8_t rgb[256 * 3];
-    graded_palette(rgb);
-    uint16_t lut[256];
-    for (int i = 0; i < 256; i++) lut[i] = (uint16_t)(((rgb[i * 3] & 0xF8) << 8) | ((rgb[i * 3 + 1] & 0xFC) << 3) | (rgb[i * 3 + 2] >> 3));
-    for (int i = 0; i < BK_W * BK_H; i++) out[i] = lut[BK->screen[i]];
+void bk_present_rgb565(uint16_t *out, int y0, int y1) {
+  if (y0 < 0) y0 = 0;
+  if (y1 > BK_H) y1 = BK_H;
+  if (!pv.spatial) {
+    const uint8_t *src = &BK->screen[y0 * BK_W];
+    for (int i = 0, n = (y1 - y0) * BK_W; i < n; i++) out[i] = pv.lut565[src[i]];
     return;
   }
 #define PUT_565(i, r, g, b) out[i] = (uint16_t)((((r) & 0xF8) << 8) | (((g) & 0xFC) << 3) | ((b) >> 3))
-  PRESENT_BODY(PUT_565)
+  PRESENT_ROWS(PUT_565, y0, y1)
 #undef PUT_565
 }
+
+void bk_to_rgb565(uint16_t *out) { bk_present_begin(); bk_present_rgb565(out, 0, BK_H); }
 
 /* ---------------- input ---------------- */
 

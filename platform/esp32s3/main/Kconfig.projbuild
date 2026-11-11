@@ -1,0 +1,184 @@
+menu "PocketBit hardware"
+    comment "Pins are for the breadboard prototype (ESP32-S3-DevKitC-1 N16R8). -1 = not connected."
+
+    menu "Screen (ST7789, 8-bit parallel)"
+        config BIT_LCD_D0
+            int "D0"
+            default 8
+        config BIT_LCD_D1
+            int "D1"
+            default 9
+        config BIT_LCD_D2
+            int "D2"
+            default 10
+        config BIT_LCD_D3
+            int "D3"
+            default 11
+        config BIT_LCD_D4
+            int "D4"
+            default 12
+        config BIT_LCD_D5
+            int "D5"
+            default 13
+        config BIT_LCD_D6
+            int "D6"
+            default 14
+        config BIT_LCD_D7
+            int "D7"
+            default 21
+        config BIT_LCD_WR
+            int "WR"
+            default 15
+        config BIT_LCD_DC
+            int "DC (RS)"
+            default 16
+        config BIT_LCD_CS
+            int "CS (-1 = tied low)"
+            default -1
+        config BIT_LCD_RST
+            int "RESET"
+            default 17
+        config BIT_LCD_BL
+            int "Backlight (PWM)"
+            default 18
+        config BIT_LCD_PCLK_MHZ
+            int "Write clock (MHz)"
+            default 20
+            help
+                20 MHz moves a whole 320x240 frame in about 7.7 ms. Raise it if the wiring is short and clean.
+        config BIT_LCD_INVERT
+            bool "Invert colours (most IPS ST7789 panels need it)"
+            default y
+        config BIT_LCD_BGR
+            bool "Panel is BGR"
+            default n
+        config BIT_LCD_MIRROR_X
+            bool "Mirror X"
+            default n
+        config BIT_LCD_MIRROR_Y
+            bool "Mirror Y"
+            default y
+        config BIT_LCD_SWAP_XY
+            bool "Swap X/Y (landscape on a 240x320 panel)"
+            default y
+    endmenu
+
+    menu "Sound (I2S, two MAX98357A)"
+        config BIT_I2S_BCLK
+            int "BCLK"
+            default 4
+        config BIT_I2S_WS
+            int "LRCLK (WS)"
+            default 5
+        config BIT_I2S_DOUT
+            int "DIN of the amplifiers"
+            default 6
+    endmenu
+
+    menu "Buttons (to ground, internal pull-ups)"
+        config BIT_BTN_LEFT
+            int "Left"
+            default 42
+        config BIT_BTN_RIGHT
+            int "Right"
+            default 41
+        config BIT_BTN_UP
+            int "Up"
+            default 1
+        config BIT_BTN_DOWN
+            int "Down"
+            default 2
+        config BIT_BTN_A
+            int "A"
+            default 40
+        config BIT_BTN_B
+            int "B"
+            default 39
+        config BIT_BTN_X
+            int "X"
+            default 38
+        config BIT_BTN_Y
+            int "Y"
+            default 7
+        config BIT_BTN_L
+            int "L"
+            default 47
+        config BIT_BTN_R
+            int "R"
+            default 48
+        config BIT_BTN_START
+            int "Start"
+            default 0
+        config BIT_BTN_SELECT
+            int "Select"
+            default 46
+    endmenu
+
+    menu "Analog buttons (MCP3208 on SPI)"
+        config BIT_ANALOG
+            bool "Read A, B, X, Y, L, R pressure from an MCP3208 (channels 0-5)"
+            default n
+            help
+                Hall-effect buttons: each one is read as 0-255 for press(), and counts as down past the threshold.
+        config BIT_ADC_MOSI
+            int "MOSI"
+            default -1
+            depends on BIT_ANALOG
+        config BIT_ADC_MISO
+            int "MISO"
+            default -1
+            depends on BIT_ANALOG
+        config BIT_ADC_SCK
+            int "SCK"
+            default -1
+            depends on BIT_ANALOG
+        config BIT_ADC_CS
+            int "CS"
+            default -1
+            depends on BIT_ANALOG
+        config BIT_ADC_THRESHOLD
+            int "Down at (0-255)"
+            default 96
+            depends on BIT_ANALOG
+    endmenu
+
+    menu "Memory card (SD, 1-bit SDMMC)"
+        config BIT_SD
+            bool "Use a microSD card (games in /sdcard/games, saves in /sdcard/bitkit/saves)"
+            default y
+        config BIT_SD_CLK
+            int "CLK"
+            default 43
+            depends on BIT_SD
+        config BIT_SD_CMD
+            int "CMD"
+            default 44
+            depends on BIT_SD
+        config BIT_SD_D0
+            int "D0"
+            default 3
+            depends on BIT_SD
+    endmenu
+
+    menu "Clock (PCF8563 real-time clock on I2C)"
+        config BIT_RTC
+            bool "Read the time from a PCF8563 at boot (idle games count time away)"
+            default n
+        config BIT_RTC_SDA
+            int "SDA"
+            default -1
+            depends on BIT_RTC
+        config BIT_RTC_SCL
+            int "SCL"
+            default -1
+            depends on BIT_RTC
+    endmenu
+
+    config BIT_MAX_PAUSED
+        int "Games kept paused in memory"
+        default 4
+        range 1 8
+    config BIT_GAME_MEM_KB
+        int "Lua memory per game (KB)"
+        default 4096
+endmenu
