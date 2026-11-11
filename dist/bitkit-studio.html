@@ -12916,9 +12916,9 @@ end
 --          keep holding for the sharpest turn. It blends smoothly between them.
 --   Drift: hold L (or B while on the throttle) and steer. The sparks go white, amber,
 --          violet: let go for a boost. The longer the drift, the bigger the boost.
---   Item: X uses what you got from a crate.
--- Items: Nitro (boost), Oil Slick (dropped behind you), Bolt (fired straight ahead),
---        Drone (homes in on the kart in front of you), Shield (blocks one hit).
+--   Item: X uses what you got from a crate. Hold down to look back; hold down + X fires backwards.
+-- Items: Nitro (boost), Oil Slick (dropped behind you), Bolt (fired straight ahead or back),
+--        Drone (homes in on the kart in front of you, or behind), Shield (blocks one hit).
 --
 -- Tracks are levels on the Map tab. Each one needs a "start" entity and "node" entities
 -- along the middle of the road: the race heads from the start toward its nearest node,
@@ -13284,8 +13284,10 @@ function drive(k, thr, brk, steer, drift_btn)
       end
       k.drift, k.charge = 0, 0
     else
-      local into = steer * k.drift          -- +1 steering into the drift, -1 against
-      turn = k.drift * k.turn * (0.95 + 0.45 * into) * sp
+      -- +1 steering into the drift, -1 against. Full lock into it turns just a bit more than normal
+      -- full steer (1.1x); steering against it opens the line up a lot (down to 0.3x)
+      local into = steer * k.drift
+      turn = k.drift * k.turn * (0.75 + (into > 0 and 0.35 or 0.45) * into) * sp
       k.charge = k.charge + k.driftc * (1 + 0.5 * math.max(into, 0))
       grip = grip * 0.3
     end
@@ -13453,7 +13455,7 @@ function hit(k, by)
   if k == player then shake = 8 end
 end
 
-function use_item(k)
+function use_item(k, back)                             -- back: fire it behind you (hold down)
   local i = k.item
   if not i or k.roll > 0 then return end
   k.item, k.item_t = nil, 0
@@ -13464,13 +13466,14 @@ function use_item(k)
   elseif i == 2 then                                   -- Oil Slick, behind you
     hazards[#hazards + 1] = {kind = "oil", x = k.x - c*16, y = k.y - s*16, life = 1800, owner = k}
     if k == player then sfx("C3", 3, 0.3, 8) end
-  elseif i == 3 then                                   -- Bolt, straight ahead
-    shots[#shots + 1] = {kind = "bolt", x = k.x + c*10, y = k.y + s*10, vx = c*6 + k.vx*0.5, vy = s*6 + k.vy*0.5, life = 110, owner = k}
+  elseif i == 3 then                                   -- Bolt, straight ahead (or straight back)
+    local f = back and -1 or 1
+    shots[#shots + 1] = {kind = "bolt", x = k.x + c*12*f, y = k.y + s*12*f, vx = c*6*f + k.vx*0.5, vy = s*6*f + k.vy*0.5, life = 110, owner = k}
     if k == player then sfx("E5", 0, 0.3, 6, 4, 0, 800) end
-  elseif i == 4 then                                   -- Drone, after the kart in front
-    local target = nil
-    for _, o in ipairs(karts) do if o.place == (k.place or 1) - 1 then target = o end end
-    shots[#shots + 1] = {kind = "drone", x = k.x, y = k.y, vx = c*3, vy = s*3, life = 600, owner = k, target = target}
+  elseif i == 4 then                                   -- Drone, after the kart in front (or behind)
+    local target, f = nil, back and -1 or 1
+    for _, o in ipairs(karts) do if o.place == (k.place or 1) - f then target = o end end
+    shots[#shots + 1] = {kind = "drone", x = k.x, y = k.y, vx = c*3*f, vy = s*3*f, life = 600, owner = k, target = target}
     if k == player then sfx("B4", 5, 0.3, 14, 4, 0, 300) end
   elseif i == 5 then                                   -- Shield
     k.shield = 420
@@ -13639,7 +13642,7 @@ function start_race()
     k.z = hget(k.x, k.y)
     k.place = i
   end
-  cam = {a = player.a, x = player.x, y = player.y, z = player.z + CAM_H}
+  cam = {a = player.a, ta = player.a, back = false, x = player.x, y = player.y, z = player.z + CAM_H}
   mode, gt, race_t = "count", 0, 0
 end
 
@@ -13699,7 +13702,7 @@ function race_update()
       brk = btn("b") and not bdrift
       steer = player_steer(k)
       drift = btn("l") or press("l") > 100 or bdrift
-      if btnp("x") then use_item(k) end
+      if btnp("x") then use_item(k, btn("down")) end
     end
     drive(k, thr, brk, steer, drift)
     track_kart(k)
@@ -13713,10 +13716,13 @@ function race_update()
     persist()
   end
   track(player.x, player.y)        -- the Map tab shows your racing line
-  -- camera swings behind the kart, lagging a little in turns and more in drifts
+  -- camera swings behind the kart, lagging a little in turns and more in drifts.
+  -- Holding down looks back: the camera jumps in front of the kart, facing backwards.
   local lag = player.drift ~= 0 and 0.07 or 0.13
-  cam.a = (cam.a + angdiff(player.a, cam.a) * lag) % TAU
-  local d = CAM_D + player.fwd * 2
+  cam.ta = (cam.ta + angdiff(player.a, cam.ta) * lag) % TAU
+  cam.back = mode == "race" and not player.done and btn("down")
+  cam.a = cam.back and (cam.ta + math.pi) % TAU or cam.ta
+  local d = cam.back and CAM_D or CAM_D + player.fwd * 2
   cam.x, cam.y = player.x - math.cos(cam.a) * d, player.y - math.sin(cam.a) * d
   local cz = math.max(player.z, hget(cam.x, cam.y) + 4) + CAM_H
   cam.z = cam.z + (cz - cam.z) * 0.2
@@ -13914,6 +13920,7 @@ function draw_hud()
   local lap = clamp(player.lap, 1, LAPS)
   shadow_text("LAP " .. lap .. "/" .. LAPS, 240, 8, 13)
   shadow_text(tstr(player.done and player.time or race_t), 240, 18, 12)
+  if cam.back then shadow_text("REAR VIEW", 136, 44, 13) end
   -- item slot
   rectfill(144, 6, 32, 30, 1); rect(144, 6, 32, 30, player.item and 13 or 30)
   if player.item then
@@ -13973,6 +13980,7 @@ function _draw()
     local w = #s * 32
     shadow_text(s, 160 - w // 2, 80, n > 0 and 27 or 17, 4)
     text("drift: hold L (or B) and steer", 40, 124, 13)
+    text("X: item, hold down to look and fire back", 40, 134, 13)
   elseif mode == "race" and gt < 40 then
     shadow_text("GO!", 112, 80, 17, 4)
   elseif mode == "results" then
