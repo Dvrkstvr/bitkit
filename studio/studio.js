@@ -787,6 +787,7 @@ LEVEL = tune("Rivals", "Normal", {"Easy", "Normal", "Hard"})   -- a list</pre>
     if (mp.autoz) {                                  // a level just opened: zoom so its height fits
       const L = cart.levels[cart.level];
       mp.autoz = false; mp.zoom = Math.max(2, Math.min(4, Math.floor(h / ((L ? L.h : 30) * 8))));
+      mp.y = Math.max(0, (L ? L.h : 30) - Math.floor(h / (8 * mp.zoom)));     // a short view starts at the ground, not the sky
     } else if (mv.width === w && mv.height === h) return;
     mv.width = w; mv.height = h;
     if (activeTab === 'map') panMap(0, 0);

@@ -483,3 +483,9 @@ li.CodeMirror-hint-active { background: #3a2e5c; color: #fff; }
 .start-list li > span { color: var(--dim); }
 .start-list li > span b { color: var(--text); font-weight: 600; }
 .start-list li button { margin-top: auto; }
+
+/* narrow editors: the tile picker goes under the map */
+@media (max-width: 1150px) {
+  .map-layout { flex-direction: column; }
+  .map-picker .sheet-scroll { max-height: 132px; }
+}
