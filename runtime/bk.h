@@ -17,7 +17,7 @@
 #define BK_SAMPLE_RATE 44100
 #define BK_FPS 60
 #define BK_SAVE_MAX 4096
-#define BK_MAX_PLAYERS 4      /* players in a lockstep (linked) game */
+#define BK_MAX_PLAYERS 8      /* players in one game: linked Bits, or several on one screen */
 #define BK_NET_VALS 8         /* numbers in one network event */
 #define BK_NET_OUT 16         /* events a cart can send per frame */
 #define BK_NET_IN 64          /* events waiting to be read */
@@ -67,8 +67,8 @@ typedef struct {
     uint16_t ignore;                    /* buttons still held from before the cart started: ignored until released */
     uint8_t fresh;                      /* set at cart start: the first input decides what to ignore */
   } pad[BK_MAX_PLAYERS];
-  int32_t players;                      /* players in this game, 1..4 */
-  int32_t me;                           /* this device's player (1..4), or 0 when everyone shares this screen */
+  int32_t players;                      /* players in this game, 1..8 */
+  int32_t me;                           /* this device's player (1..8), or 0 when everyone shares this screen */
 
   /* --- player tracking (studio draws the route on the map) --- */
   int32_t track[3];                     /* x, y, set this frame */

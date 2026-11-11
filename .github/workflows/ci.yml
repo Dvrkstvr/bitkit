@@ -24,3 +24,17 @@ jobs:
         run: node tools/gametest.cjs
       - name: Sweep Storm and network events
         run: node tools/sweeptest.cjs
+
+  linked-bits:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install Playwright
+        run: |
+          npm install --no-save --no-package-lock playwright@1.49.1
+          npx playwright install --with-deps chromium
+      - name: Linked Bits (browser)
+        run: node tools/linktest.cjs

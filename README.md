@@ -111,7 +111,7 @@ A small platformer that shows off most of the engine:
 - Talking NPCs, and a pressure button that opens a gate.
 - Two levels, with cutscenes when each one starts and when you reach the gate.
 - **Goal:** reach the red flag at the end of Mossy Cave. Continue picks up at your last tree.
-- Two players: pick **2 players** under the screen (player 2 is the blue sprout), or **2 Bits, linked** to play from two windows.
+- Two players: pick **2 players** under the screen (player 2 is the blue sprout), or press **＋ Add a Bit** to play from several linked windows (up to 8 players).
 
 ### Beacon Keeper
 
@@ -149,7 +149,7 @@ A kart racer drawn SNES-style: the map becomes a floor seen in perspective, with
 - **Analog throttle** on R: squeeze harder to go faster. B brakes. Steering comes in 3 stages that blend as you hold a direction: a tap nudges, a hold turns, a long hold turns hard.
 - **Drift** with L (or B while on the throttle). The sparks go white, amber, then violet; let go for a boost. Full lock into a drift turns just a bit tighter than normal steering, and steering against it opens the line up.
 - **Items** from crates, used with X: Nitro, Oil Slick, Bolt, Drone (chases the kart in front) and Shield. Rivals use them too. Hold down to look back, and hold down while using a Bolt or Drone to fire it backwards.
-- **Race your friends** in the same match: pick **2 players** for split screen (up to 4 with controllers), or **2 Bits, linked** so each Bit shows its own kart. Everyone builds their own kart in the garage, player 1 picks the track, and rivals fill the grid up to 8 karts (`KARTS` at the top of the code).
+- **Race your friends** in the same match: pick **2 players** for split screen (up to 4 with controllers), or **＋ Add a Bit** for linked Bits, each showing its own kart (up to 8). Everyone builds their own kart in the garage, player 1 picks the track, and rivals fill the grid up to 8 karts (`KARTS` at the top of the code).
 - **Hills and jumps**: the ground rises and falls, and fast karts leave the ground over crests.
 - **Goal:** finish 1st on every track. Continue drops you straight into a race with your saved kart; Rivals (Easy, Normal, Hard) is in the pause menu's Settings.
 - **Tracks are made on the Track tab.** The road is a smooth loop: drag its points, double-click the road to add one, and place boost pads, crate rows, hills, bumps, dips and ramps along it. Click a point to give it its own road and kerb width (the road blends to the next point). Hills, bumps, dips and ramps have height and size sliders and a shape curve you drag, with presets (round, dome, cone, flat top, spike, straight, kicker). Paint elevation with the height brush (raise, lower, flatten, smooth), set the road width, kerbs and laps, and press **▶ race it**. The road is built from a few segment tiles you paint right there (road, kerb A/B, grass, start line, boost pad); the edge tiles where they meet are generated. Two tracks are included: Pinewood Loop and Quarry Hills.
@@ -229,7 +229,7 @@ docs/media/     README images
 - [x] Stats, effects and checkpoints
 - [x] Player route overlay in the map editor
 - [x] Levels and cutscenes
-- [x] Multiplayer in the studio: two players on one screen, or two linked Bit windows in lockstep
+- [x] Multiplayer in the studio: two players on one screen, or up to 8 linked Bit windows in lockstep (home-screen lobby, pause together, rejoin after a reload)
 - [ ] Music tracker and SFX editor
 - [ ] Animation timeline editor
 - [ ] ESP32-S3 host (PocketBit firmware)
