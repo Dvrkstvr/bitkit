@@ -58,7 +58,7 @@ The game runtime and browser studio for **PocketBit**, a DIY ESP32-S3 handheld.
 
 1. Open **[dvrkstvr.github.io/bitkit](https://dvrkstvr.github.io/bitkit/)** in Chrome, Edge or Firefox.
 2. Plug in a controller and press any button on it.
-3. The studio starts on the Bit's home screen with every demo (Sprout Hop, Beacon Keeper, Sweep Storm, Kart Lab, Crossgate). Pick one with ← → and press A (Z on the keyboard). Hold Start+Select to come back.
+3. The studio starts on the Bit's home screen with every demo (Sprout Hop, Beacon Keeper, Sweep Storm, Kart Lab, Crossgate, Tinwing). Pick one with ← → and press A (Z on the keyboard). Hold Start+Select to come back.
 4. Press **Run** (or Ctrl+Enter) to play the cart that is open in the studio.
 5. Change something and press Run again.
 
@@ -144,6 +144,19 @@ A tug-of-war crossbow duel. Wren (orange) fights east out of the Sea Gate, Rook 
 - Win a fight and you get the way: run for your gate. Your rival walks back in from the far side of the screen.
 - One player fights the Rook (CPU, Easy / Normal / Hard in Settings). Two players share one screen or play on linked Bits. With more players, the winner stays on and the loser goes to the back of the queue.
 - **Goal:** get out through your gate before your rival gets out of theirs.
+
+### Tinwing (2.5D)
+
+<img src="docs/media/tinwing.png" width="480" alt="Tinwing: an orange RC plane flying past the Drowned Belltower over a flooded sea">
+
+A story game drawn in 2.5D like Kart Lab. Perch is a town on stilts, on a planet that is nearly all sea: letters go by pigeon and people go by boat. You play Pip, a teenager who builds radio-controlled planes.
+
+- **Town:** walk the boardwalks in a tilted diorama view (`floor()` plus scaled sprites). Talk to Mags at the pigeon post and Tobin the ferryman with **A**, and use your workbench by the shed.
+- **Workbench:** build the plane from wings (Kite, Swift, Albatross), a motor (Hummer, Buzzer), a battery and a paint job. The plane is a little 3D model drawn from triangles, so you see it turn on the stand. Scrap from crates buys new parts.
+- **Flying:** a chase camera over the sea and the islands (`floorh()`). Left and right turn, up and down climb and dive (swap them in Settings). Hold **A** or squeeze **R** to run the motor; let go and you glide, which costs no battery. Warm air rings give a Tailwind (an effect on the Entities tab). Fly low over the yellow pad at Perch to land. If the battery goes flat you splash down and Tobin fishes you out.
+- **The story so far:** a squall knocked the mail satchel out of the sky past the Drowned Belltower. Your first battery can't reach it, but there's a Twin Cell on top of the Belltower. Fit it and fly out to the reef.
+- **Goal:** find the mail satchel and fly it home to Perch. Continue puts you back in town with everything you found.
+- Both maps are levels (Perch and The Shallows), and every house, crate, ring and person is an entity you can move on the Map tab. The story is on the Cutscenes tab.
 
 ## 🏎️ The demo: Kart Lab (2.5D)
 
