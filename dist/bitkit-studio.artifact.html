@@ -15868,10 +15868,11 @@ function bolts()
 end
 
 function spawn(f, x, keep)
-  f.alive, f.ghost, f.x, f.y, f.vx, f.vy = true, false, x, 30, 0, 0
+  -- come back on the ground at the edge of the screen, walking in (never dropped from the sky)
+  f.alive, f.ghost, f.x, f.y, f.vx, f.vy = true, false, x, floor_y(room, x), 0, 0
   f.stance, f.loaded, f.hand, f.rl, f.cd, f.stun = 2, true, keep and keep.hand or false, 0, 0, 0
   f.face, f.aim, f.atk_t, f.keep = f.dir, nil, 50, nil
-  burst(x, 40, { 13, 23 }, 10, 1)
+  burst(x, f.y - 2, { 29, 28 }, 8, 1)
   sfx("G4", 1, 0.25, 8, nil, pan(x), -300)
 end
 
@@ -15882,10 +15883,10 @@ function respawns()
       if f.dead_t == 0 then
         local r = runner ~= 0 and runner ~= f.n and F[runner] or nil
         if r and r.alive then
-          local x = r.dir > 0 and 296 or 24          -- ahead of the runner, in their way
+          local x = r.dir > 0 and 312 or 8           -- the far side of the screen, in the runner's way
           if math.abs(r.x - x) >= 90 then spawn(f, x, f.keep) end
         else
-          spawn(f, f.dir > 0 and 40 or 280, f.keep)
+          spawn(f, f.dir > 0 and 8 or 312, f.keep)
         end
       end
     end
@@ -15902,7 +15903,7 @@ function exits()
   r.y, r.vy = floor_y(room, r.x), 0
   local o = F[3 - runner]
   o.keep = o.alive and { hand = o.hand } or nil
-  o.alive, o.ghost, o.dead_t = false, true, 50
+  o.alive, o.ghost, o.dead_t = false, true, 20
   flying, fx = {}, {}
   wipe = 14
   banner(ROOMS[room].name, 13)

@@ -92,10 +92,10 @@ const runtime = require('../studio/runtime.js');
   expect('pickup + reload', scenario('pickup',
     'F[1].x = 60 F[1].loaded, F[1].hand = false, false F[2].x = 300 loose[room] = {{x = 90, y = 200, vy = 0, rest = true}}',
     'F[1].loaded, F[1].hand, #loose[room]', 160, f => [f > 90 && f < 110 ? bit('right') : 0, 0]), 'true false 0');
-  // the runner walks off the edge into the next room; the rival comes back ahead of them
+  // the runner walks off the edge into the next room; the rival walks in on the ground from the far side (no drop from the sky)
   expect('room change', scenario('room change',
     'runner = 1 F[1].x = 300 F[2].x = 40',
-    'room, F[1].x < 60, F[2].alive, F[2].x > 280', 230, f => [f > 90 && f < 110 ? bit('right') : 0, 0]), '1 true true true');
+    'room, F[1].x < 60, F[2].alive, F[2].x > 300, F[2].y == floor_y(room, F[2].x)', 125, f => [f > 90 && f < 110 ? bit('right') : 0, 0]), '1 true true true true');
   // the non-runner cannot leave the room
   expect('no way', scenario('no way',
     'runner = 1 F[1].x = 100 F[2].x = 20',
