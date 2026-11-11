@@ -14106,7 +14106,7 @@ PASTURE = { x = 4, y = 22, w = 14, h = 4 }
 
 -- ---------------------------------------------------------------- the world
 -- . grass  : path  ~ water  T tree  B brambles  1-3 plots  h hut  c crate  W wagon  N Marrow  m mill
--- X washed-out road  t tin box  M old mine  o standing stone  S fallen pine
+-- X the north road to the neighbours  t tin box  M old mine  o standing stone  S fallen pine
 -- V the rusted tractor  Z the silo
 -- p pasture  k hen house  g goat shed  r feeding trough
 FARM = {
@@ -14682,6 +14682,390 @@ function silo_sell()
   persist()
 end
 
+-- ---------------------------------------------------------------- neighbours: other Bits in reach
+-- Every Bit keeps its own farm. Linked Bits talk with network events (net_send / net_recv): the north road
+-- leads to a neighbour's farm, where you can walk about, water their crops and leave gifts at their crate.
+-- Each farm has a wish a day (a gift of it is paid back), and everything the valley reaps fills one fair basket.
+EV_HI, EV_GET, EV_INFO, EV_ROW, EV_POS, EV_WATER, EV_GIFT, EV_THANK, EV_FAIR = 4101, 4102, 4103, 4104, 4105, 4106, 4107, 4108, 4109
+WIRE, WIRE_BY = {}, {}
+for i, c in ipairs(CROPS) do WIRE[#WIRE + 1] = c.key end
+for i, f in ipairs(FOUND) do WIRE[#WIRE + 1] = f.key end
+for i, k in ipairs(WIRE) do WIRE_BY[k] = i end
+CELLS = {}
+for p = 1, #PLOTS do for i = 1, PLOTS[p].w * PLOTS[p].h do CELLS[#CELLS + 1] = { p, i } end end
+NCH = (#CELLS + 9) // 10            -- the fields travel ten cells to an event
+FAIR_EACH = 25                      -- crops per farm that fill the fair basket
+function item_name(k) return CROP_BY[k] and CROPS[CROP_BY[k]].name or FOUND_BY[k].name end
+function net_reset()
+  NEAR, GUESTS, visiting, HOME, fetch, outbox, seen_gift, VG, VF = {}, {}, nil, nil, nil, {}, {}, nil, nil
+  fair_cool, fair_echo, net_t, water_note, refresh_i = 0, 0, 0, 0, 0
+  nonce = (clock() * 31 + (NET_ID or 0)) % 100000
+end
+function who(id) return net_name(id, 8) or ("Bit " .. id % 1000) end
+function mine() return HOME and HOME.G or G end                -- my own farm, also while I am away visiting
+function my_field() return HOME and HOME.FIELD or FIELD end
+function near_ids()
+  local L = {}
+  for id in pairs(NEAR) do L[#L + 1] = id end
+  table.sort(L)
+  return L
+end
+function my_wish()
+  local me = mine()
+  if me.wishday == me.day then return 0 end
+  return ((NET_ID or 0) + me.day * 7) % #CROPS + 1
+end
+function fair_count() local me = mine() return clamp(me.grown - me.fair0, 0, 999) end
+function fair_total()
+  local n, sum = 1, fair_count()
+  for id, o in pairs(NEAR) do n, sum = n + 1, sum + o.fair end
+  return sum, n * FAIR_EACH, n
+end
+function has_guest()
+  for id, o in pairs(NEAR) do if o.at == NET_ID then return true end end
+  return false
+end
+
+-- one piece of my farm for a visitor: piece 0 is the yard, the others ten field cells each
+function send_chunk(to, ch)
+  local me, F = mine(), my_field()
+  if ch == 0 then
+    local flags, hens, goats = 0, 0, 0
+    for p = 1, 3 do if me.plots[p] then flags = flags | (1 << (p - 1)) end end
+    flags = flags | me.coop * 8 | me.shed * 16 | me.silo_b * 32 | me.trac * 64 | (me.rain and 128 or 0) | me.mill * 256
+    for _, a in ipairs(me.an) do if a.k == "h" then hens = hens + 1 else goats = goats + 1 end end
+    net_send(EV_INFO, to, me.day, me.clk, flags, hens * 16 + goats, fl(me.tx / C) + fl(me.ty / C) * 64, me.feed)
+    return
+  end
+  local v = {}
+  for j = 0, 4 do
+    local w = 0
+    for h = 0, 1 do
+      local cm = CELLS[(ch - 1) * 10 + j * 2 + h + 1]
+      if cm then
+        local f = F[cm[1]][cm[2]]
+        w = w | (f.k | f.c << 3 | math.min(f.age, 15) << 7 | (f.wet and 1 or 0) << 11) << (h * 12)
+      end
+    end
+    v[j + 1] = w
+  end
+  net_send(EV_ROW, to, ch, v[1], v[2], v[3], v[4], v[5])
+end
+function apply_info(day, clk, flags, herd_n, tr, feed)
+  local g = VG
+  g.day, g.clk, g.feed = day, clamp(clk, 0, DAY_FRAMES - 1), feed
+  for p = 1, 3 do g.plots[p] = flags & (1 << (p - 1)) ~= 0 end
+  g.coop, g.shed, g.silo_b, g.trac = flags >> 3 & 1, flags >> 4 & 1, flags >> 5 & 1, flags >> 6 & 1
+  g.rain, g.mill = flags & 128 ~= 0, flags >> 8 & 3
+  g.tx, g.ty = tr % 64 * C + 8, tr // 64 * C + 12
+  local hens, goats = clamp(herd_n >> 4, 0, 4), clamp(herd_n & 15, 0, 2)
+  if #g.an ~= hens + goats then
+    g.an = {}
+    for i = 1, hens do g.an[#g.an + 1] = { k = "h", n = i, love = 10, p = 0, m = 0 } end
+    for i = 1, goats do g.an[#g.an + 1] = { k = "g", n = i, love = 10, p = 0, m = 0 } end
+    if G == g then place_animals() end
+  end
+end
+function apply_row(ch, ...)
+  local v = { ... }
+  for j = 0, 4 do
+    for h = 0, 1 do
+      local cm = CELLS[(ch - 1) * 10 + j * 2 + h + 1]
+      if cm and v[j + 1] then
+        local w = v[j + 1] >> (h * 12) & 4095
+        local f = VF[cm[1]][cm[2]]
+        f.k, f.c, f.age, f.wet = clamp(w & 7, 0, 4), clamp(w >> 3 & 15, 0, #CROPS), w >> 7 & 15, w >> 11 & 1 == 1
+        if f.c > 0 and f.age == 15 then f.age = 99 end
+      end
+    end
+  end
+end
+
+function start_visit(id)
+  VG, VF = fresh(), {}
+  for p = 1, #PLOTS do
+    VF[p] = {}
+    for i = 1, PLOTS[p].w * PLOTS[p].h do VF[p][i] = { k = 0, c = 0, age = 0, wet = false, hits = 0 } end
+  end
+  fetch = { id = id, got = {}, t = 0, at = 0 }
+  ui = "fetch"
+end
+function enter_visit()
+  local id = fetch.id
+  fetch, ui = nil, nil
+  if riding then dismount() end
+  persist()
+  HOME = { G = G, FIELD = FIELD, FORAGE = FORAGE, ANIM = ANIM, px = px, py = py, auto_i = auto_i }
+  local H = G
+  VG.inv, VG.seeds, VG.sel, VG.bag, VG.can, VG.water, VG.hoe, VG.coins, VG.pick, VG.axe = H.inv, H.seeds, H.sel, H.bag, H.can, H.water, H.hoe, H.coins, H.pick, H.axe
+  G, FIELD, FORAGE, visiting, auto_i, GUESTS = VG, VF, {}, id, nil, {}
+  ANIM = nil
+  place_animals()
+  px, py, dx, dy, fade, refresh_i = 14 * C + 8, 1 * C + 14, 0, 1, 31, 0
+  say("This is " .. who(id) .. "'s farm. B waters their crops, the crate takes gifts, the north road leads home.")
+  sfx("C5", 1, 0.25, 6) sfx("G5", 1, 0.25, 10)
+end
+function leave_visit(msg)
+  local H = HOME
+  H.G.water, H.G.sel, H.G.coins = G.water, G.sel, G.coins
+  G, FIELD, FORAGE, ANIM, px, py, auto_i = H.G, H.FIELD, H.FORAGE, H.ANIM, H.px, H.py, H.auto_i
+  HOME, visiting, VG, VF, GUESTS = nil, nil, nil, nil, {}
+  dx, dy, fade, ui = 0, 1, 31, nil
+  say(msg or "Home again.")
+  persist()
+end
+function visit_hands()
+  local x, y = facing()
+  local ch = tile(1, x, y)
+  if ch == "X" then leave_visit()
+  elseif ch == "c" then ui, ui_sel = "gift", 1
+  else say(who(visiting) .. "'s farm. B waters their crops, the crate takes gifts, the north road leads home.") end
+end
+function visit_water()
+  local x, y = facing()
+  local f = cell(x, y)
+  local was = f and f.wet
+  use_water()
+  if f and f.wet and not was then net_send(EV_WATER, visiting, x, y) net_send(EV_WATER, visiting, x, y) end
+end
+function gift_items()
+  local L = {}
+  for i, k in ipairs(WIRE) do if have(k) > 0 then L[#L + 1] = k end end
+  return L
+end
+function update_gift()
+  local L = gift_items()
+  if btnp("b") or #L == 0 and btnp("a") then ui = nil return end
+  if #L == 0 then return end
+  if btnp("up") then ui_sel = (ui_sel - 2) % #L + 1 end
+  if btnp("down") then ui_sel = ui_sel % #L + 1 end
+  ui_sel = clamp(ui_sel, 1, #L)
+  if btnp("a") and #outbox < 8 then
+    local k = L[ui_sel]
+    G.inv[k] = have(k) > 1 and have(k) - 1 or nil
+    nonce = nonce + 1
+    outbox[#outbox + 1] = { to = visiting, nonce = nonce, k = k, t = 0, tries = 0 }
+    sfx("E5", 1, 0.2, 4)
+  end
+end
+-- what the neighbours left for me goes in the bag when there is room
+function deliver_post()
+  local me, got = mine(), 0
+  for k, n in pairs(me.post) do
+    local mat = FOUND_BY[k] and FOUND_BY[k].mat
+    local room = mat and n or math.min(n, BAG[me.bag] - count_bag())
+    if room > 0 then
+      me.inv[k] = (me.inv[k] or 0) + room
+      me.post[k] = n > room and n - room or nil
+      got = got + room
+    end
+  end
+  return got
+end
+function fair_prize()
+  local me = mine()
+  me.fair0 = me.grown
+  G.coins = G.coins + 150
+  for p, F in ipairs(my_field()) do for i, f in ipairs(F) do if f.k == 4 then f.wet = true end end end
+  for id, o in pairs(NEAR) do o.fair = 0 end
+  fair_cool = 900
+  say("The valley fair! The farms filled the basket together: 150 coins each, and every field is watered.")
+  float("+150", 27)
+  sfx("C5", 1, 0.3, 8) sfx("E5", 1, 0.3, 14) sfx("G5", 1, 0.3, 20) sfx("C6", 1, 0.3, 30)
+end
+
+function net_event(from, ev, a, b, c, d, e, f)
+  if ev == EV_HI then
+    local o = NEAR[from] or { fair = 0 }
+    if e == NET_ID and o.at ~= NET_ID and not visiting then say(who(from) .. " has come to visit your farm.") sfx("G5", 1, 0.2, 6) end
+    o.t, o.day, o.mill, o.wish, o.at = 0, a or 1, b or 0, c or 0, e or 0
+    if fair_cool == 0 then o.fair = d or 0 end
+    NEAR[from] = o
+  elseif ev == EV_POS then
+    if a == (visiting or NET_ID) and (visiting or G.area == 1) then
+      local g = GUESTS[from] or { x = b, y = c }
+      g.tx, g.ty, g.d, g.t = b, c, d, 0
+      GUESTS[from] = g
+    end
+  elseif ev == EV_FAIR then
+    if fair_cool == 0 then fair_prize() end
+  elseif a ~= NET_ID then
+    return                                -- the rest is addressed to one Bit
+  elseif ev == EV_GET then
+    send_chunk(from, b)
+  elseif ev == EV_INFO then
+    if VG and from == (fetch and fetch.id or visiting) then
+      apply_info(b, c, d, e, f, net_row5 or 0)
+      if fetch then fetch.got[0] = true end
+    end
+  elseif ev == EV_ROW then
+    if VF and from == (fetch and fetch.id or visiting) and b >= 1 and b <= NCH then
+      apply_row(b, c, d, e, f, net_row5)
+      if fetch then fetch.got[b] = true end
+    end
+  elseif ev == EV_WATER then
+    local F = my_field()
+    for p, P in ipairs(PLOTS) do
+      if b >= P.x and c >= P.y and b < P.x + P.w and c < P.y + P.h then
+        local fc = F[p][(c - P.y) * P.w + (b - P.x) + 1]
+        if fc.k == 4 then fc.wet = true end
+      end
+    end
+    if water_note == 0 then water_note = 900 say(who(from) .. " is watering your crops.") end
+  elseif ev == EV_GIFT then
+    local key, k = from .. ":" .. b, WIRE[c]
+    if k and seen_gift[key] == nil then
+      local me, coins = mine(), 0
+      if c == my_wish() then coins, me.wishday = 40 + price(k) * 4, me.day end
+      me.post[k] = (me.post[k] or 0) + 1
+      deliver_post()
+      seen_gift[key] = coins
+      say(who(from) .. " left you a gift: " .. item_name(k) .. "." .. (coins > 0 and " Just what you wished for!" or ""))
+      sfx("E5", 1, 0.25, 6) sfx("A5", 1, 0.25, 10)
+    end
+    if seen_gift[key] then net_send(EV_THANK, from, b, seen_gift[key]) end
+  elseif ev == EV_THANK then
+    for i, o in ipairs(outbox) do
+      if o.nonce == b and o.to == from then
+        table.remove(outbox, i)
+        if c > 0 then
+          G.coins = G.coins + c
+          float("+" .. c, 27)
+          say("It was " .. who(from) .. "'s wish for today! The valley pays you " .. c .. " coins.")
+          sfx("E5", 1, 0.3, 6) sfx("A5", 1, 0.3, 10)
+        end
+        break
+      end
+    end
+  end
+end
+
+function update_net()
+  if not NET_ID or NET_ID == 0 then return end
+  net_t = net_t + 1
+  if fair_cool > 0 then fair_cool = fair_cool - 1 end
+  if water_note > 0 then water_note = water_note - 1 end
+  local me = mine()
+  if net_t % 60 == 1 then net_send(EV_HI, me.day, me.mill, my_wish(), fair_count(), visiting or 0) end
+  for id, o in pairs(NEAR) do o.t = o.t + 1 if o.t > 400 then NEAR[id] = nil end end
+  for id, g in pairs(GUESTS) do
+    g.t, g.x, g.y = g.t + 1, g.x + (g.tx - g.x) * 0.3, g.y + (g.ty - g.y) * 0.3
+    if g.t > 90 then GUESTS[id] = nil end
+  end
+  while true do
+    local from, ev, a, b, c, d, e, f, g = net_recv()
+    if not from then break end
+    net_row5 = g
+    net_event(from, ev, a, b, c, d, e, f)
+  end
+  -- where I stand, for those on the same farm
+  local farm = visiting or (G.area == 1 and has_guest() and NET_ID) or nil
+  if farm and net_t % 8 == 0 then
+    net_send(EV_POS, farm, fl(px), fl(py), (dx < 0 and 1 or dx > 0 and 2 or dy < 0 and 3 or 0) + (walk > 0 and 4 or 0) + (riding and 8 or 0))
+  end
+  -- on the way over: ask for the pieces of the farm until all have arrived
+  if fetch then
+    fetch.t = fetch.t + 1
+    local left = 0
+    for ch = 0, NCH do if not fetch.got[ch] then left = left + 1 end end
+    if left == 0 then enter_visit()
+    elseif fetch.t > 600 or not NEAR[fetch.id] then
+      fetch, ui, VG, VF = nil, nil, nil, nil
+      say("You lost the way. The neighbour's farm is out of reach.")
+    elseif fetch.t % 3 == 0 then
+      for i = 1, NCH + 1 do
+        fetch.at = (fetch.at + 1) % (NCH + 1)
+        if not fetch.got[fetch.at] then net_send(EV_GET, fetch.id, fetch.at) break end
+      end
+    end
+  elseif visiting then
+    G.clk = math.min(G.clk + 1, DAY_FRAMES - 1)
+    if not NEAR[visiting] then leave_visit("You lost sight of the neighbour's farm and walked home.")
+    elseif net_t % 12 == 0 then
+      refresh_i = (refresh_i + 1) % (NCH + 1)
+      net_send(EV_GET, visiting, refresh_i)       -- the farm you stand on keeps changing
+    end
+  end
+  -- gifts on their way are sent again until the neighbour thanks you
+  for i = #outbox, 1, -1 do
+    local o = outbox[i]
+    if o.t % 20 == 0 then
+      o.tries = o.tries + 1
+      if o.tries > 15 then
+        table.remove(outbox, i)
+        me.inv[o.k] = (me.inv[o.k] or 0) + 1
+        say("Your gift did not arrive. It is back in your bag.")
+      else net_send(EV_GIFT, o.to, o.nonce, WIRE_BY[o.k], 1) end
+    end
+    o.t = o.t + 1
+  end
+  -- the fair: when the valley's basket is full, everyone in reach wins
+  if fair_echo > 0 then
+    fair_echo = fair_echo - 1
+    if fair_echo % 10 == 0 then net_send(EV_FAIR) end
+  elseif fair_cool == 0 and net_t % 30 == 0 and fair_count() > 0 then
+    local sum, want, n = fair_total()
+    if n > 1 and sum >= want then fair_echo = 30 net_send(EV_FAIR) fair_prize() end
+  end
+end
+function update_near()
+  local L = near_ids()
+  if btnp("b") or #L == 0 then ui = nil return end
+  if btnp("up") then ui_sel = (ui_sel - 2) % #L + 1 end
+  if btnp("down") then ui_sel = ui_sel % #L + 1 end
+  ui_sel = clamp(ui_sel, 1, #L)
+  if btnp("a") then start_visit(L[ui_sel]) sfx("E5", 1, 0.2, 4) end
+end
+function draw_guest(g, id)
+  local x, y, d = fl(g.x), fl(g.y), g.d
+  local dir = d & 3
+  if d & 8 ~= 0 then
+    draw_tractor(x, y, dir == 1 and -1 or dir == 2 and 1 or 0, dir == 3 and -1 or dir == 0 and 1 or 0, false, false)
+  else
+    circfill(x, y, 4, 15)
+  end
+  local n = dir == 3 and 132 or (dir == 1 or dir == 2) and 136 or 128
+  if d & 4 ~= 0 and t() % 20 >= 10 then n = n + 2 end
+  local lift = d & 8 ~= 0 and 9 or 0
+  pal(26, 21) pal(24, 20)
+  spr(n, x - 8, y - 15 - lift, 2, 2, dir == 1)
+  pal()
+  local nm = who(id)
+  text(nm, x - #nm * 4 + 1, y - 25 - lift, 1) text(nm, x - #nm * 4, y - 26 - lift, 13)
+end
+function draw_near()
+  local L = near_ids()
+  panel(20, 30, 280, 180, "The north road")
+  local sum, want = fair_total()
+  text("Fair basket: " .. math.min(sum, want) .. " of " .. want .. " crops reaped", 28, 48, 12)
+  for i, id in ipairs(L) do
+    local o, y = NEAR[id], 46 + i * 22
+    if i <= 5 then
+      if i == ui_sel then rectfill(24, y - 2, 272, 21, 8) end
+      text(who(id) .. "'s farm", 30, y, i == ui_sel and 27 or 13)
+      text(SEASON[season(o.day)] .. " " .. day_of(o.day), 220, y, 12)
+      text(o.wish > 0 and CROPS[o.wish] and ("Wishes for: " .. CROPS[o.wish].name) or "Wish granted today", 30, y + 10, 17)
+      text("mill " .. o.mill .. "/" .. #MILL, 220, y + 10, 11)
+    end
+  end
+  text("A: walk over   B: back", 28, 196, 11)
+end
+function draw_gift()
+  local L = gift_items()
+  local o = NEAR[visiting]
+  panel(40, 30, 240, 180, "A gift for " .. who(visiting))
+  text(o and o.wish > 0 and CROPS[o.wish] and ("Their wish today: " .. CROPS[o.wish].name) or "No wish left today.", 48, 48, 17)
+  if #L == 0 then text("Your bag is empty.", 48, 70, 28) end
+  local first = math.max(1, clamp(ui_sel, 1, math.max(#L, 1)) - 7)
+  for i = first, math.min(#L, first + 7) do
+    local y = 50 + (i - first + 1) * 15
+    if i == ui_sel then rectfill(44, y - 3, 232, 14, 8) end
+    draw_icon(L[i], 48, y - 5)
+    text(item_name(L[i]), 68, y, i == ui_sel and 27 or 13) text("x" .. have(L[i]), 236, y, 27)
+  end
+  text(#outbox > 0 and "On its way..." or "A: give one   B: back", 48, 196, 11)
+end
+
 -- hold A while driving: the implement works the cell under the tractor and the one on either side
 function tractor_work()
   local imp = IMPL[G.impsel]
@@ -14863,12 +15247,12 @@ function fresh()
     seeds = { 4, 0, 0, 0, 0, 0, 0, 0, 0 }, inv = {}, bag = 1, hoe = 1, can = 1, water = 5, pick = 0, axe = 0,
     plots = { true, false, false }, mill = 0, millc = 0, rain = false, demand = 1, tins = "00",
     sold = 0, picked = 0, grown = 0, mine = 0, deep = 0, lamp = 0, gotms = 0,
-    silo_b = 0, silo = {}, hop = {}, auto = 0, route = "", daily = 0,
+    silo_b = 0, silo = {}, hop = {}, auto = 0, route = "", daily = 0, post = {}, wishday = 0, fair0 = 0,
     trac = 0, tx = 27 * C + 8, ty = 14 * C + 14, imp = { 0, 0, 0, 0 }, impsel = 0, tank = 0, coop = 0, shed = 0, pail = 0, feed = 0, an = {} }
 end
 
 function persist()
-  if PLAYERS > 1 then return end
+  if PLAYERS > 1 or visiting then return end
   G.px, G.py = fl(px), fl(py)
   if riding then G.tx, G.ty = G.px, G.py end
   local in_mine = G.area == 3
@@ -14884,6 +15268,7 @@ function persist()
 end
 
 function load_farm()
+  net_reset()
   G = fresh()
   local d = PLAYERS == 1 and saved() or nil
   if type(d) == "table" and d.v == 1 then
@@ -14933,7 +15318,7 @@ function _init()
   build_world()
   game{
     title = "Windrow",
-    players = 1,                      -- your own farm (visits between farms come later)
+    players = {1, 8},                 -- your own farm on every Bit; linked Bits visit each other (net_send)
     goal = "Rebuild the old windmill of Windrow.",
     title_draw = draw_title,
     look = { title = 27, shadow = 7, panel = 6, edge = 10, hi = 8, text = 12, pick = 27, goal = 12, footer = 11, menu = "left" },
@@ -14943,6 +15328,7 @@ function _init()
       "Watered crops grow overnight. Sleep in the hut, sell at the crate, shop at the wagon.",
       "Bramble Woods lies west along the road. Bring what the mill needs to the ruin.",
       "The mine in the woods opens with a pickaxe. Break rocks for ore, find the ladder down. A also hits.",
+      "Other Bits in reach are neighbours: the north road leads to their farms. Water for them, leave gifts.",
       "After the mill: build the silo, buy the clockwork driver, press Y by the tractor and teach it a route.",
       "The rusted tractor by the Long acre can be mended. On it: hold A to work, L changes implement, Y hops off.",
       "The pasture is south of the fields. Fill the trough from your bag, pet your animals every day.",
@@ -15038,6 +15424,7 @@ end
 function swing(kind) act, act_kind = 14, kind end
 
 function use_hands()
+  if visiting then visit_hands() return end
   local x, y = facing()
   local a = G.area
   if a == 3 then mine_hands(x, y) return end
@@ -15076,10 +15463,20 @@ function use_hands()
   end
   if ch == "r" then fill_trough() return end
   if ch == "h" then ui, ui_sel = "sleep", 1 return end
-  if ch == "c" then sell_all() return end
+  if ch == "c" then
+    if next(G.post) then
+      local got = deliver_post()
+      say(got > 0 and "You take the neighbours' gifts out of the crate." or "Gifts from the neighbours wait here. Your bag is full.")
+    else sell_all() end
+    return
+  end
   if ch == "W" or ch == "N" then ui, ui_sel, ui_scroll = "shop", 1, 0 return end
   if ch == "m" then ui, ui_sel = "mill", 1 return end
-  if ch == "X" then say("The road to Tallow Bridge is washed out. Maybe one day.") return end
+  if ch == "X" then
+    if next(NEAR) then ui, ui_sel = "near", 1
+    else say("The north road leads to the neighbours' farms. No other farm is in reach just now.") end
+    return
+  end
   if ch == "M" then mine_door() return end
   if ch == "S" then say("A fallen pine blocks the path down to the shore.") return end
   if ch == "o" then say("A standing stone, older than the valley. It hums a little.") return end
@@ -15315,6 +15712,7 @@ end
 
 function _update()
   play_tune()
+  update_net()
   if toast_t > 0 then toast_t = toast_t - 1 end
   for i = #floats, 1, -1 do
     local f = floats[i]
@@ -15331,6 +15729,9 @@ function _update()
   if ui == "mill" then update_mill() return end
   if ui == "build" then update_build() return end
   if ui == "auto" then update_auto() return end
+  if ui == "near" then update_near() return end
+  if ui == "gift" then update_gift() return end
+  if ui == "fetch" then if btnp("b") then fetch, ui, VG, VF = nil, nil, nil, nil end return end
   if ui == "silo" then
     if btnp("a") then silo_sell() elseif btnp("b") then ui = nil end
     return
@@ -15350,14 +15751,16 @@ function _update()
   end
 
   -- the day goes by; at ten at night you nod off
-  G.clk = G.clk + 1
-  if G.clk >= DAY_FRAMES then
-    sleep()
-    say("You fell asleep on your feet.")
-    return
+  if not visiting then
+    G.clk = G.clk + 1
+    if G.clk >= DAY_FRAMES then
+      sleep()
+      say("You fell asleep on your feet.")
+      return
+    end
+    update_route()
   end
   if G.area == 1 then update_animals() end
-  update_route()
   if G.area == 3 then
     update_mobs()
     if fade > 0 then return end
@@ -15389,7 +15792,8 @@ function _update()
   -- the road west leads to the woods, and back
   local A = AREAS[G.area]
   if riding and px < 12 then px = 12; if toast_t == 0 then say("The tractor stays on the farm. Hop off with Y.") end end
-  if G.area == 1 and px < 3 then G.area, px, py = 2, AREAS[2].w * C - 8, 10 * C + 12; fade = 31; persist()
+  if visiting and px < 3 then px = 3; if toast_t == 0 then say("The north road leads home.") end
+  elseif G.area == 1 and px < 3 then G.area, px, py = 2, AREAS[2].w * C - 8, 10 * C + 12; fade = 31; persist()
   elseif G.area == 2 and px > A.w * C - 3 then G.area, px, py = 1, 8, 5 * C + 12; fade = 31; persist() end
   px, py = clamp(px, 2, AREAS[G.area].w * C - 2), clamp(py, 8, AREAS[G.area].h * C - 1)
 
@@ -15397,7 +15801,7 @@ function _update()
   if btn("a") or btn("b") then hold = hold + 1 else hold = 0 end
   local again = hold > 0 and hold % 16 == 0
   if btnp("a") or (btn("a") and again) then use_hands()
-  elseif btnp("b") or (btn("b") and again) then use_water()
+  elseif btnp("b") or (btn("b") and again) then if visiting then visit_water() else use_water() end
   elseif btnp("y") then
     if G.auto == 1 and near_tractor() then ui, ui_sel = "auto", 1 else look() end
   elseif btnp("x") then ui = "bag"
@@ -15762,6 +16166,9 @@ function draw_world()
       if auto_i then draw_tractor(fl(G.tx), fl(G.ty), auto_hx, auto_hy, true, false, true, auto_imp)
       else draw_tractor(fl(G.tx), fl(G.ty), 1, 0, false, false) end
     end
+    if a == 1 and next(GUESTS) then
+      for id, g in pairs(GUESTS) do if fl((g.y - 1) / C) == y then draw_guest(g, id) end end
+    end
     if y == prow then
       if riding then draw_tractor(fl(px), fl(py), dx, dy, true, false) else draw_farmer(fl(px), fl(py)) end
     end
@@ -15848,6 +16255,11 @@ function draw_hud()
   text(string.format("%02d:%02d", fl(h), fl(h % 1 * 6) * 10), 92, 2, h > 20 and 26 or 13)
   if G.rain then text(season() == 4 and "snow" or "rain", 144, 2, 22) end
   if G.area == 2 then text("Woods", 190, 2, 17) end
+  if visiting then text("at " .. who(visiting), 152, 2, 21)
+  elseif G.area == 1 and next(NEAR) and G.coins < 100000 and not G.rain then
+    local sum, want = fair_total()
+    text("Fair " .. math.min(sum, want) .. "/" .. want, 152, 2, 17)
+  end
   if G.area == 3 then
     text("Mine " .. mine_n, 152, 2, 29)
     for i = 1, 3 do spr(292, 204 + i * 12, -2, 2, 2) if i > mine_hp then rectfill(208 + i * 12, 2, 8, 8, 6) rect(209 + i * 12, 3, 6, 6, 30) end end
@@ -15980,6 +16392,14 @@ function _draw()
   elseif ui == "bag" then draw_bag()
   elseif ui == "mill" then draw_mill_ui()
   elseif ui == "build" then draw_build()
+  elseif ui == "near" then draw_near()
+  elseif ui == "gift" then draw_gift()
+  elseif ui == "fetch" then
+    panel(60, 96, 200, 48, "The north road")
+    local got = 0
+    for ch = 0, NCH do if fetch and fetch.got[ch] then got = got + 1 end end
+    text("Walking over to " .. who(fetch and fetch.id or 0), 68, 114, 13)
+    rectfill(68, 128, 184, 6, 7) rectfill(68, 128, 184 * got // (NCH + 1), 6, 27)
   elseif ui == "auto" then
     local L = auto_items()
     panel(50, 60, 220, 120, "The clockwork driver")

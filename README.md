@@ -135,7 +135,15 @@ BitKit's flagship game, and it is growing. You arrive in the valley of Windrow w
   the day's prices and tops up an empty trough.
 
   ![The tractor on its route beside the silo](docs/media/windrow-route.png)
-- Coming next: visits and trades between linked Bits.
+- **Neighbours.** Every Bit keeps its own farm, and Bits in reach are neighbours (in the studio: open
+  Windrow in two windows). The north road lists them; pick one and you walk over to their farm as it
+  really is, in their season and weather. There you can water their crops, see each other walk about,
+  and leave gifts at their crate. Every farm has a wish a day: bring that crop and the valley pays you
+  well. Everything the farms in reach reap fills one fair basket, and when it is full every farm gets
+  150 coins and watered fields. It all runs on network events, so it works between PocketBits over
+  ESP-NOW and survives lost packets.
+
+  ![Visiting a neighbour's farm](docs/media/windrow-visit.png)
 
 ### Beacon Keeper
 
