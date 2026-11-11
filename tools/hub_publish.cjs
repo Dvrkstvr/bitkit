@@ -56,7 +56,7 @@ const clean = (s, n) => String(s || '').replace(/[\u0000-\u001f]+/g, ' ').replac
 async function readIssue(issue, download, log) {
   const f = formFields(issue.body);
   const kindRaw = field(f, 'what is it?').toLowerCase();
-  const kind = /photo/.test(kindRaw) ? 'photo' : /clip/.test(kindRaw) ? 'clip' : 'game';
+  let kind = /photo/.test(kindRaw) ? 'photo' : /clip/.test(kindRaw) ? 'clip' : /app|utilit|tool/.test(kindRaw) ? 'app' : 'game';
   const title = clean(field(f, 'name') || issue.title.replace(/^\[share\]\s*/i, ''), 60) || 'Untitled';
   const item = { id: issue.number, kind, title, author: clean(field(f, 'show me as'), 40) || issue.user.login,
     github: issue.user.login, text: clean(field(f, 'about it'), 280), url: issue.html_url, date: issue.created_at, media: [], files: {} };
@@ -72,8 +72,8 @@ async function readIssue(issue, download, log) {
       cart = checkCart(await cartFromText(buf.toString('utf8'))); break;
     }
   } catch (e) { problems.push('The game could not be read: ' + e.message + '.'); }
-  if (cart) { item.files['game.bitkit'] = Buffer.from(JSON.stringify(cart)); item.cart = 'game.bitkit'; if (!field(f, 'name')) item.title = clean(cart.name, 60) || item.title; }
-  else if (kind === 'game' && !problems.length) problems.push('No game found: paste the play link from the studio into the Game box.');
+  if (cart) { item.files['game.bitkit'] = Buffer.from(JSON.stringify(cart)); item.cart = 'game.bitkit'; if (!field(f, 'name')) item.title = clean(cart.name, 60) || item.title; if (cart.app && kind === 'game') item.kind = kind = 'app'; }
+  else if ((kind === 'game' || kind === 'app') && !problems.length) problems.push(`No ${kind} found: paste the play link from the studio into the Game box.`);
   // pictures and clips
   const mediaUrls = [...new Set((field(f, 'photos and clips') + '\n' + (cart ? '' : gameBox)).match(ATTACH) || [])];
   for (const u of mediaUrls) {
@@ -87,7 +87,7 @@ async function readIssue(issue, download, log) {
       item.files[name] = buf; item.media.push(name);
     } catch (e) { problems.push(`A file could not be downloaded (${e.message}).`); }
   }
-  if (kind !== 'game' && !item.media.length) problems.push('No photo or clip found: drag the .png or .gif into the Photos and clips box.');
+  if ((kind === 'photo' || kind === 'clip') && !item.media.length) problems.push('No photo or clip found: drag the .png or .gif into the Photos and clips box.');
   if (!item.cart && !item.media.length) return { error: problems.join(' ') || 'Nothing to show.' };
   return { item, problems };
 }

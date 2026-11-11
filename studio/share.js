@@ -217,7 +217,8 @@ window.BKShare = (() => {
       await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]); api.toast('Photo copied: paste it anywhere');
     } catch (e) { download(blob, 'bitkit.png'); api.toast('Downloaded it instead'); }
   }
-  const KIND = { game: '🎮 Game', photo: '📷 Photo', clip: '🎞 Clip' };
+  const KIND = { game: '🎮 Game', app: '🧰 Utility app', photo: '📷 Photo', clip: '🎞 Clip' };
+  const KINDS = { game: '🎮 Games', app: '🧰 Utility apps', photo: '📷 Photos', clip: '🎞 Clips' };
 
   let tab = 'hub', hubCache = null, hubFilter = 'all';
   async function open(which) {
@@ -254,15 +255,15 @@ window.BKShare = (() => {
     return it;
   }
   async function showHub(body, fresh) {
-    body.innerHTML = `<div class="hub-bar"><div class="seg">${['all', 'game', 'photo', 'clip'].map(k => `<button data-hf="${k}" class="${hubFilter === k ? 'active' : ''}">${k === 'all' ? 'Everything' : KIND[k] + 's'}</button>`).join('')}</div>
-      <span class="grow"></span><button id="hubRefresh" class="tiny" title="Load the hub again">⟳</button></div><div id="hubGrid" class="hub-grid"><p class="dim">Loading the hub…</p></div>`;
+    body.innerHTML = `<div class="hub-bar"><div class="seg">${['all', 'game', 'app', 'photo', 'clip'].map(k => `<button data-hf="${k}" class="${hubFilter === k ? 'active' : ''}">${k === 'all' ? 'Everything' : KINDS[k]}</button>`).join('')}</div>
+      <span class="grow"></span><a class="small" href="${SITE}hub.html" target="_blank" rel="noopener" title="The Share hub as a website, to browse and pass around">website ↗</a><button id="hubRefresh" class="tiny" title="Load the hub again">⟳</button></div><div id="hubGrid" class="hub-grid"><p class="dim">Loading the hub…</p></div>`;
     body.querySelectorAll('[data-hf]').forEach(b => { b.onclick = () => { hubFilter = b.dataset.hf; showHub(body); }; });
     document.getElementById('hubRefresh').onclick = () => showHub(body, true);
     const grid = document.getElementById('hubGrid');
     let idx;
     try { idx = await fetchHub(fresh); }
     catch (e) { grid.innerHTML = `<p class="dim">Could not reach the hub (${esc(e.message)}). You can still share games by link on the Share tab.</p>`; return; }
-    const items = (idx.items || []).filter(it => hubFilter === 'all' || it.kind === hubFilter || (hubFilter === 'game' && it.cart));
+    const items = (idx.items || []).filter(it => hubFilter === 'all' || it.kind === hubFilter || (hubFilter === 'game' && it.cart && it.kind !== 'app'));
     if (!items.length) {
       grid.innerHTML = `<p class="dim">Nothing here yet. Be the first: open the <b>Share this game</b> tab and post your game, a photo or a clip.</p>`;
       return;
@@ -307,6 +308,7 @@ window.BKShare = (() => {
         <button id="shareFile">⤓ Download ${esc(api.fileName())}</button>
         <h4>Post it to the hub</h4>
         <p class="dim small">Posting opens a short form on GitHub (a free account is needed). Your game goes in with the link. Add photos or a clip by dragging them into the form: they are in <b>My photos and clips</b>. After a quick look it shows up in the hub for everyone.</p>
+        <label class="small"><input type="checkbox" id="shareApp"> It is a utility app (a tool, not a game)</label>
         <label class="small"><input type="checkbox" id="shareMine" checked> I made this and it may be shown in the BitKit hub</label>
         <button id="sharePost">Post to the hub…</button>
       </div></div>`;
@@ -323,14 +325,14 @@ window.BKShare = (() => {
     else { q.innerHTML = `<div class="share-noqr dim small">This game is too big for a QR code (a code holds about 2.9 KB, the link is ${kb} KB). Share the link, or post it to the hub: every post gets a short link with a QR code.</div>`; document.getElementById('shareSize').textContent = `The link is ${kb} KB.`; }
     document.getElementById('sharePost').onclick = () => {
       if (!document.getElementById('shareMine').checked) { api.toast('Only post games you made'); return; }
-      postToHub({ kind: 'game', title: name, link });
+      postToHub({ kind: document.getElementById('shareApp').checked ? 'app' : 'game', title: name, link });
     };
   }
 
   // GitHub's new-issue page takes the form's fields in the address (up to about 8 KB). A longer link goes into a
   // small text file to drag into the form; the publisher finds a play link in either.
   function postToHub(p) {
-    const q = new URLSearchParams({ template: 'share.yml', title: `[Share] ${p.title}`, labels: 'share', kind: { game: 'Game', photo: 'Photo', clip: 'Clip' }[p.kind] || 'Game', name: p.title });
+    const q = new URLSearchParams({ template: 'share.yml', title: `[Share] ${p.title}`, labels: 'share', kind: { game: 'Game', app: 'Utility app', photo: 'Photo', clip: 'Clip' }[p.kind] || 'Game', name: p.title });
     let note = '';
     if (p.link) {
       if (p.link.length < 6000) q.set('link', p.link);
@@ -364,5 +366,5 @@ window.BKShare = (() => {
 
   // studio: { modal, closeModal, ask, toast, serialize, fileName, openCart(cartObj, play), storeLabel }
   function init(studio) { api = studio; }
-  return { init, open, hubItem, getCart, linkFor, cartFromLink, findPlay, packCart, unpackCart, qrEncode, qrCanvas, SITE, REPO, HUB_RAW };
+  return { init, open, hubItem, getCart, linkFor, cartFromLink, findPlay, packCart, unpackCart, qrEncode, qrCanvas, SITE, REPO, HUB_RAW, ISSUE_URL, KIND };
 })();

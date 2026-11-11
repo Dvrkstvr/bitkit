@@ -131,3 +131,5 @@ jobs:
         run: node tools/sharetest.cjs
       - name: Share app, Bit to Bit (browser)
         run: node tools/shareapptest.cjs
+      - name: Share website (browser)
+        run: node tools/hubsitetest.cjs
