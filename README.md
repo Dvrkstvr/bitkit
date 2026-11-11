@@ -102,13 +102,14 @@ A small platformer that shows off most of the engine:
 
 <img src="docs/media/beacon-keeper.png" width="480" alt="Beacon Keeper: a lighthouse beam guiding ships past rocks">
 
-An idle game where you are the lighthouse. Everything is drawn from code, without a map or entities.
+An idle game for 1 to 4 players. Player 1 is the lighthouse in the middle of a sea bigger than the screen. Everything is drawn from code, without a map or entities.
 
 - Ships can't see the rocks. Aim your beam at them and they steer around the rocks into the harbour.
 - Squeeze **R** for a brighter beam that burns lamp oil. Squeeze **L** for a narrow, long spotlight. **B** sounds the foghorn.
 - Each day brings a sea haze that hides the rocks and shortens the beam. At night, pirates hunt the merchant ships, so keep your light on them until they flee.
 - Docked ships pay tolls. Spend them in the harbour shop (**X**) on oil, a better lens, ship lanterns, coast cannons, a bigger harbour, and a clockwork lens that aims the beam for you.
-- It uses `save()`, `saved()` and `clock()`, so the harbour keeps earning while the Bit is off.
+- Players 2 to 4 row little boats (player 1 can hop into one with **Y**). They pick up the crates floating in the water, including the ones wrecks and sunk pirates drop, and bring them to the island. If a boat hits a rock, it spills its cargo.
+- With one player it uses `save()`, `saved()` and `clock()`, so the harbour keeps earning while the Bit is off.
 
 ## 🏎️ The demo: Kart Lab (2.5D)
 

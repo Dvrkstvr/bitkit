@@ -6,7 +6,8 @@ eval(fs.readFileSync(__dirname + '/../studio/entities.js', 'utf8'));
 let errors = [], logs = [];
 const fail = m => { console.error('FAIL', m); process.exitCode = 1; };
 const B = { left: 0, right: 1, up: 2, down: 3, a: 4, b: 5, x: 6, y: 7, l: 8, r: 9, start: 10, select: 11 };
-require('../studio/runtime.js')({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then(M => {
+const runtime = require('../studio/runtime.js');
+runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then(async M => {
   const s = x => M.stringToNewUTF8(x);
   M._bkw_init();
   const D = (window.BK_DEMOS || []).find(d => d.name === 'Beacon Keeper');
@@ -68,6 +69,61 @@ require('../studio/runtime.js')({ onLog: (m, e) => { if (e) errors.push(m); else
   v = last();
   if (!v || !(v[8] > 0) || v[0] <= 100) fail('offline earnings: ' + v);
   frame(1 << B.a); frame(0);
+  if (errors.length) { errors.forEach(e => fail('offline: ' + e)); errors = []; }
+
+  // 5. three players: rowboats pick up crates, unload them at the island, spill them on rocks;
+  //    wrecks drop crates; player 1 hops into a boat with Y
+  M._bkw_players(3, 0);
+  const mp = '\nlocal _u = _update\nfunction _update()\n' +
+    ' if t() == 5 then local b = boats[2] loot = {} drop_loot(b.x + 14, b.y, 1, 7) loot[1].x, loot[1].y = b.x + 14, b.y end\n' +
+    ' if t() == 40 then print("pick", boats[2].cargo, boats[2].val, #loot) end\n' +
+    ' if t() == 41 then c0 = G.coins boats[2].x, boats[2].y, boats[2].vx, boats[2].vy = ISLE.x, ISLE.y + ISLE.r + 8, 0, 0 end\n' +
+    ' if t() == 43 then print("unload", G.coins - c0, boats[2].cargo) end\n' +
+    ' if t() == 50 then local r = rocks[1] local b = boats[3] b.cargo, b.val = 3, 9 b.x, b.y, b.vx, b.vy = r.x + r.r + 7, r.y, -1.5, 0 n0 = #loot end\n' +
+    ' if t() == 53 then print("spill", boats[3].cargo, #loot - n0) end\n' +
+    ' if t() == 60 then local r = rocks[2] n1 = #loot ships[#ships + 1] = { k = KINDS[1], x = r.x, y = r.y, dock = DOCKS[1], a = 0, seen = 0, bob = 0 } end\n' +
+    ' if t() == 62 then print("wreck", #loot - n1) end\n' +
+    ' if t() == 90 then bx = boats[1].x end\n' +
+    ' _u()\n' +
+    ' if t() == 130 then print("p1", p1_boat and 1 or 0, math.floor(boats[1].x - bx)) end\n' +
+    'end\n';
+  logs = []; setSave(null);
+  if (M._bkw_load_ex(ents, s(D.code + mp)) !== 0) fail('3-player game did not load');
+  for (let f = 1; f <= 140; f++) {
+    M._bkw_input(2, f >= 5 && f < 40 ? 1 << B.right : 0, 0);
+    M._bkw_input(3, 0, 0);
+    frame(f === 92 ? 1 << B.y : f > 95 ? 1 << B.right : 0);
+  }
+  const L = k => (logs.find(l => l.startsWith(k + '\t') || l.startsWith(k + ' ')) || '').split(/\s+/).slice(1).map(Number);
+  let q = L('pick'); if (q[0] !== 1 || q[1] !== 7 || q[2] !== 0) fail('rowboat picking up a crate: ' + q);
+  q = L('unload'); if (q[0] !== 7 || q[1] !== 0) fail('unloading at the island: ' + q);
+  q = L('spill'); if (q[0] !== 0 || q[1] !== 3) fail('spilling cargo on a rock: ' + q);
+  q = L('wreck'); if (!(q[0] >= 2)) fail('a wreck should drop crates: ' + q);
+  q = L('p1'); if (q[0] !== 1 || !(q[1] > 10)) fail('player 1 hopping into a rowboat with Y: ' + q);
+  if (errors.length) { errors.forEach(e => fail('3 players: ' + e)); errors = []; }
+
+  // 6. two linked Bits fed the same buttons stay identical
+  {
+    const M2 = await runtime({ onLog: (m, e) => { if (e) errors.push('bit 2: ' + m); else logs.push('B2 ' + m); } });
+    M2._bkw_init();
+    const sync = '\nlocal _u = _update\nfunction _update() _u() if t() % 500 == 0 then local h = G.coins * 7 + #ships * 3 + #loot + #pirates for _, b in ipairs(boats) do h = h + math.floor(b.x) * 3 + math.floor(b.y) * 5 + b.cargo end for _, s in ipairs(ships) do h = h + math.floor(s.x) end print("sync", t(), h, rnd(1000)) end end';
+    const boot = (R, me) => {
+      R._bkw_players(2, me);
+      R.HEAPU8.set(cart.tiles, R._bkw_tiles());
+      R.HEAP32[R._bkw_save() >> 2] = -1;
+      return R._bkw_load_ex(R.stringToNewUTF8(window.BKEntities.toLua(cart.entities)), R.stringToNewUTF8(D.code + sync));
+    };
+    logs = [];
+    if (boot(M, 1) || boot(M2, 2)) fail('linked Bits did not load');
+    for (let f = 0; f < 7400; f++) {
+      const m1 = (Math.floor(f / 90) % 4 === 0 ? 1 << B.left : 0) | (f % 1500 === 700 ? 1 << B.b : 0) | (f === 3000 || f === 4500 ? 1 << B.y : 0);
+      const m2 = [1 << B.left, 1 << B.up, 1 << B.right, 1 << B.down][Math.floor(f / 70) % 4];
+      for (const R of [M, M2]) { R._bkw_input(2, m2, 0); if (R._bkw_frame(m1, 0)) { fail('linked Bits stopped at frame ' + f); f = 1e9; break; } }
+    }
+    const a = logs.filter(l => l.startsWith('sync')).map(l => l.split(/\s+/).slice(1).join(' '));
+    const b = logs.filter(l => l.startsWith('B2 sync')).map(l => l.split(/\s+/).slice(2).join(' '));
+    if (a.length < 10 || a.join('|') !== b.join('|')) fail('linked Bits drifted apart:\n  ' + a.join(' / ') + '\n  ' + b.join(' / '));
+  }
   errors.forEach(e => fail('Lua error: ' + e));
-  if (!process.exitCode) console.log('ok: Beacon Keeper day and night, clockwork lens, pirates, shop and offline earnings passed');
+  if (!process.exitCode) console.log('ok: Beacon Keeper day and night, clockwork lens, pirates, shop, offline earnings, rowboats, loot and linked Bits passed');
 });

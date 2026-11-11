@@ -1,24 +1,32 @@
 /* Demo cart "Beacon Keeper": original art and code. MIT License. */
 /* Named harbour.js, not beacon.js: ad and tracker blockers block any script called beacon.js. */
 (function () {
-  const code = `-- Beacon Keeper: a tiny BitKit demo (idle + action)
--- You are the lighthouse. The ships can't see the rocks: only your beam shows them the way.
---   Aim the beam: d-pad / stick left and right
---   Squeeze R: a brighter beam that reaches further (burns lamp oil)
---   Squeeze L: a narrow, long spotlight
---   B: foghorn, slows every ship for a moment      X: harbour shop
+  const code = `-- Beacon Keeper: a tiny BitKit demo (idle + action, 1-4 players)
+-- You are the lighthouse in the middle of the sea. The ships can't see the rocks:
+-- only your beam shows them the way to the harbour.
+--   Player 1, at the lamp: left / right turns the beam
+--     Squeeze R: a brighter beam that reaches further (burns lamp oil)
+--     Squeeze L: a narrow, long spotlight
+--     B: foghorn, slows every ship for a moment      X: harbour shop
+--     Y: hop into your rowboat (and Y again to go back to the lamp)
+--   Players 2-4 row the little boats: d-pad to row, squeeze R to row harder.
+--     Pick up the crates floating in the water and bring them to the lighthouse island.
+--     Wrecked ships and sunk pirates drop crates. Hit a rock and you spill your cargo.
 -- Day: a sea haze hides the rocks and the beam doesn't reach as far.
--- Night: pirates hunt the merchant ships. Keep your light on them and they get scared off.
---   Coast cannons (shop) fire at every pirate your beam reveals.
--- Every ship that docks pays a toll; dock ships in a row for a bonus.
--- Ship lanterns (shop) let captains spot nearby rocks by themselves.
--- The clockwork lens (shop) sweeps the light for you. The game uses save(), saved() and
--- clock(), so the harbour keeps earning while the Bit is off.
+-- Night: pirates hunt ships and loaded rowboats. Keep your light on them to scare them off;
+--   coast cannons (shop) fire at every pirate your beam reveals.
+-- The clockwork lens (shop) sweeps the light for you. With one player the game uses
+-- save(), saved() and clock(), so the harbour keeps earning while the Bit is off.
 
-LX, LY = 160, 192                         -- the lamp
+W, H = 480, 360                           -- the sea is bigger than the screen
+LX, LY = 240, 168                         -- the lamp
+ISLE = { x = 240, y = 188, r = 30 }       -- the lighthouse island
 DAYLEN, NIGHTLEN = 3600, 3600             -- one minute of day, one minute of night
-DOCKS = { { x = 22, y = 220 }, { x = 298, y = 220 } }
-CANNONS = { { x = 102, y = 226 }, { x = 218, y = 226 }, { x = 64, y = 229 }, { x = 256, y = 229 } }
+DOCKS = { { x = 40, y = 340 }, { x = 440, y = 340 } }
+CANNONS = { { x = 214, y = 196 }, { x = 266, y = 196 }, { x = 226, y = 212 }, { x = 254, y = 212 } }
+MOOR = { { x = 196, y = 214 }, { x = 284, y = 214 }, { x = 196, y = 160 }, { x = 284, y = 160 } }
+PCOL = { 17, 21, 26, 27 }                 -- boat colours for players 1-4
+CAP = 6                                   -- crates a rowboat can carry
 KINDS = {
   { spr = 1, w = 1, speed = 0.30, toll = 3,  r = 5 },   -- dinghy
   { spr = 2, w = 1, speed = 0.36, toll = 8,  r = 5 },   -- trawler
@@ -42,19 +50,23 @@ function _init()
     for k, v in pairs(d) do if G[k] ~= nil and type(v) == type(G[k]) then G[k] = v end end
     G.ts = d.ts
   end
-  ships, pirates, balls, fx, floats = {}, {}, {}, {}, {}
+  ships, pirates, balls, fx, floats, loot = {}, {}, {}, {}, {}, {}
   angle, oil, streak, idle, horn, horn_cd = -math.pi / 2, max_oil(), 0, 0, 0, 0
-  spawn_t, pirate_t, shop, sel, save_t = 60, 600, false, 1, 0
-  bhalf, brange, beam_r = 0.3, 80, 0
+  spawn_t, pirate_t, loot_t, shop, sel, save_t = 60, 600, 300, false, 1, 0
+  bhalf, brange, beam_r = 0.3, 100, 0
   cannon_cd = { 0, 0, 0, 0 }
   hint_t = G.docked < 10 and 1200 or 0
+  boats = {}
+  for n = 1, 4 do boats[n] = { n = n, x = MOOR[n].x, y = MOOR[n].y, vx = 0, vy = 0, a = 0, cargo = 0, val = 0, stun = 0 } end
+  p1_boat = false
   new_rocks()
-  wisps = {}
-  for i = 1, 70 do wisps[i] = { x = rnd(380) - 40, y = rnd(196) + 14, w = rnd(20, 70), s = rnd(3) * 0.06 } end
-  stars = {}
-  for i = 1, 30 do stars[i] = { rnd(320) - 1, rnd(150) + 14 } end
+  wisps, waves, stars = {}, {}, {}
+  for i = 1, 110 do wisps[i] = { x = rnd(W + 60) - 30, y = rnd(H - 30) + 4, w = rnd(20, 70), s = rnd(3) * 0.06 } end
+  for i = 1, 90 do waves[i] = { rnd(W) - 1, rnd(H - 20) } end
+  for i = 1, 60 do stars[i] = { rnd(W) - 1, rnd(H - 20) } end
+  cam_x, cam_y = LX - 160, LY - 120
   if is_night() then banner("NIGHT " .. G.day, "Pirates! Light them up.") else banner("DAY " .. G.day, "Guide the ships through the haze.") end
-  away_report()
+  if PLAYERS == 1 then away_report() end   -- linked Bits must start the same, so no offline payout with friends
 end
 
 -- ---------------------------------------------------------------- helpers
@@ -64,8 +76,9 @@ function cost(it) return math.floor(it.base * 2.1 ^ G[it.key]) end
 function dist2(ax, ay, bx, by) return (ax - bx) ^ 2 + (ay - by) ^ 2 end
 function wrap(a) return (a + math.pi) % (2 * math.pi) - math.pi end
 function mult() return 1 + math.min(streak // 5, 4) end
-function spawn_every() return math.max(110, 300 - G.harbour * 40 - G.day * 6) end
+function spawn_every() return math.max(100, 280 - G.harbour * 40 - G.day * 6) end
 function auto_on() return G.auto > 0 and idle > 120 end
+function boat_on(b) return (b.n == 1 and p1_boat) or (b.n > 1 and b.n <= PLAYERS) end
 
 function fmt(n)
   n = math.floor(n)
@@ -79,6 +92,11 @@ function float(x, y, s, c) floats[#floats + 1] = { x = x, y = y, s = s, c = c, t
 function burst(x, y, c, n)
   for i = 1, n do fx[#fx + 1] = { x = x, y = y, vx = rnd() * 2 - 1, vy = -rnd() * 1.4, t = 20 + rnd(20), c = c } end
 end
+function drop_loot(x, y, n, v)
+  for i = 1, n do
+    if #loot < 30 then loot[#loot + 1] = { x = x + rnd(-10, 10), y = y + rnd(-10, 10), v = v, life = 5400, bob = rnd(60) } end
+  end
+end
 
 function persist()
   if not save then return end
@@ -90,22 +108,24 @@ end
 function lit(x, y)
   local dx, dy = x - LX, y - LY
   local d2 = dx * dx + dy * dy
-  if d2 < 400 then return true end
+  if d2 < 900 then return true end
   if d2 > brange * brange then return false end
   return math.abs(wrap(math.atan(dy, dx) - angle)) < bhalf
 end
 
--- rocks for the day. The same day always gets the same rocks; new rocks never appear on a ship.
+-- rocks for the day. The same day always gets the same rocks; new rocks never appear on a boat.
 function new_rocks()
   srand(G.day * 7919 + 13)
   rocks = {}
-  local n = math.min(7 + G.day, 15)
-  for tries = 1, 500 do
+  local n = math.min(14 + G.day, 26)
+  for tries = 1, 800 do
     if #rocks >= n then break end
-    local r = { x = rnd(16, 304), y = rnd(46, 176), r = rnd(4, 7 + math.min(G.day, 4)) }
-    local ok = true
-    for _, o in ipairs(rocks) do if dist2(o.x, o.y, r.x, r.y) < (o.r + r.r + 16) ^ 2 then ok = false break end end
+    local r = { x = rnd(16, W - 16), y = rnd(30, H - 50), r = rnd(4, 7 + math.min(G.day, 4)) }
+    local ok = dist2(r.x, r.y, ISLE.x, ISLE.y) > (ISLE.r + r.r + 40) ^ 2
+    for _, d in ipairs(DOCKS) do if dist2(r.x, r.y, d.x, d.y) < 50 * 50 then ok = false end end
+    for _, o in ipairs(rocks) do if dist2(o.x, o.y, r.x, r.y) < (o.r + r.r + 18) ^ 2 then ok = false break end end
     for _, s in ipairs(ships) do if dist2(s.x, s.y, r.x, r.y) < (r.r + 24) ^ 2 then ok = false break end end
+    for _, b in ipairs(boats) do if dist2(b.x, b.y, r.x, r.y) < (r.r + 20) ^ 2 then ok = false break end end
     if ok then
       r.b = { { rnd(-2, 2), rnd(-2, 2), r.r }, { rnd(-r.r, r.r) // 2, rnd(-2, 1), r.r * 2 // 3 } }
       rocks[#rocks + 1] = r
@@ -113,11 +133,10 @@ function new_rocks()
   end
   srand(G.day * 31 + G.clk + G.docked)
 end
-CLIFF = { x = 160, y = 248, r = 50 }
 
 function hit_rock(x, y, rr)
   for _, r in ipairs(rocks) do if dist2(x, y, r.x, r.y) < (r.r + rr) ^ 2 then return r end end
-  if dist2(x, y, CLIFF.x, CLIFF.y) < (CLIFF.r + rr) ^ 2 then return CLIFF end
+  if dist2(x, y, ISLE.x, ISLE.y) < (ISLE.r + rr) ^ 2 then return ISLE end
 end
 
 -- steering: head for (wx, wy) but go around the rocks this boat knows about
@@ -138,7 +157,7 @@ function avoid(o, wx, wy, sees_all, lamp)
     if sees_all then push(r, r.r + 30)
     elseif lamp and dist2(o.x, o.y, r.x, r.y) < (r.r + 30) ^ 2 then push(r, r.r + 22) end
   end
-  push(CLIFF, CLIFF.r + 20)                -- everyone can see the lighthouse cliff
+  push(ISLE, ISLE.r + 24)                -- everyone can see the lighthouse island
   return wx, wy
 end
 
@@ -169,28 +188,51 @@ function _update()
   if hint_t > 0 then hint_t = hint_t - 1 end
   if banner_t > 0 then banner_t = banner_t - 1 end
 
+  if btnp("y") then
+    p1_boat = not p1_boat
+    sfx(p1_boat and "C4" or "G4", 1, 0.3, 8)
+    if p1_boat then
+      local b = boats[1]
+      if dist2(b.x, b.y, ISLE.x, ISLE.y) > 120 * 120 then b.x, b.y, b.vx, b.vy = MOOR[1].x, MOOR[1].y, 0, 0 end
+    end
+  end
   aim()
 
   if horn > 0 then horn = horn - 1 end
   if horn_cd > 0 then horn_cd = horn_cd - 1 end
-  if btnp("b") and horn_cd == 0 then
+  if not p1_boat and btnp("b") and horn_cd == 0 then
     horn, horn_cd = 180, 900
     sfx("A1", 5, 0.5, 80) sfx("E2", 5, 0.35, 80)
   end
 
   spawn_t = spawn_t - 1
-  if spawn_t <= 0 and #ships < 6 + G.harbour then spawn_ship(); spawn_t = spawn_every() end
+  if spawn_t <= 0 and #ships < 7 + G.harbour then spawn_ship(); spawn_t = spawn_every() end
   if is_night() then
     pirate_t = pirate_t - 1
-    if pirate_t <= 0 and #pirates < math.min(1 + G.day // 2, 4) then
+    if pirate_t <= 0 and #pirates < math.min(1 + G.day // 2 + PLAYERS // 2, 5) then
       spawn_pirate()
       pirate_t = math.max(300, 780 - G.day * 50)
+    end
+  end
+  loot_t = loot_t - 1
+  if loot_t <= 0 then
+    loot_t = 420
+    if #loot < 8 then
+      local x, y = rnd(20, W - 20), rnd(30, H - 50)
+      if not hit_rock(x, y, 8) then drop_loot(x, y, 1, rnd(2, 5)) end
     end
   end
 
   update_ships()
   update_pirates()
   update_cannons()
+  for _, b in ipairs(boats) do if boat_on(b) then update_boat(b) end end
+  for i = #loot, 1, -1 do
+    local l = loot[i]
+    l.life = l.life - 1
+    l.x = l.x + math.sin((t() + l.bob * 10) / 90) * 0.05
+    if l.life <= 0 then table.remove(loot, i) end
+  end
 
   for i = #fx, 1, -1 do
     local p = fx[i]
@@ -204,7 +246,7 @@ function _update()
   end
   for _, w in ipairs(wisps) do
     w.x = w.x + w.s
-    if w.x > 330 then w.x = -50 end
+    if w.x > W + 30 then w.x = -80 end
   end
 
   save_t = save_t + 1
@@ -213,12 +255,16 @@ end
 
 function aim()
   local r, l = press("r"), press("l")
-  local manual = btn("left") or btn("right") or r > 8 or l > 8
+  local turning = not p1_boat and (btn("left") or btn("right"))
+  if p1_boat then r, l = 0, 0 end
+  local manual = turning or r > 8 or l > 8
   idle = manual and 0 or idle + 1
-  if btn("left") then angle = angle - 0.03 end
-  if btn("right") then angle = angle + 0.03 end
+  if turning then
+    if btn("left") then angle = angle - 0.03 end
+    if btn("right") then angle = angle + 0.03 end
+  end
   if auto_on() then auto_aim() end
-  angle = math.max(-math.pi + 0.1, math.min(-0.1, angle))
+  angle = wrap(angle)
   if oil <= 0 then r = 0 end
   bhalf = 0.3 - l / 255 * 0.18 + (auto_on() and G.auto == 3 and 0.05 or 0)
   brange = (105 + G.lens * 18) * (1 + r / 255 * 0.8) * (1 + l / 255 * 0.4) * (is_night() and 1 or 0.75)
@@ -237,7 +283,7 @@ function danger(s)
   return m
 end
 
--- the clockwork lens: sweeps back and forth; level 2+ also follows pirates and ships in danger
+-- the clockwork lens: sweeps round and round; level 2+ also follows pirates and ships in danger
 function auto_aim()
   local tx
   if G.auto >= 2 then
@@ -251,27 +297,32 @@ function auto_aim()
     if not best then
       for _, s in ipairs(ships) do
         local sc = danger(s)
+        if dist2(s.x, s.y, LX, LY) > 220 * 220 then sc = 0 end
         if sc > bs then best, bs = s, sc end
       end
     end
     if best then tx = math.atan(best.y - LY, best.x - LX) end
   end
-  if not tx then tx = -math.pi / 2 + math.sin(t() * 0.012) * 1.25 end
   local sp = 0.008 + G.auto * 0.006
-  angle = angle + math.max(-sp, math.min(sp, wrap(tx - angle)))
+  if tx then angle = angle + math.max(-sp, math.min(sp, wrap(tx - angle)))
+  else angle = angle + sp * 0.8 end
 end
 
 function spawn_ship()
   local k = KINDS[rnd(1 + math.min(G.harbour, 2))]
-  local d = DOCKS[rnd(2)]
-  local x = rnd(30, 290)
-  ships[#ships + 1] = { k = k, x = x, y = -6, dock = d, a = math.atan(d.y + 6, d.x - x), seen = 0,
+  local side, x, y = rnd(3)
+  if side == 1 then x, y = rnd(30, W - 30), -8
+  elseif side == 2 then x, y = -8, rnd(20, 220)
+  else x, y = W + 8, rnd(20, 220) end
+  local d = DOCKS[side == 2 and 2 or side == 3 and 1 or rnd(2)]   -- ships cross the sea, past the lighthouse
+  ships[#ships + 1] = { k = k, x = x, y = y, dock = d, a = math.atan(d.y - y, d.x - x), seen = 0,
     lamp = rnd(100) <= G.lantern * 20, bob = rnd(60) }
 end
 
 function spawn_pirate()
-  local left = rnd(2) == 1
-  pirates[#pirates + 1] = { x = left and -8 or 328, y = rnd(40, 150), a = left and 0 or math.pi,
+  local side = rnd(3)
+  local x, y = side == 1 and -8 or side == 2 and W + 8 or rnd(40, W - 40), side == 3 and -8 or rnd(30, 260)
+  pirates[#pirates + 1] = { x = x, y = y, a = math.atan(ISLE.y - y, ISLE.x - x),
     hp = 2, fear = 0, flee = false, lit = false, bob = rnd(60) }
   sfx("D3", 5, 0.25, 20)
 end
@@ -288,10 +339,11 @@ function update_ships()
       local wx, wy = avoid(s, dx / d, dy / d, s.seen > 0, s.lamp)
       turn_to(s, wx, wy, 0.05)
       local sp = s.k.speed * (horn > 0 and 0.35 or 1)
-      s.x = math.max(4, math.min(316, s.x + math.cos(s.a) * sp))
+      s.x = math.max(-10, math.min(W + 10, s.x + math.cos(s.a) * sp))
       s.y = s.y + math.sin(s.a) * sp
       if hit_rock(s.x, s.y, s.k.r) then
         lost(s, "wrecked!"); burst(s.x, s.y, 7, 12); sfx("C2", 3, 0.5, 30, nil, 0, -2)
+        drop_loot(s.x, s.y, 2 + rnd(0, 1), s.k.toll)
         table.remove(ships, i)
       end
     end
@@ -314,6 +366,59 @@ function lost(s, why)
   float(s.x - #why * 4, s.y - 10, why, 26)
 end
 
+-- a rowboat: d-pad rows, R rows harder; bump a rock and the cargo spills
+function update_boat(b)
+  local pn = b.n
+  local ax, ay = 0, 0
+  if b.stun > 0 then b.stun = b.stun - 1
+  else
+    if btn("left", pn) then ax = ax - 1 end
+    if btn("right", pn) then ax = ax + 1 end
+    if btn("up", pn) then ay = ay - 1 end
+    if btn("down", pn) then ay = ay + 1 end
+  end
+  local pw = press("r", pn) / 255
+  local acc = 0.05 + pw * 0.04
+  if ax ~= 0 and ay ~= 0 then acc = acc * 0.7 end
+  b.vx, b.vy = (b.vx + ax * acc) * 0.96, (b.vy + ay * acc) * 0.96
+  if ax ~= 0 or ay ~= 0 then b.a = math.atan(ay, ax) end
+  local nx = math.max(4, math.min(W - 4, b.x + b.vx))
+  local ny = math.max(4, math.min(H - 18, b.y + b.vy))
+  local r = hit_rock(nx, ny, 4)
+  if r then
+    local dx, dy = b.x - r.x, b.y - r.y
+    local d = math.sqrt(dx * dx + dy * dy) + 0.001
+    b.vx, b.vy = dx / d * 0.8, dy / d * 0.8
+    if r ~= ISLE and b.cargo > 0 then
+      drop_loot(b.x, b.y, b.cargo, b.val // b.cargo)
+      float(b.x - 24, b.y - 14, "spilled!", 26)
+      b.cargo, b.val, b.stun = 0, 0, 40
+      sfx("E2", 3, 0.4, 16)
+    elseif r ~= ISLE then
+      b.stun = 20; sfx("C3", 3, 0.2, 6)
+    end
+  else
+    b.x, b.y = nx, ny
+  end
+  -- pick up crates (not while dizzy from a bump, or the spilled ones come straight back)
+  for i = #loot, 1, -1 do
+    if b.stun > 0 then break end
+    local l = loot[i]
+    if b.cargo < CAP and dist2(l.x, l.y, b.x, b.y) < 121 then
+      b.cargo, b.val = b.cargo + 1, b.val + l.v
+      table.remove(loot, i)
+      sfx("A5", 4, 0.25, 6)
+    end
+  end
+  -- unload at the lighthouse island
+  if b.cargo > 0 and dist2(b.x, b.y, ISLE.x, ISLE.y) < (ISLE.r + 14) ^ 2 then
+    G.coins = G.coins + b.val
+    float(b.x - 12, b.y - 14, "+" .. b.val, 27)
+    b.cargo, b.val = 0, 0
+    sfx("C6", 4, 0.3, 8) sfx("E6", 4, 0.25, 12)
+  end
+end
+
 function update_pirates()
   for i = #pirates, 1, -1 do
     local p = pirates[i]
@@ -331,14 +436,20 @@ function update_pirates()
     end
     local tx, ty
     if p.flee then
-      tx, ty = p.x < 160 and -60 or 380, p.y
+      tx, ty = p.x < W / 2 and -60 or W + 60, p.y
     else
       local best, bd = nil, 1e9
       for _, s in ipairs(ships) do
         local d = dist2(s.x, s.y, p.x, p.y)
         if d < bd then best, bd = s, d end
       end
-      if best then tx, ty = best.x, best.y else tx, ty = 160, 100 end
+      for _, b in ipairs(boats) do          -- a loaded rowboat is worth chasing too
+        if boat_on(b) and b.cargo > 0 then
+          local d = dist2(b.x, b.y, p.x, p.y) * 0.8
+          if d < bd then best, bd = b, d end
+        end
+      end
+      if best then tx, ty = best.x, best.y else tx, ty = ISLE.x, ISLE.y - 60 end
     end
     local dx, dy = tx - p.x, ty - p.y
     local d = math.sqrt(dx * dx + dy * dy) + 0.001
@@ -346,7 +457,7 @@ function update_pirates()
     turn_to(p, wx, wy, 0.05)
     local sp = (p.flee and 0.8 or 0.42) * (horn > 0 and 0.35 or 1)
     p.x, p.y = p.x + math.cos(p.a) * sp, p.y + math.sin(p.a) * sp
-    if p.flee and (p.x < -20 or p.x > 340) then
+    if p.flee and (p.x < -20 or p.x > W + 20 or p.y < -20) then
       table.remove(pirates, i)
     elseif not p.flee then
       for j, s in ipairs(ships) do
@@ -355,6 +466,13 @@ function update_pirates()
           table.remove(ships, j)
           p.flee = true
           break
+        end
+      end
+      for _, b in ipairs(boats) do
+        if not p.flee and boat_on(b) and b.cargo > 0 and dist2(b.x, b.y, p.x, p.y) < 144 then
+          float(b.x - 24, b.y - 14, "robbed!", 26); sfx("F2", 2, 0.4, 20)
+          b.cargo, b.val, b.stun = 0, 0, 30
+          p.flee = true
         end
       end
     end
@@ -368,7 +486,7 @@ function update_cannons()
     if cannon_cd[c] <= 0 then
       local C = CANNONS[c]
       for _, p in ipairs(pirates) do
-        if p.lit and not p.flee and dist2(p.x, p.y, C.x, C.y) < 180 * 180 then
+        if p.lit and not p.flee and dist2(p.x, p.y, C.x, C.y) < 190 * 190 then
           local dx, dy = p.x - C.x, p.y - C.y
           local d = math.sqrt(dx * dx + dy * dy)
           balls[#balls + 1] = { x = C.x, y = C.y - 4, vx = dx / d * 2.4, vy = dy / d * 2.4, t = d / 2.4 + 6 }
@@ -393,6 +511,7 @@ function update_cannons()
           G.coins = G.coins + 12
           float(p.x - 16, p.y - 12, "+12", 27)
           burst(p.x, p.y, 7, 14)
+          drop_loot(p.x, p.y, 3, 5)
           sfx("C2", 3, 0.6, 40, nil, 0, -1)
           table.remove(pirates, j)
         else sfx("G3", 3, 0.4, 12) end
@@ -466,24 +585,50 @@ function draw_beam(c1, c2)
   end
 end
 
+-- the camera follows what this screen's player controls (everyone's things when sharing a screen)
+function update_camera()
+  local sx, sy, n = 0, 0, 0
+  local function add(x, y) sx, sy, n = sx + x, sy + y, n + 1 end
+  if ME == 0 or ME == 1 then
+    if p1_boat then add(boats[1].x, boats[1].y)
+    else
+      local f = math.min(brange, 150) * 0.55
+      add(LX + math.cos(angle) * f, LY + math.sin(angle) * f)
+    end
+  end
+  for n2 = 2, PLAYERS do if ME == 0 or ME == n2 then add(boats[n2].x, boats[n2].y) end end
+  if n == 0 then add(LX, LY) end
+  local tx = math.max(0, math.min(W - 320, sx / n - 160))
+  local ty = math.max(0, math.min(H - 240, sy / n - 120))
+  cam_x = cam_x + (tx - cam_x) * 0.08
+  cam_y = cam_y + (ty - cam_y) * 0.08
+end
+
+function on_screen(x, y, m)
+  return x > cam_x - m and x < cam_x + 320 + m and y > cam_y - m and y < cam_y + 240 + m
+end
+
 function _draw()
   local night = is_night()
   local day = not night
+  update_camera()
   cls(night and 1 or 20)
-  if night then for _, s in ipairs(stars) do if (s[1] + t() // 30) % 7 > 0 then pset(s[1], s[2], 30) end end end
+  camera(cam_x // 1, cam_y // 1)
+  if night then for _, s in ipairs(stars) do if (s[1] + t() // 30) % 7 > 0 and on_screen(s[1], s[2], 2) then pset(s[1], s[2], 30) end end end
 
   -- waves
-  for i = 0, 40 do
-    local x = (i * 83 + t() // 4) % 330 - 10
-    local y = 16 + (i * 47) % 200
-    line(x, y, x + 4, y, night and 19 or 21)
+  for i, w in ipairs(waves) do
+    local x = (w[1] + t() // 4) % (W + 20) - 10
+    if on_screen(x, w[2], 8) then line(x, w[2], x + 4, w[2], night and 19 or 21) end
   end
   -- day haze
   if day then
     for _, w in ipairs(wisps) do
-      line(w.x, w.y, w.x + w.w, w.y, 29)
-      line(w.x + 4, w.y + 1, w.x + w.w - 6, w.y + 1, 29)
-      line(w.x + 10, w.y + 2, w.x + w.w - 14, w.y + 2, 28)
+      if on_screen(w.x + w.w / 2, w.y, w.w) then
+        line(w.x, w.y, w.x + w.w, w.y, 29)
+        line(w.x + 4, w.y + 1, w.x + w.w - 6, w.y + 1, 29)
+        line(w.x + 10, w.y + 2, w.x + w.w - 14, w.y + 2, 28)
+      end
     end
   end
 
@@ -493,55 +638,76 @@ function _draw()
 
   -- foghorn rings
   if horn > 0 then
-    local r = (180 - horn) * 1.5
+    local r = (180 - horn) * 2
     circ(LX, LY, r, night and 30 or 23)
     if r > 30 then circ(LX, LY, r - 30, night and 30 or 23) end
   end
 
   -- rocks
   for _, r in ipairs(rocks) do
-    local L = lit(r.x, r.y)
-    local c1, c2, c3 = 31, 30, 19
-    if L then c1, c2, c3 = 28, 29, 23 elseif day then c1, c2, c3 = 19, 21, 21 end
-    circ(r.x, r.y, r.r + 1 + (t() // 20 + r.x) % 2, c3)
-    for _, b in ipairs(r.b) do circfill(r.x + b[1], r.y + b[2], b[3], c1) end
-    circfill(r.x - 1, r.y - 2, math.max(1, r.r // 2), c2)
+    if on_screen(r.x, r.y, 16) then
+      local L = lit(r.x, r.y)
+      local c1, c2, c3 = 31, 30, 19
+      if L then c1, c2, c3 = 28, 29, 23 elseif day then c1, c2, c3 = 19, 21, 21 end
+      circ(r.x, r.y, r.r + 1 + (t() // 20 + r.x) % 2, c3)
+      for _, b in ipairs(r.b) do circfill(r.x + b[1], r.y + b[2], b[3], c1) end
+      circfill(r.x - 1, r.y - 2, math.max(1, r.r // 2), c2)
+    end
+  end
+
+  -- floating crates: they glint now and then, even in the dark
+  for _, l in ipairs(loot) do
+    if on_screen(l.x, l.y, 8) then
+      local bob = (t() + l.bob) // 20 % 2
+      if not lit(l.x, l.y) then shade(day) end
+      spr(9, l.x - 4, l.y - 4 + bob)
+      pal()
+      if (t() + l.bob * 7) % 50 < 4 then pset(l.x + 2, l.y - 3 + bob, 27) end
+    end
   end
 
   -- ships
   for _, s in ipairs(ships) do
-    local L = s.seen > 0
-    if not L then shade(day) end
-    local fl = math.cos(s.a) < 0
-    local bob = (t() + s.bob) // 30 % 2
-    spr(s.k.spr, s.x - 8 * s.k.w, s.y - 10 + bob, s.k.w, 1, fl, false, 2)
-    pal()
-    if s.lamp then
-      rectfill(s.x - 1, s.y - 13 + bob, 2, 2, 27)
-      if night then circ(s.x, s.y - 2, 12 + t() // 10 % 2, 19) end
-    elseif night then pset(s.x, s.y - 12 + bob, 11) end
+    if on_screen(s.x, s.y, 20) then
+      local L = s.seen > 0
+      if not L then shade(day) end
+      local fl = math.cos(s.a) < 0
+      local bob = (t() + s.bob) // 30 % 2
+      spr(s.k.spr, s.x - 8 * s.k.w, s.y - 10 + bob, s.k.w, 1, fl, false, 2)
+      pal()
+      if s.lamp then
+        rectfill(s.x - 1, s.y - 13 + bob, 2, 2, 27)
+        if night then circ(s.x, s.y - 2, 12 + t() // 10 % 2, 19) end
+      elseif night then pset(s.x, s.y - 12 + bob, 11) end
+    end
   end
 
   -- pirates
   for _, p in ipairs(pirates) do
-    if not p.lit then shade(day) end
-    local bob = (t() + p.bob) // 25 % 2
-    spr(5, p.x - 8, p.y - 10 + bob, 1, 1, math.cos(p.a) < 0, false, 2)
-    pal()
-    if not p.lit then pset(p.x, p.y - 4 + bob, 25) end     -- a red glint in the dark
-    if p.fear > 0 and not p.flee then
-      rect(p.x - 7, p.y - 17, 14, 3, 30)
-      rectfill(p.x - 6, p.y - 16, math.min(12, p.fear * 12 // 100), 1, 22)
+    if on_screen(p.x, p.y, 20) then
+      if not p.lit then shade(day) end
+      local bob = (t() + p.bob) // 25 % 2
+      spr(5, p.x - 8, p.y - 10 + bob, 1, 1, math.cos(p.a) < 0, false, 2)
+      pal()
+      if not p.lit then pset(p.x, p.y - 4 + bob, 25) end     -- a red glint in the dark
+      if p.fear > 0 and not p.flee then
+        rect(p.x - 7, p.y - 17, 14, 3, 30)
+        rectfill(p.x - 6, p.y - 16, math.min(12, p.fear * 12 // 100), 1, 22)
+      end
     end
   end
   for _, b in ipairs(balls) do circfill(b.x, b.y, 1, 31) pset(b.x, b.y, 28) end
 
-  draw_coast(night)
+  draw_island(night)
+  draw_coast()
+  draw_boats()
 
   for _, p in ipairs(fx) do pset(p.x, p.y, p.c) end
   for _, f in ipairs(floats) do text(f.s, f.x, f.y, f.c) end
 
+  camera()
   hud(night)
+  minimap(night)
   if banner_t > 0 and not shop then
     rectfill(0, 84, 320, 34, 31)
     text(banner_s, 160 - #banner_s * 8, 88, night and 22 or 27, 2)
@@ -551,27 +717,50 @@ function _draw()
   if report then draw_report() end
 end
 
-function draw_coast(night)
-  -- shore and piers
-  rectfill(0, 230, 320, 10, 6)
-  for x = 0, 318, 9 do pset(x + (x * 7) % 5, 231, 7) end
-  rectfill(0, 224, 36, 3, 7) rectfill(284, 224, 36, 3, 7)
-  for x = 3, 33, 8 do rectfill(x, 227, 2, 3, 6) end
-  for x = 287, 317, 8 do rectfill(x, 227, 2, 3, 6) end
-  pset(35, 222, 25) pset(284, 222, 17)
-  -- the cliff
-  circfill(CLIFF.x, CLIFF.y, CLIFF.r, 30)
-  circfill(140, 236, 18, 28) circfill(184, 238, 16, 28) circfill(160, 222, 12, 28)
-  pset(132, 228, 29) pset(176, 231, 29) pset(152, 214, 29)
-  -- cannons
+function draw_boats()
+  for _, b in ipairs(boats) do
+    local on = boat_on(b)
+    do
+      local bob = (t() + b.n * 13) // 25 % 2
+      pal(10, PCOL[b.n]) pal(8, 30)
+      if b.stun > 0 and t() % 6 < 3 then pal(PCOL[b.n], 13) end
+      spr(8, b.x - 8, b.y - 10 + bob, 1, 1, math.cos(b.a) < 0, false, 2)
+      pal()
+      if on then
+        text(b.n, b.x - 3, b.y - 22, PCOL[b.n])
+        if b.cargo > 0 then
+          for i = 1, b.cargo do rectfill(b.x - 9 + i * 3, b.y + 6, 2, 2, 7) end
+        end
+      end
+    end
+  end
+end
+
+function draw_island(night)
+  circfill(ISLE.x, ISLE.y, ISLE.r + 3, night and 19 or 22)        -- surf
+  circfill(ISLE.x, ISLE.y, ISLE.r, 11)                           -- sand
+  circfill(ISLE.x - 4, ISLE.y + 2, ISLE.r - 6, 30)
+  circfill(ISLE.x - 12, ISLE.y + 8, 12, 28) circfill(ISLE.x + 12, ISLE.y + 10, 10, 28)
+  pset(ISLE.x - 16, ISLE.y + 4, 29) pset(ISLE.x + 8, ISLE.y + 14, 29)
+  -- jetty where the rowboats unload
+  rectfill(ISLE.x - 4, ISLE.y + ISLE.r - 2, 8, 12, 7)
   for c = 1, G.cannon do
     local C = CANNONS[c]
-    spr(6, C.x - 4, C.y - 6, 1, 1, C.x > 160)
+    spr(6, C.x - 4, C.y - 6, 1, 1, C.x > ISLE.x)
   end
-  -- the lighthouse and its lamp
   spr(32, LX - 16, LY - 4, 2, 2, false, false, 2)
-  local glow = oil > 0 and 27 or 10
-  circfill(LX, LY, 2 + (t() // 8) % 2 + beam_r // 128, glow)
+  circfill(LX, LY, 2 + (t() // 8) % 2 + beam_r // 128, oil > 0 and 27 or 10)
+end
+
+function draw_coast()
+  if cam_y + 240 < H - 24 then return end
+  rectfill(0, H - 16, W, 16, 6)
+  for x = 0, W - 2, 9 do pset(x + (x * 7) % 5, H - 15, 7) end
+  for _, d in ipairs(DOCKS) do
+    rectfill(d.x - 18, d.y + 2, 36, 4, 7)
+    for x = d.x - 16, d.x + 16, 8 do rectfill(x, d.y + 6, 2, 4, 6) end
+    pset(d.x - 18, d.y, 25) pset(d.x + 17, d.y, 17)
+  end
 end
 
 function hud(night)
@@ -586,18 +775,36 @@ function hud(night)
   if m > 1 then text("x" .. m, 210, 2, 27) end
   local dn = (night and "NIGHT " or "DAY ") .. G.day
   text(dn, 310 - #dn * 8, 2, night and 22 or 27)
-  -- time of day: a thin line under the bar
   local f = G.clk / (DAYLEN + NIGHTLEN)
   rectfill(0, 12, math.floor(320 * f), 1, night and 20 or 27)
 
-  -- bottom line, on the shore
-  text(horn_cd == 0 and "B HORN" or "B ....", 4, 232, horn_cd == 0 and 12 or 7)
-  text("X SHOP", 268, 232, 12)
-  if auto_on() and t() // 30 % 2 == 0 then text("AUTO", 4, 214, 17) end
+  rectfill(0, 230, 320, 10, 31)
+  if p1_boat then text("Y LAMP", 4, 231, 12)
+  else text(horn_cd == 0 and "B HORN" or "B ....", 4, 231, horn_cd == 0 and 12 or 30) text("Y BOAT", 64, 231, 12) end
+  text("X SHOP", 268, 231, 12)
+  if auto_on() and t() // 30 % 2 == 0 then text("AUTO", 132, 231, 17) end
   if hint_t > 0 then
     rectfill(0, 13, 320, 11, 31)
-    text("<> AIM  R BRIGHT  L NARROW  B HORN", 24, 15, 29)
+    local h = PLAYERS > 1 and "P1 BEAM  P2-4 ROW: GET THE CRATES" or "<> AIM  R BRIGHT  L NARROW  Y ROW"
+    text(h, 160 - #h * 4, 15, 29)
   end
+end
+
+function minimap(night)
+  local x0, y0, mw, mh = 262, 186, 56, 42
+  rectfill(x0 - 1, y0 - 1, mw + 2, mh + 2, 29)
+  rectfill(x0, y0, mw, mh, night and 1 or 19)
+  local function P(x, y) return x0 + x * mw // W, y0 + y * mh // H end
+  for _, r in ipairs(rocks) do local x, y = P(r.x, r.y) pset(x, y, 30) end
+  local ix, iy = P(ISLE.x, ISLE.y) rectfill(ix - 1, iy - 1, 3, 3, 28)
+  local ex, ey = P(LX + math.cos(angle) * brange, LY + math.sin(angle) * brange)
+  line(ix, iy, ex, ey, night and 20 or 22)
+  for _, l in ipairs(loot) do local x, y = P(l.x, l.y) pset(x, y, 11) end
+  for _, s in ipairs(ships) do local x, y = P(s.x, s.y) pset(x, y, 13) end
+  for _, p in ipairs(pirates) do local x, y = P(p.x, p.y) pset(x, y, 25) end
+  for _, b in ipairs(boats) do if boat_on(b) then local x, y = P(b.x, b.y) rectfill(x, y, 2, 2, PCOL[b.n]) end end
+  local vx, vy = P(cam_x, cam_y)
+  rect(vx, vy, 320 * mw // W, 240 * mh // H, 29)
 end
 
 function draw_shop()
@@ -647,6 +854,8 @@ end
         '.EeeeeeeeeeeeeE.', 'BBBBBBBBBBBBBBBB', '.BbbbbbbbbbbbbB.', '..BBBBBBBBBBBB..'],
     5: ['..r.....', '..kSSS..', '..kSwS..', '.kkSSS..', '..kSSS..', 'NNNNNNNN', '.NSSSSN.', '........'],   // pirate
     6: ['........', '.....eee', '...eeEEe', '..eEEee.', '.eEee...', '.nNNNn..', 'nNcnNc..', '.n..n...'],   // cannon
+    8: ['........', '...cc...', '...ww...', '.N.ww.N.', 'oooooooo', '.OooooO.', '..OOOO..', '........'],   // rowboat (hull recoloured per player)
+    9: ['........', '.nnnnnn.', '.nNnnNn.', '.nnNNnn.', '.nnNNnn.', '.nNnnNn.', '.nnnnnn.', '........'],   // crate
     7: ['..YYYY..', '.YYooYY.', 'YYoYYYYY', 'YYoYYYYY', 'YYoYYYYY', 'YYYooYYY', '.YYYYYY.', '..YYYY..'],   // coin
     32: ['......kkkk......', '.....kYYYYk.....', '.....kYwwYk.....', '....kkkkkkkk....',                   // lighthouse
          '.....krrrrk.....', '.....kwwwwk.....', '.....kwwwwk.....', '.....krrrrk.....',
@@ -672,5 +881,5 @@ end
 
   window.BK_DEMOS = window.BK_DEMOS || [];
   window.BK_DEMOS.push({ name: 'Beacon Keeper', code, buildGfx,
-    about: 'An idle game: light the ships past the rocks, scare off pirates and grow your harbour.' });
+    about: 'An idle game for 1-4 players: light the ships past the rocks, scare off pirates and row out for loot.' });
 })();
