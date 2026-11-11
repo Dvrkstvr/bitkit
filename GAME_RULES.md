@@ -10,7 +10,7 @@ Every BitKit game has the same five things, whether it ships with BitKit or come
 | 4 | **Pause menu with settings** | Start pauses. The pause menu has Resume, Settings (at least the volume) and Quit to title. |
 | 5 | **A clear goal** | One sentence on the title screen tells you what you're trying to do. |
 
-You don't have to build any of this yourself. One call to `game{}` in `_init` gives your game the title screen, the pause menu, the settings, checkpoints and the "goal complete" screen, with the same look and buttons as every other BitKit game. The studio's **Rules** button checks your cart against the list.
+You don't have to build any of this yourself. One call to `game{}` in `_init` gives your game the title screen, the pause menu, the settings, checkpoints and the "goal complete" screen, with the same look and buttons as every other BitKit game. The studio's **Checklist** button (and its Game tab) checks your game against the list.
 
 ## The smallest game that meets the rules
 

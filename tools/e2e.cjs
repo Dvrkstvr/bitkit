@@ -30,7 +30,7 @@ const { chromium } = require('playwright');
   await pg.click('.tabs button[data-tab=entities]'); await pg.click('#entList .ent-item:nth-child(1)'); await pg.waitForTimeout(150); await pg.screenshot({ path: process.argv[2] + '/ent-player.png' }); await pg.click('#entList .ent-item:nth-child(4)'); await pg.waitForTimeout(150); await pg.screenshot({ path: process.argv[2] + '/ent-sapling.png' }); await pg.click('#fxList .ent-item:nth-child(2)'); await pg.waitForTimeout(150); await pg.screenshot({ path: process.argv[2] + '/fx-slow.png' });
   await pg.click('.tabs button[data-tab=map]'); await pg.selectOption('#mapLayer', 'ents'); await pg.evaluate(() => { const k = new KeyboardEvent('keydown', {key: 'd', shiftKey: true, bubbles: true}); const mv = document.getElementById('mapView'); mv.focus(); for (let i = 0; i < 7; i++) mv.dispatchEvent(k); }); await pg.waitForTimeout(100); await pg.screenshot({ path: process.argv[2] + '/map-ents.png' });
   await pg.click('#btnSave'); await pg.waitForTimeout(200); await pg.screenshot({ path: process.argv[2] + '/save.png' }); await pg.keyboard.press('Escape');
-  await pg.click('#btnDemo'); await pg.click('.m-buttons .primary'); await pg.waitForTimeout(300); console.log('demo running', await pg.evaluate(() => bkStudio.isRunning()));
+  await pg.click('#btnGames'); await pg.click('#modal [data-dopen="0"]'); await pg.waitForTimeout(300); await pg.click('#btnRun'); await pg.waitForTimeout(300); console.log('demo running', await pg.evaluate(() => bkStudio.isRunning()));
   // error path
   await pg.click('.tabs button[data-tab=code]');
   await pg.evaluate(() => { document.querySelector('.CodeMirror').CodeMirror.setValue('function _draw()\n  cls(1)\n  foo()\nend'); });

@@ -106,6 +106,34 @@ void bk_rectfill(int x, int y, int w, int h, int c) {
   for (int j = 0; j < h; j++) hline(x, x + w - 1, y + j, c);
 }
 
+/* Darken what is on the screen (inside the clip rectangle): every colour becomes the palette colour nearest to
+   itself made k darker (0 = no change, 1 = black). A real dim for menus and night scenes, with no dither pattern. */
+void bk_shade(float k) {
+  if (!(k > 0)) return;
+  if (k > 1) k = 1;
+  const int m = (int)((1 - k) * 256);
+  uint8_t lut[256], done[256];
+  memset(done, 0, sizeof(done));
+  for (int y = BK->clip_y0; y < BK->clip_y1; y++) {
+    uint8_t *row = &BK->screen[y * BK_W];
+    for (int x = BK->clip_x0; x < BK->clip_x1; x++) {
+      const int c = row[x];
+      if (!done[c]) {                    /* work out a colour the first time it shows up */
+        const uint8_t *p = &BK->palette[c * 3];
+        const int r = (p[0] * m) >> 8, g = (p[1] * m) >> 8, b = (p[2] * m) >> 8;
+        int best = 0; long bd = 0x7fffffffL;
+        for (int j = 0; j < 256; j++) {
+          const uint8_t *q = &BK->palette[j * 3];
+          const long dr = q[0] - r, dg = q[1] - g, db = q[2] - b, d = dr * dr * 3 + dg * dg * 4 + db * db * 2;
+          if (d < bd) { bd = d; best = j; }
+        }
+        lut[c] = (uint8_t)best; done[c] = 1;
+      }
+      row[x] = lut[c];
+    }
+  }
+}
+
 void bk_rect(int x, int y, int w, int h, int c) {
   if (w <= 0 || h <= 0) return;
   hline(x, x + w - 1, y, c);

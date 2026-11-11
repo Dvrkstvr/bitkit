@@ -4,7 +4,7 @@ Thanks for wanting to help! BitKit is a small, friendly project, and every bug r
 
 ## Ways to help
 
-- **Make a game** with the [studio](https://dvrkstvr.github.io/bitkit/) and share it in an issue. Games follow the [game rules](GAME_RULES.md): a main menu, one level you can finish, quick resume, a pause menu with settings and a clear goal. `game{}` does most of it, and the studio's **Rules** button checks it.
+- **Make a game** with the [studio](https://dvrkstvr.github.io/bitkit/) and share it in an issue. Games follow the [game rules](GAME_RULES.md): a main menu, one level you can finish, quick resume, a pause menu with settings and a clear goal. `game{}` does most of it, and the studio's **Checklist** button checks it.
 - **Report a bug.** Include your browser, controller and, if you can, the `.bitkit` cart.
 - **Suggest a feature** with the idea template.
 - **Send a pull request.** Small and focused is best.
