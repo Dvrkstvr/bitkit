@@ -59,30 +59,35 @@ const runtime = require('../studio/runtime.js');
   const expect = (name, got, want) => { if (got.join(' ') !== want) fail(`${name}: got "${got.join(' ')}", expected "${want}"`); };
   const at90 = (f, mask) => f >= 91 && f <= 92 ? mask : 0;   // a tap right after the setup frame
 
-  // shooting at a different height than the rival's crossbow hits them, and the shooter gets the way
+  const X = bit('x'), J = bit('a'), DOWN = bit('down');
+  // X shoots: the bolt hits the rival (nothing deflects it), and the shooter gets the way
   expect('shot hits', scenario('shot hits',
-    'F[1].x, F[2].x = 100, 200 F[1].stance, F[2].stance = 1, 2',
-    'F[2].alive, runner, F[1].loaded, F[1].hand', 110, f => [at90(f, bit('a')), 0]), 'false 1 false false');
-  // a bolt at the height of the rival's crossbow bounces off it and lies on the ground
-  expect('parry', scenario('parry',
-    'F[1].x, F[2].x = 100, 200 F[1].stance, F[2].stance = 2, 2 loose[room] = {}',
-    'F[2].alive, runner, #loose[room]', 140, f => [at90(f, bit('a')), 0]), 'true 0 1');
-  // a crouching rival ducks under a high bolt
+    'F[1].x, F[2].x = 100, 200',
+    'F[2].alive, runner, F[1].loaded, F[1].hand, #loose[room]', 110, f => [at90(f, X), 0]), 'false 1 false false 4');
+  // a rival crouching close by ducks under a standing shot
   expect('duck', scenario('duck',
-    'F[1].x, F[2].x = 100, 200 F[1].stance, F[2].stance = 1, 3',
-    'F[2].alive, runner', 140, f => [at90(f, bit('a')), 0]), 'true 0');
-  // a jumping rival clears a low bolt
+    'F[1].x, F[2].x = 100, 200',
+    'F[2].alive, runner', 140, f => [at90(f, X), f > 80 ? DOWN : 0]), 'true 0');
+  // further away the bolt has dropped far enough to hit a crouching rival
+  expect('drop', scenario('drop',
+    'F[1].x, F[2].x = 60, 230',
+    'F[2].alive, runner', 140, f => [at90(f, X), f > 80 ? DOWN : 0]), 'false 1');
+  // bolts drop to the ground and lie there when they don't hit anyone
+  expect('range', scenario('range',
+    'F[1].x, F[2].x = 20, 300 F[2].alive, F[2].ghost, F[2].dead_t = false, true, 999 loose[room] = {}',
+    '#flying, #loose[room], loose[room][1] and loose[room][1].x < 290', 170, f => [at90(f, X), 0]), '0 1 true');
+  // A jumps a low (crouched) shot
   expect('jump', scenario('jump',
-    'F[1].x, F[2].x = 100, 140 F[1].stance, F[2].stance = 3, 1',
-    'F[2].alive', 140, f => [f >= 91 && f <= 92 ? bit('a') : 0, f >= 86 && f <= 87 ? bit('b') : 0]), 'true');
-  // walking into an unarmed rival with a bolt loaded stabs them
+    'F[1].x, F[2].x = 100, 140',
+    'F[2].alive', 140, f => [(f >= 91 && f <= 92 ? X : 0) | (f > 84 ? DOWN : 0), f >= 86 && f <= 87 ? J : 0]), 'true');
+  // walking into a rival with a bolt loaded stabs them, even if they are armed too
   expect('stab', scenario('stab',
-    'F[1].x, F[2].x = 120, 150 F[2].loaded, F[2].hand = false, false loose[room] = {}',
+    'F[1].x, F[2].x = 120, 150 loose[room] = {}',
     'F[2].alive, runner, F[1].loaded', 120, f => [f > 90 ? bit('right') : 0, 0]), 'false 1 true');
-  // two loaded crossbows at the same height clash: both are pushed back, nobody dies
+  // both walking into each other loaded and at the same height clash: both are pushed back, nobody dies
   expect('clash', scenario('clash',
-    'F[1].x, F[2].x = 120, 150 F[1].stance, F[2].stance = 2, 2',
-    'F[1].alive, F[2].alive, F[2].x - F[1].x > 16', 115, f => [f > 90 && f < 105 ? bit('right') : 0, 0]), 'true true true');
+    'F[1].x, F[2].x = 120, 150',
+    'F[1].alive, F[2].alive, F[2].x - F[1].x > 16', 115, f => [f > 90 && f < 105 ? bit('right') : 0, f > 90 && f < 105 ? bit('left') : 0]), 'true true true');
   // walking over a bolt picks it up; an empty crossbow cranks the spare in
   expect('pickup + reload', scenario('pickup',
     'F[1].x = 60 F[1].loaded, F[1].hand = false, false F[2].x = 300 loose[room] = {{x = 90, y = 200, vy = 0, rest = true}}',
@@ -108,7 +113,7 @@ const runtime = require('../studio/runtime.js');
     if (load(M, probe, 1)) fail('1 player did not load: ' + errors.join(' '));
     const rooms = new Set();
     for (let f = 0; f < 6000; f++) {
-      const mask = (f % 400 < 260 ? bit('right') : bit('left')) | (f % 37 === 0 ? bit('a') : 0) | (f % 90 === 0 ? bit('up') : 0) | (f % 130 === 0 ? bit('down') : 0) | (f % 71 === 0 ? bit('b') : 0);
+      const mask = (f % 400 < 260 ? bit('right') : bit('left')) | (f % 37 === 0 ? bit('x') : 0) | (f % 130 < 30 ? bit('down') : 0) | (f % 71 === 0 ? bit('a') : 0);
       if (M._bkw_frame(mask, 0)) { fail('1 player stopped at frame ' + f + ' ' + errors.join(' ')); break; }
       if (f === 60) shot('ready');
       if (f === 700) shot('fight');
@@ -156,8 +161,8 @@ const runtime = require('../studio/runtime.js');
     let m1 = 0, m2 = 0;
     for (let f = 0; f < 6000; f++) {
       if (f % 9 === 0) {
-        m1 = (rr() < 0.6 ? bit('right') : rr() < 0.5 ? bit('left') : 0) | (rr() < 0.15 ? bit('a') : 0) | (rr() < 0.1 ? bit('up') : 0) | (rr() < 0.1 ? bit('down') : 0) | (rr() < 0.08 ? bit('b') : 0);
-        m2 = (rr() < 0.6 ? bit('left') : rr() < 0.5 ? bit('right') : 0) | (rr() < 0.15 ? bit('a') : 0) | (rr() < 0.1 ? bit('up') : 0) | (rr() < 0.1 ? bit('down') : 0) | (rr() < 0.08 ? bit('b') : 0);
+        m1 = (rr() < 0.6 ? bit('right') : rr() < 0.5 ? bit('left') : 0) | (rr() < 0.15 ? bit('x') : 0) | (rr() < 0.2 ? bit('down') : 0) | (rr() < 0.08 ? bit('a') : 0);
+        m2 = (rr() < 0.6 ? bit('left') : rr() < 0.5 ? bit('right') : 0) | (rr() < 0.15 ? bit('x') : 0) | (rr() < 0.2 ? bit('down') : 0) | (rr() < 0.08 ? bit('a') : 0);
       }
       M._bkw_input(2, m2, 0); M2._bkw_input(2, m2, 0);
       if (M._bkw_frame(m1, 0) || M2._bkw_frame(m1, 0)) { fail('linked Bits stopped at frame ' + f + ' ' + errors.join(' ')); break; }
@@ -169,5 +174,5 @@ const runtime = require('../studio/runtime.js');
     if (process.env.VERBOSE) console.log(a.join('\n'));
   }
 
-  if (!process.exitCode) console.log('ok: Crossgate shooting, parrying, ducking, jumping, stabbing, clashes, pickups, right of way, rooms, winning, CPU rival, 2 players and linked Bits passed');
+  if (!process.exitCode) console.log('ok: Crossgate shooting, bolt drop, ducking, jumping, stabbing, clashes, pickups, right of way, rooms, winning, CPU rival, 2 players and linked Bits passed');
 })();
