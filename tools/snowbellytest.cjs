@@ -145,6 +145,9 @@ const runtime = require('../studio/runtime.js');
     input: f => [f >= 8 ? bit('b') : 0], check: 'riders[1].trick_pts, riders[1].tumble > 0', at: 60 }, '0 true');
   expect('guard saves', { setup: 'start_run(1) ' + T + 'r = riders[1] r.guard = true r.air, r.h, r.vy = true, ground(r.z, r.x) + 2.5, 0.05',
     input: f => [f >= 8 ? bit('b') : 0], check: 'riders[1].tumble, riders[1].guard', at: 60 }, '0 false');
+  // after a jump you land and stay on the snow (landing with vertical speed 0 used to relaunch you every frame)
+  expect('lands and stays down', { setup: 'start_run(1) ' + T + 'airn = 0 r = riders[1] r.z, r.x, r.v = 200, 0, 0.45 r.h = ground(200, 0)', every: 'if t() > 80 and riders[1].air then airn = airn + 1 end',
+    input: f => [f === 20 ? bit('a') : 0], check: 'airn < 20, riders[1].air', at: 380 }, 'true false');
   // a crate gives an item; X uses it
   expect('crate', { setup: 'start_run(1) ' + T + 'local o = CRATES[2] r = riders[1] r.z, r.x, r.v = (o.s - 0.5) * SL - 2, o.x, 0.3 r.h = ground(r.z, r.x)',
     every: 'riders[1].x = CRATES[2].x', check: '(riders[1].item or riders[1].guard) and "got" or "none"', at: 30 }, 'got');

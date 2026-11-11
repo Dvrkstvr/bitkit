@@ -553,8 +553,10 @@ function step(r, I)
     r.vy = r.vy - G
     r.h = r.h + r.vy
     if r.h <= g1 then
+      -- land moving with the snow: down a slope the ground falls away every frame, and a vertical speed of 0
+      -- here would launch the rider again on the next frame, bouncing forever
       r.h = g1
-      r.vy = 0
+      r.vy = g1 - ground(oz, r.x)
       land(r)
     end
   else
