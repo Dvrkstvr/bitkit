@@ -268,6 +268,32 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
     if (errors.length) { errors.forEach(e => fail('Kart Lab shapes: ' + e)); errors = []; }
   }
 
+  // Kart Lab items: two slots (Y swaps), the homing Tire, Golden Tires and the slippery Oil Slick
+  {
+    logs = [];
+    const kd = window.BK_DEMOS.find(d => d.name === 'Kart Lab');
+    const kc = { tiles: new Uint8Array(32768), flags: new Uint8Array(512), map: new Uint16Array(32768) };
+    kd.buildGfx(kc);
+    M._bkw_players(1, 0);
+    M.HEAPU8.set(kc.tiles, M._bkw_tiles()); M.HEAPU8.set(kc.flags, M._bkw_flags()); M.HEAPU16.set(kc.map, M._bkw_map() >> 1);
+    const probe = '\nlocal _u = _update\nlocal R = {}\nfunction _update() _u() if mode ~= "race" then return end local p = humans[1] ' +
+      'if gt == 2 then p.item, p.item2 = 1, 5 end ' +
+      'if gt > 2 and gt < 8 and p.item == 5 and p.item2 == 1 then R.swap = true end ' +
+      'if gt == 8 then p.item, p.item2 = 7, nil use_item(p) R.gold = p.gold > 0 and p.item == nil end ' +
+      'if gt == 10 then local r = karts[1] == p and karts[2] or karts[1] hazards[#hazards + 1] = {kind = "oil", x = r.x, y = r.y, life = 100, owner = p} R.oilk = r end ' +
+      'if gt == 12 then R.oil = R.oilk.oil > 0 and R.oilk.spin == 0 end ' +
+      'if gt == 14 then local r = R.oilk for _, k in ipairs(karts) do k.spin = 0 k.shield = 0 end shots[#shots + 1] = {kind = "tire", x = r.x - math.cos(r.a) * 40 + 12, y = r.y - math.sin(r.a) * 40, vx = math.cos(r.a) * 5, vy = math.sin(r.a) * 5, life = 300, owner = p, wp = r.wp, dir = 1, bounce = 0} end ' +
+      'if gt > 15 and gt < 80 then for _, k in ipairs(karts) do if k.spin > 0 then R.hit = true end end end ' +
+      'if gt == 80 then print("kitems", R.swap, R.gold, R.oil, R.hit, #ITEMS) end end';
+    if (M._bkw_load(s(kd.code + probe)) !== 0) fail('Kart Lab items did not load: ' + errors.join(' '));
+    for (let f = 0; f < 600; f++) {
+      if (M._bkw_frame(f === 10 ? 16 : (f > 20 && f % 2 ? 1 << 7 : 0), 0)) { fail('Kart Lab items stopped at frame ' + f); break; }   // then Y now and then
+    }
+    const ki = (logs.find(x => x.startsWith('kitems')) || '').split('\t').slice(1).join(' ');
+    if (ki !== 'true true true true 7') fail('Kart Lab items: ' + ki + ' (expected Y swap, Golden Tires, slippery oil, a tire hit, 7 items)');
+    if (errors.length) { errors.forEach(e => fail('Kart Lab items: ' + e)); errors = []; }
+  }
+
   // Kart Lab with two players: both karts race in the same race. Linked Bits (each sees its own player)
   // must stay identical; on one screen the players take turns in the garage and the screen is split.
   {

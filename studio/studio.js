@@ -703,12 +703,20 @@ end
     const cur = t => (vals[t.name] !== undefined && typeof vals[t.name] === typeof t.def ? vals[t.name] : t.def);
     const row = (label, ctl, changed, attr) => `<div class="tune-row${changed ? ' changed' : ''}"><label>${escapeHtml(label)}</label>${ctl}` +
       `<button class="tiny tune-reset" ${attr} title="Back to the game's own value"${changed ? '' : ' disabled'}>↺</button></div>`;
-    const rows = tunes.map((t, i) => {
-      const v = cur(t), ch = v !== t.def;
-      if (t.kind === 'bool') return row(t.name, `<span class="tune-ctl"><label class="switch"><input type="checkbox" data-tune="${i}"${v ? ' checked' : ''}><span>${v ? 'On' : 'Off'}</span></label></span>`, ch, `data-treset="${i}"`);
-      if (t.kind === 'list') return row(t.name, `<span class="tune-ctl"><select data-tune="${i}">${t.options.map(o => `<option${o === v ? ' selected' : ''}>${escapeHtml(o)}</option>`).join('')}</select></span>`, ch, `data-treset="${i}"`);
-      return row(t.name, `<span class="tune-ctl"><input type="range" data-tune="${i}" min="${t.min}" max="${t.max}" step="${t.step}" value="${v}"><input type="number" data-tune="${i}" min="${t.min}" max="${t.max}" step="${t.step}" value="${fmtNum(v)}"></span>`, ch, `data-treset="${i}"`);
+    // "Group/Name" settings are listed under a Group heading (the game's own settings come first)
+    let lastGroup = '';
+    const rows = tunes.map((t, i) => ({ t, i, g: t.name.includes('/') ? t.name.slice(0, t.name.indexOf('/')) : '' }))
+      .sort((a, b) => (a.g ? 1 : 0) - (b.g ? 1 : 0) || (a.g < b.g ? -1 : a.g > b.g ? 1 : a.i - b.i)).map(({ t, i, g }) => {
+      const head = g !== lastGroup ? `<h4 class="tune-group">${escapeHtml(g)}</h4>` : '';
+      lastGroup = g;
+      return head + tuneRow(t, i);
     });
+    function tuneRow(t, i) {
+      const v = cur(t), ch = v !== t.def, label = t.name.includes('/') ? t.name.slice(t.name.indexOf('/') + 1) : t.name;
+      if (t.kind === 'bool') return row(label, `<span class="tune-ctl"><label class="switch"><input type="checkbox" data-tune="${i}"${v ? ' checked' : ''}><span>${v ? 'On' : 'Off'}</span></label></span>`, ch, `data-treset="${i}"`);
+      if (t.kind === 'list') return row(label, `<span class="tune-ctl"><select data-tune="${i}">${t.options.map(o => `<option${o === v ? ' selected' : ''}>${escapeHtml(o)}</option>`).join('')}</select></span>`, ch, `data-treset="${i}"`);
+      return row(label, `<span class="tune-ctl"><input type="range" data-tune="${i}" min="${t.min}" max="${t.max}" step="${t.step}" value="${v}"><input type="number" data-tune="${i}" min="${t.min}" max="${t.max}" step="${t.step}" value="${fmtNum(v)}"></span>`, ch, `data-treset="${i}"`);
+    }
     // games made with the Entities tab: the player's hearts and stats are sliders too
     const players = (ents.types || []).map((t, ti) => ({ t, ti })).filter(x => x.t.player);
     const prow = players.map(({ t, ti }) => {
@@ -728,7 +736,8 @@ end
           <p>Wrap a number in your code in <code>tune()</code> and it shows up here as a slider:</p>
           <pre>SPEED = tune("Speed", 2, 1, 6)        -- name, starting value, lowest, highest
 GHOST = tune("Ghost mode", false)     -- a switch
-LEVEL = tune("Rivals", "Normal", {"Easy", "Normal", "Hard"})   -- a list</pre>
+LEVEL = tune("Rivals", "Normal", {"Easy", "Normal", "Hard"})   -- a list
+BOOST = tune("Items/Boost time", 1.5, 0.5, 4) -- "Group/Name": listed under Items</pre>
           <p class="dim">The values you pick are saved with the game, so the device plays it the same way.</p></details>
         ${rows.some((r, i) => cur(tunes[i]) !== tunes[i].def) ? '<p><button id="tuneResetAll">↺ Reset all to the game\'s own values</button></p>' : ''}
       </div>
@@ -2615,7 +2624,7 @@ LEVEL = tune("Rivals", "Normal", {"Easy", "Normal", "Hard"})   -- a list</pre>
       ['game_title()', 'Back to the title screen.'],
       ['GAME.state', '"title", "play", "screen", "pause", "settings", "help", "confirm" or "won".']]],
     ['Game tab: numbers to play with', [
-      ['tune(name, default, [min, max, step])', 'A number the Game tab shows as a slider: SPEED = tune("Speed", 2, 1, 6). Returns the value picked there, or the default. The picked values are saved with the game.'],
+      ['tune(name, default, [min, max, step])', 'A number the Game tab shows as a slider: SPEED = tune("Speed", 2, 1, 6). Returns the value picked there, or the default. The picked values are saved with the game. A name like "Items/Speed" is listed under an Items heading.'],
       ['tune(name, true)', 'A switch on the Game tab. Returns true or false.'],
       ['tune(name, "b", {"a", "b"})', 'A list on the Game tab. Returns the picked text.']]],
     ['Graphics (320x240, 256 colours)', [
