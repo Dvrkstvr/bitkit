@@ -89,6 +89,11 @@ typedef struct {
   /* --- save data: the cart writes it with save(), the host keeps it per cart (browser storage / flash) --- */
   struct { int32_t len; int32_t dirty; char data[BK_SAVE_MAX]; } save;   /* len -1 = nothing saved */
 
+  /* --- display shader: applied while the screen is turned into colours (bk_to_rgba / bk_to_rgb565), so it works
+         in full colour, never changes screen[] and costs the game nothing. All zero = off. Set by display{} in Lua.
+         Percent values: scan, vignette, curve, blur, grain 0..100; bright, contrast, sat, warm -100..100. split in pixels 0..4. --- */
+  struct { int32_t scan, vignette, curve, split, blur, grain, bright, contrast, sat, warm; } display;
+
   /* --- time / rng --- */
   uint32_t frame;
   uint64_t rng;
@@ -132,6 +137,37 @@ float bk_hget(float x, float y);
 void bk_floorh(float x, float y, float angle, float camz, int horizon, float focal, int outside, int step);
 void bk_depth(float z);
 void bk_sspr(int n, float x, float y, int w, int h, float sc, int flipx, int flipy);
+/* Screen shaders: run in _draw on what has been drawn so far, inside the clip rectangle (so split screens work).
+   Colour ones go through the palette (results are palette colours); moving ones push pixels around. */
+void bk_tint(int c, float k);                     /* blend toward palette colour c: 0 nothing, 1 all c */
+void bk_fog(int c, int y0, int y1, float a0, float a1); /* tint by a0 at row y0 sliding to a1 at row y1; other rows untouched */
+void bk_dither(int c, float k);                   /* ordered (Bayer 4x4) dissolve to colour c: 0 nothing, 1 all c */
+void bk_remap(const uint8_t *lut);                /* every colour i becomes lut[i] */
+void bk_wave(float amp, float len, float phase, int vertical); /* sine shift of rows (or columns) */
+void bk_ripple(int x, int y, float r, float amp, float width); /* a ring shockwave around x,y (camera applies) */
+void bk_pixelate(int size);                       /* mosaic blocks */
+void bk_glitch(float k, uint32_t seed);           /* torn rows and colour slips; seed picks the pattern */
+void bk_row_shift(int y, int dx);                 /* raster(): slide one row sideways */
+void bk_row_tint(int y, int c, float k);          /* raster(): tint one row */
+
+/* Sprite shaders: while on, every spr() and sspr() goes through them (set with sprfx{} in Lua, like pal()). */
+typedef struct {
+  int on;
+  int outline;                 /* outline colour, -1 none */
+  int flash; float flash_k;    /* blend toward colour flash by flash_k (0..1) */
+  float light;                 /* 0..1: lit rim on the side facing the light, shade on the far side */
+  float lx, ly;                /* direction the light comes from (screen), used when light_at is 0 */
+  int light_at; float lpx, lpy;/* or: light comes from this world point (a torch), per sprite */
+  float dissolve;              /* 0..1: Bayer dissolve */
+  int silhouette;              /* draw every pixel in this colour, -1 none */
+  int shadow, sdx, sdy;        /* drop shadow colour (-1 none) and offset in sprite pixels */
+  int (*fn)(int x, int y, int c, int w, int h); /* your own shader: colour for sprite pixel x, y (c = -1 transparent); -1 hides */
+} bk_sprfx_t;
+extern bk_sprfx_t bk_sprfx;
+void bk_sprfx_reset(void);
+
+void bk_display_reset(void);
+int  bk_display_preset(const char *name);         /* 0 = unknown name */
 void bk_to_rgba(uint32_t *out);       /* for hosts that want RGBA8888 */
 void bk_to_rgb565(uint16_t *out);     /* for the ST7789 on device */
 

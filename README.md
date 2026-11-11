@@ -65,7 +65,7 @@ Tabs a game does not use (Track for a platformer, Map for a racer) wait under **
 
 1. Open **[dvrkstvr.github.io/bitkit](https://dvrkstvr.github.io/bitkit/)** in Chrome, Edge or Firefox.
 2. Press **▶ Run** (or Ctrl+Enter) to play the game that is open, Sprout Hop at first. Click the game screen and use the arrow keys with Z and X, or plug in a controller and press any button on it.
-3. **Games** at the top has every demo (Sprout Hop, Beacon Keeper, Sweep Storm, Kart Lab, Crossgate, Tinwing) and your own games. Each one keeps its own changes.
+3. **Games** at the top has every demo (Sprout Hop, Beacon Keeper, Sweep Storm, Kart Lab, Crossgate, Tinwing, Deepglow) and your own games. Each one keeps its own changes.
 4. Change something and press Run again. The **Game** tab has sliders for how the game feels, the other tabs are the editors.
 5. **Play** at the top shows the game on a Bit, the emulated PocketBit, with its home screen. Pick **2 Bits side by side** to try playing together. Hold Start+Select to go back to the home screen.
 
@@ -165,6 +165,22 @@ A story game drawn in 2.5D like Kart Lab. Perch is a town on stilts, on a planet
 - **The story:** a squall knocked the mail satchel out of the sky past the Drowned Belltower. Your first battery can't get you there and back, but there's a Twin Cell on top of the Belltower. Widen the body to fit it, then fly out to the reef.
 - **Goal:** find the mail satchel and fly it home to Perch. Continue takes you back to the hangar with your plane and everything you found.
 
+### Deepglow (shaders)
+
+<img src="docs/media/deepglow.png" width="400" alt="Deepglow: a diver carrying a glowing pearl in a dark sea cave, a jellyfish below"> <img src="docs/media/deepglow-gallery.png" width="400" alt="Deepglow's Shader gallery showing a lit sprite">
+
+Dive a dark sea cave for glowing pearls. It is a tour of BitKit's shaders: the water wobbles (`wave`), gets darker the deeper you go (`fog`), the sonar ping on **A** spreads as a shockwave (`ripple`) and shows pearls for a few seconds, jellyfish glow through a colour cycle (`remap`) and their sting scrambles the picture (`glitch`), vents shimmer and burn (`tint`), and running out of air fades you out (`pixelate`, `dither`). The diver is a shaded sprite (`sprfx`: lit from above, outlined, flashing when hurt), and pearls are lit by the diver's lamp. **Settings > Screen** picks a look for the whole game (`display`: CRT, Arcade, Old TV, Handheld, Sepia, Night, Vivid). The title screen's **Shader gallery** has every shader with a slider. **Goal:** bring 5 pearls up to the boat.
+
+## ✨ Shaders
+
+The Bit has no GPU, so shaders are small C routines that run on the 320x240 picture. Three kinds:
+
+- **Screen shaders**, called in `_draw` after the world and before the HUD, inside `clip()`: `tint shade fog dither remap wave ripple pixelate glitch`, and `raster(fn)` for your own scanline shader (`fn(y)` returns how far to slide the row and an optional tint).
+- **Sprite shaders**: `sprfx{outline=, flash=, light=, light_at={x,y}, dissolve=, silhouette=, shadow=, shader=function(x, y, c, w, h) ... end}` works like `pal()`: every `spr` and `sspr` after it is drawn through it. They work in sprite pixels, so a big sprite costs no more than a small one. `shader=` is your own per-pixel sprite shader in Lua.
+- **The display look**: `display("crt")` or `display{scanlines=, vignette=, curve=, split=, blur=, grain=, bright=, contrast=, saturation=, warm=}` runs in full colour while the frame goes to the screen, so it never changes `pget()` or slows the game. The studio's **Game** tab has a **Screen look** section with a slider for each.
+
+Colour shaders snap their results to the palette, so a smooth fade needs a ramp of colours in the palette.
+
 ## 🏎️ The demo: Kart Lab (2.5D)
 
 A kart racer drawn SNES-style: the map becomes a floor seen in perspective, with real hills, and karts, trees and items are scaled sprites.
@@ -199,7 +215,8 @@ A kart racer drawn SNES-style: the map becomes a floor seen in perspective, with
 |---|---|
 | Callbacks | `_init` `_update` `_draw` |
 | Game shell | `game{}` `checkpoint` `game_win` `setting` `mus` `game_play` `GAME.state` (title screen, pause menu, settings: see [GAME_RULES.md](GAME_RULES.md)) |
-| Graphics | `cls pset pget line rect rectfill circ circfill text spr map camera clip pal palt palette shade` |
+| Graphics | `cls pset pget line rect rectfill circ circfill text spr map camera clip pal palt palette` |
+| Shaders | `tint shade fog dither remap wave ripple pixelate glitch raster` (screen), `sprfx{}` (sprites), `display()` (the whole screen's look) |
 | Tunables | `tune(name, default, min, max)` (a slider on the studio's Game tab, saved with the game) |
 | Map | `mget mset fget fset` |
 | 2.5D | `floor floorh hset hget depth project sspr` (perspective floor from the map, hills, world-to-screen, scaled sprites) |

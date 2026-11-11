@@ -191,7 +191,8 @@ end
   /* ------------------------------------------------------------ code editor */
   const API_NAMES = ['cls', 'pset', 'pget', 'line', 'rect', 'rectfill', 'circ', 'circfill', 'text', 'spr', 'map', 'mget', 'mset',
     'fget', 'fset', 'camera', 'clip', 'pal', 'palt', 'palette', 'btn', 'btnp', 'btnr', 'press', 't', 'time', 'rnd', 'srand',
-    'sfx', 'tone', 'stop', 'print', '_init', '_update', '_draw', 'cutscene', 'cutscene_playing', 'cutscene_skip', 'cutscenes_reset', 'tune', 'game', 'checkpoint', 'game_win', 'game_play', 'game_screen', 'game_title', 'save', 'saved'];
+    'sfx', 'tone', 'stop', 'print', '_init', '_update', '_draw', 'cutscene', 'cutscene_playing', 'cutscene_skip', 'cutscenes_reset', 'tune', 'game', 'checkpoint', 'game_win', 'game_play', 'game_screen', 'game_title', 'save', 'saved',
+    'shade', 'tint', 'fog', 'dither', 'remap', 'wave', 'ripple', 'pixelate', 'glitch', 'display', 'sprfx', 'raster'];
   let cm = null, ta = null, errLine = null;
   if (window.CodeMirror) {
     // highlight the engine API on top of the lua mode
@@ -741,6 +742,7 @@ BOOST = tune("Items/Boost time", 1.5, 0.5, 4) -- "Group/Name": listed under Item
           <p class="dim">The values you pick are saved with the game, so the device plays it the same way.</p></details>
         ${rows.some((r, i) => cur(tunes[i]) !== tunes[i].def) ? '<p><button id="tuneResetAll">↺ Reset all to the game\'s own values</button></p>' : ''}
       </div>
+      ${displaySection()}
       <div class="game-sec"><h3>${ok === rules.length ? '✓ Checklist: everything a BitKit game needs is here' : `Checklist: ${ok} of ${rules.length}`}</h3>
         <ul class="rules-list">${rules.map(x => `<li class="${x.ok ? 'ok' : 'todo'}"><b>${x.ok ? '✓' : '○'} ${escapeHtml(x.name)}</b>${x.ok ? '' : `<br><span class="dim">${escapeHtml(x.about)}</span>`}</li>`).join('')}</ul>
         <p class="dim small">This is a quick look at your code. <a href="${RULES_URL}" target="_blank" rel="noopener">Read the rules</a></p>
@@ -770,6 +772,7 @@ BOOST = tune("Items/Boost time", 1.5, 0.5, 4) -- "Group/Name": listed under Item
     });
     body.querySelectorAll('[data-treset]').forEach(b => { b.onclick = () => { setTune(tunes[+b.dataset.treset], tunes[+b.dataset.treset].def); renderGameTab(); }; });
     if ($('tuneResetAll')) $('tuneResetAll').onclick = () => { ents.tune = {}; tuneChanged(); renderGameTab(); };
+    wireDisplay(body);
     body.querySelectorAll('[data-pl]').forEach(el => {
       el.oninput = el.onchange = e => {
         const t = ents.types[+el.dataset.pl], key = el.dataset.key, v = +el.value;
@@ -777,6 +780,67 @@ BOOST = tune("Items/Boost time", 1.5, 0.5, 4) -- "Group/Name": listed under Item
         if (key === 'hp') t.hp = Math.max(1, v | 0); else if (t.stats[+key.slice(1)]) t.stats[+key.slice(1)].value = v;
         el.parentNode.querySelectorAll('input').forEach(x => { if (x !== el) x.value = x.type === 'number' ? fmtNum(v) : v; });
         tuneChanged();
+      };
+    });
+  }
+  /* Screen look: the display shader (display{} in Lua) as sliders. Saved with the game as cart.entities.display and
+     handed to the game before its code runs, so a display{} call in the game's own code still wins. While the game
+     runs the sliders change the running game's screen straight away. */
+  const DISPLAY_FIELDS = [   // [Lua name, label, min, max, step]; the C side keeps them as whole percent in this order
+    ['scanlines', 'Scanlines', 0, 1, 0.05], ['vignette', 'Dark corners', 0, 1, 0.05], ['curve', 'Curved glass', 0, 1, 0.05],
+    ['split', 'Colour split (pixels)', 0, 4, 1], ['blur', 'Soft blur', 0, 1, 0.05], ['grain', 'Grain', 0, 1, 0.05],
+    ['bright', 'Brightness', -1, 1, 0.05], ['contrast', 'Contrast', -1, 1, 0.05], ['saturation', 'Colour', -1, 1, 0.05], ['warm', 'Warm / cool', -1, 1, 0.05]];
+  // the looks display("name") knows, same numbers as PRESETS in runtime/bk_core.c (CI checks they match)
+  const DISPLAY_LOOKS = {
+    off: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], crt: [45, 35, 30, 1, 35, 6, 8, 10, 10, 0], arcade: [60, 20, 12, 0, 20, 0, 12, 15, 25, 0],
+    'old tv': [50, 60, 45, 2, 60, 35, 0, -5, -60, 15], handheld: [15, 0, 0, 0, 25, 0, -5, -15, -35, 10],
+    sepia: [0, 40, 0, 0, 0, 10, 0, 0, -100, 55], night: [20, 55, 0, 0, 10, 25, -10, 10, -70, -45], vivid: [0, 15, 0, 0, 0, 0, 5, 20, 45, 0] };
+  const lookToVals = name => { const v = DISPLAY_LOOKS[name] || DISPLAY_LOOKS.off; return DISPLAY_FIELDS.map((f, i) => (f[0] === 'split' ? v[i] : v[i] / 100)); };
+  function displayLua(d) {
+    if (!d || !d.vals) return '';
+    return 'display{' + DISPLAY_FIELDS.map((f, i) => `${f[0]} = ${+d.vals[i] || 0}`).join(', ') + '}\n';
+  }
+  window.BKDisplay = { FIELDS: DISPLAY_FIELDS, LOOKS: DISPLAY_LOOKS, lua: displayLua };
+  function pushDisplay() {           // into the running game, right now
+    if (!running || !RT._bkw_display) return;
+    const d = cart.entities.display, base = RT._bkw_display() >> 2;
+    DISPLAY_FIELDS.forEach((f, i) => { const v = d && d.vals ? +d.vals[i] || 0 : 0; RT.HEAP32[base + i] = f[0] === 'split' ? Math.round(v) : Math.round(v * 100); });
+  }
+  function displaySection() {
+    const d = cart.entities.display, vals = d && d.vals ? d.vals : lookToVals('off');
+    const codeHas = /\bdisplay\s*[({"']/.test(getCode());
+    const look = d ? d.look || 'custom' : 'game';
+    const opts = [['game', "None (the game's own)"], ...Object.keys(DISPLAY_LOOKS).filter(k => k !== 'off').map(k => [k, k[0].toUpperCase() + k.slice(1)]), ['custom', 'Custom']];
+    return `<div class="game-sec"><h3>Screen look</h3>
+      <p class="dim">A shader on the whole screen: old CRT glass, a worn TV, sepia. It is applied as the picture goes to the screen, so it never slows the game down.${codeHas ? ' This game also sets its own look with display() in its code, which takes over once that line runs.' : ''}</p>
+      <div class="tune-row"><label>Look</label><span class="tune-ctl"><select id="dispLook">${opts.map(([k, n]) => `<option value="${escapeHtml(k)}"${k === look ? ' selected' : ''}${k === 'custom' && look !== 'custom' ? ' hidden' : ''}>${escapeHtml(n)}</option>`).join('')}</select></span><span class="tune-pad"></span></div>
+      ${d ? DISPLAY_FIELDS.map((f, i) => `<div class="tune-row"><label>${escapeHtml(f[1])}</label><span class="tune-ctl"><input type="range" data-disp="${i}" min="${f[2]}" max="${f[3]}" step="${f[4]}" value="${vals[i]}"><input type="number" data-disp="${i}" min="${f[2]}" max="${f[3]}" step="${f[4]}" value="${fmtNum(vals[i])}"></span><span class="tune-pad"></span></div>`).join('') : ''}
+      <details class="tune-how"><summary>From code</summary><pre>display("crt")                              -- a ready look
+display{scanlines = 0.4, curve = 0.2, warm = 0.3}  -- your own
+display()                                   -- off</pre><p class="dim">The Help tab lists the other shaders (tint, fog, wave, ripple, pixelate, dither, glitch) that you call in _draw.</p></details>
+    </div>`;
+  }
+  function wireDisplay(body) {
+    const sel = body.querySelector('#dispLook');
+    if (!sel) return;
+    sel.onchange = () => {
+      const v = sel.value;
+      if (v === 'game') delete cart.entities.display;
+      else if (v !== 'custom') cart.entities.display = { look: v, vals: lookToVals(v) };
+      markDirty(); pushDisplay(); renderGameTab();
+    };
+    body.querySelectorAll('[data-disp]').forEach(el => {
+      el.oninput = el.onchange = e => {
+        const i = +el.dataset.disp, f = DISPLAY_FIELDS[i];
+        let v = +el.value;
+        if (!isFinite(v) || el.value === '') return;
+        v = Math.max(f[2], Math.min(f[3], v));
+        const d = cart.entities.display;
+        if (!d) return;
+        d.vals[i] = v; d.look = 'custom';
+        el.parentNode.querySelectorAll('input').forEach(x => { if (x !== el || e.type === 'change') x.value = x.type === 'number' ? fmtNum(v) : v; });
+        sel.querySelector('option[value="custom"]').hidden = false; sel.value = 'custom';
+        markDirty(); pushDisplay();
       };
     });
   }
@@ -2644,6 +2708,29 @@ BOOST = tune("Items/Boost time", 1.5, 0.5, 4) -- "Group/Name": listed under Item
       ['palt([c,on])', 'Make colour c transparent for sprites and maps. palt() resets (only 0 is transparent).'],
       ['palette(i,[r,g,b])', 'Read or change palette colour i (0-255 each).'],
       ['shade([amount])', 'Darken everything drawn so far: 0 changes nothing, 1 is black (default 0.5). Good behind a menu or for night. Only inside clip().']]],
+    ['Shaders: effects on what you have drawn', [
+      ['How they work', 'Screen-space shaders. Call these in _draw after drawing the world and before the HUD: each one changes what is on the screen so far, inside clip(). They are cheap enough for the device at 60 fps. Colour shaders snap to the palette, so add colours to the palette for smoother blends.'],
+      ['tint(c, [amount])', 'Blend everything toward palette colour c: 0 changes nothing, 1 is all c (default 0.5). A red flash when hurt, a blue underwater cast, an orange sunset.'],
+      ['fog(c, y0, y1, [a0], [a1])', 'Tint that changes down the screen: amount a0 (default 1) at row y0 sliding to a1 (default 0) at row y1. Rows outside y0..y1 are untouched. Haze on a 2.5D horizon, deep water getting darker.'],
+      ['dither(c, [amount])', 'Retro dissolve: a checker pattern of colour c covers amount of the screen (0.5 is every other pixel). For fades, wipes and fog with no new colours.'],
+      ['remap({[from] = to, ...})', 'Swap colours on screen after drawing: remap({[27] = 8}) turns every yellow pixel red. Also remap(from, to, from2, to2, ...). For flashes and palette cycling.'],
+      ['wave(amp, [len], [speed], [vertical])', 'Each row slides sideways on a sine wave: amp pixels, a wave every len rows (default 32), speed waves per second (default 1). vertical = true moves columns up and down. Heat haze, underwater, dreams.'],
+      ['ripple(x, y, r, [amp], [width])', 'A shockwave ring of radius r around x, y (the camera applies), pushing pixels out by amp (default 4) across a band width pixels wide (default 10). Grow r each frame for an explosion or a sonar ping.'],
+      ['pixelate(size)', 'Mosaic blocks of size x size pixels. Grow it and shrink it for a screen transition.'],
+      ['glitch([amount], [seed])', 'Torn rows and colour slips (amount 0..1). It picks the pattern from seed (default: the frame), never from rnd(), so linked games stay in step.'],
+      ['raster(fn)', 'Write your own scanline shader: fn(y) is called for every row on screen (inside clip()) and returns dx to slide the row sideways, and optionally c, amount to tint it. raster(function(y) return math.sin(y / 9 + t() / 10) * 3 end) is a heat haze; return 0, 1, y / 240 for a fade to dark. At most 240 calls a frame, so it is cheap on the device.'],
+      ['display(look)', 'A screen look for the whole game, in full colour: "crt", "arcade", "old tv", "handheld", "sepia", "night", "vivid" or "off". It stays on until changed and costs the game nothing (it is applied while the frame goes to the screen). display() turns it off.'],
+      ['display{...}', 'Build your own look: display{scanlines = 0.4, vignette = 0.3, curve = 0.2, split = 1, blur = 0.3, grain = 0.1, bright = 0, contrast = 0.1, saturation = -0.5, warm = 0.3}. All 0..1 except split (pixels, 0-4) and bright, contrast, saturation, warm (-1..1). look = "crt" starts from a look. The Game tab has sliders for it too.']]],
+    ['Sprite shaders: shaded sprites', [
+      ['sprfx{...}', 'Like pal(): every spr() and sspr() after it is drawn through these until sprfx() turns them off. Mix any of them: sprfx{outline = 1, light = 0.6}. They work in sprite pixels, so a big sprite costs no more than a small one.'],
+      ['outline = c', 'A 1 pixel outline in colour c around the sprite (it grows with the scale).'],
+      ['flash = c, flash_amount = 0..1', 'Blend the sprite toward colour c (amount defaults to 1). A white hit flash, a red "burning" tint.'],
+      ['light = 0..1, light_x, light_y', 'Shades the sprite as if lit: a bright rim on the side facing the light and shade on the far side, from the sprite\'s own shape. light_x, light_y is the direction the light comes from (default -1, -1: top left).'],
+      ['light_at = {x, y}', 'Light from a point in the world instead (a torch, a lamp): each sprite is lit from its own side of it.'],
+      ['dissolve = 0..1', 'Dither the sprite away: for spawning, dying and teleporting.'],
+      ['silhouette = c', 'Every pixel in colour c: a shadow figure, a "who\'s that" reveal, a player behind a wall.'],
+      ['shadow = c, shadow_x, shadow_y', 'A drop shadow in colour c, offset by shadow_x, shadow_y sprite pixels (default 1, 1).'],
+      ['shader = function(x, y, c, w, h) ... end', 'Your own sprite shader: called for every pixel of the sprite (x, y inside it, w x h its size) with its colour c (nil where it is see-through). Return a colour, or nil to leave the pixel out. Runs before the others.']]],
     ['2.5D (perspective floor)', [
       ['floor(x,y,angle,height,horizon,[focal],[outside],[step])', 'Draw the map as a floor seen in perspective, like a classic kart racer. x,y = camera position in world pixels, angle in radians (0 looks toward +x, turning toward +y), height = camera height in pixels, horizon = screen row of the horizon. focal (default 160) is the zoom. outside = colour past the map edge and far away (-1 leaves those pixels alone, so draw the sky first). step 2 draws every other column (faster on the device). Fills the rows below the horizon inside clip().'],
       ['project(x,y,[z])', 'Where world point x,y (z = height above the floor) lands on screen with the last floor() or floorh() camera. Returns sx, sy, scale (screen pixels per world pixel) and dist (how far away it is), or nil if it is behind the camera. Draw far things first.'],

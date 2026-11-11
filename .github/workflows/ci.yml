@@ -30,6 +30,8 @@ jobs:
         run: node tools/crossgatetest.cjs
       - name: Tinwing checks
         run: node tools/tinwingtest.cjs
+      - name: Shaders and Deepglow
+        run: node tools/shadertest.cjs
 
   linked-bits:
     runs-on: ubuntu-latest

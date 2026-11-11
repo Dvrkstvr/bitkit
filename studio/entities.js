@@ -145,7 +145,8 @@ window.BKEntities = (function () {
     const names = (data && data.flagNames) || ['solid'];
     const pairs = names.map((n, i) => (n && /^[A-Za-z_]\w*$/.test(n) ? `${n} = ${i}` : '')).filter(Boolean);
     const tune = (data && data.tune) || {};     // values picked on the Game tab, read by tune()
-    return `FLAGS = {${pairs.join(', ')}}\n` +
+    const look = window.BKDisplay && data && data.display ? window.BKDisplay.lua(data.display) : '';   // Game tab: Screen look
+    return look + `FLAGS = {${pairs.join(', ')}}\n` +
       `TUNE = {${Object.keys(tune).map(k => `[${luaStr(k)}] = ${luaVal(tune[k])}`).join(', ')}}\n` +
       'do local raw_fget, raw_fset = fget, fset\n' +
       '  function fget(n, b) if type(b) == "string" then b = FLAGS[b] if b == nil then return false end end if b == nil then return raw_fget(n) end return raw_fget(n, b) end\n' +
