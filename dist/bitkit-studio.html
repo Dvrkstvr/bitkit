@@ -14619,9 +14619,11 @@ function _init()
       "Confuse and Paint fly at the nearest rival: for a while they see wrong numbers or none there.",
       "Shore cells are worth 1, the middle ring 2, the core 4. Power-ups get stronger towards the middle.",
       "The storm shrinks the island. Standing in it costs hearts.",
+      "Fog covers the island and you can only walk where you can see. Digging clears the fog around what you dig.",
       "Up to 20 Bits nearby can join the same match. Bots fill the empty spots.",
     },
-    settings = { { key = "skill", name = "Bot skill", values = { "Easy", "Normal", "Hard" }, value = 2 } },
+    settings = { { key = "skill", name = "Bot skill", values = { "Easy", "Normal", "Hard" }, value = 2 },
+                 { key = "fog", name = "Fog of war", values = { "On", "Off" }, value = 1 } },
     continue = function(cp) if not (cp and resume(cp)) then to_lobby() end end,
     new_game = function() to_lobby() end,
   }
@@ -14771,6 +14773,7 @@ function open_cell(x, y, pid, quiet)
     pts = pts + ZPTS[zone[j]]
     flag[j] = nil
     settile(j)
+    if not quiet and me and pid == me.k then reveal((j - 1) % S, (j - 1) // S, FOG_DIG) end
     if item[j] then
       local p = slots and slots[pid]
       if p and not quiet and mine_slot(p) then got_item(p, item[j]) end
@@ -14790,6 +14793,47 @@ function open_cell(x, y, pid, quiet)
   return n, pts
 end
 
+-- ============================================================ fog of war
+-- Each Bit keeps its own: you see what's near ground you dug yourself, and you can only walk where
+-- you can see. Only digging clears fog, so when the storm comes you have to dig your way out of it.
+FOG_DIG, FOG_START = 2, 4
+function fog_on() return setting("fog") ~= 2 and not (me and me.out) end
+function reveal(x0, y0, r)
+  for y = y0 - r, y0 + r do for x = x0 - r, x0 + r do
+    if onmap(x, y) and (x - x0) ^ 2 + (y - y0) ^ 2 <= r * r + r then seen[idx(x, y)] = true end
+  end end
+end
+-- at the start you see your own opening (the ground opened around your spawn) and a little more
+function reveal_spawn(x0, y0)
+  reveal(x0, y0, FOG_START)
+  local st, done = { idx(x0, y0) }, {}
+  while #st > 0 do
+    local j = table.remove(st)
+    if not done[j] then
+      done[j] = true
+      local x, y = (j - 1) % S, (j - 1) // S
+      reveal(x, y, FOG_DIG)
+      if num[j] == 0 then
+        for k = 1, 8 do
+          local nx, ny = x + DX[k], y + DY[k]
+          if onmap(nx, ny) and op[idx(nx, ny)] == 1 then st[#st + 1] = idx(nx, ny) end
+        end
+      end
+    end
+  end
+end
+function fogged(x, y) return fog_on() and onmap(x, y) and not seen[idx(x, y)] end
+
+function draw_fog(mx, my)
+  if not fog_on() then return end
+  for y = math.max(0, my), math.min(S - 1, my + 30) do
+    for x = math.max(0, mx), math.min(S - 1, mx + 41) do
+      local i = idx(x, y)
+      if land[i] and not seen[i] then spr(138 + (x * 3 + y * 5) % 2, x * 8, y * 8) end
+    end
+  end
+end
+
 function touches_open(x, y)
   for k = 1, 8 do
     local nx, ny = x + DX[k], y + DY[k]
@@ -14801,7 +14845,9 @@ end
 function walkable(x, y)
   if not onmap(x, y) then return false end
   local i = idx(x, y)
-  return land[i] and (op[i] > 0 or touches_open(x, y))
+  if not land[i] then return false end
+  if fog_on() then return seen[i] == true end        -- fog: anywhere you can see, dug or not
+  return op[i] > 0 or touches_open(x, y)
 end
 
 -- ============================================================ the match
@@ -14820,6 +14866,8 @@ function start_match(seed, ids, nb, host)
     if (human and ids[k] == NET_ID) or (NET_ID == 0 and k == 1) then me = slots[k] end
   end
   match = { seed = seed, nh = nh, nb = nb, host = host, hosting = host == NET_ID, n = n, mt = 0, over = false }
+  seen = {}
+  reveal_spawn(me.x, me.y)
   outq, feed, tricks, splats = {}, {}, {}, {}
   cam_x, cam_y = me.x * 8 - 156, me.y * 8 - 108
   scene = "match"
@@ -15191,6 +15239,8 @@ function resume(cp)
     if p then p.x, p.y, p.score, p.hearts, p.out, p.item, p.shield = v[1], v[2], v[3], v[4], v[5] == 1, v[6], v[7] == 1 end
   end
   match.mt = cp.mt or 0
+  for i = 1, S * S do if op[i] ~= 0 then reveal((i - 1) % S, (i - 1) // S, FOG_DIG) end end   -- roughly what you had seen
+  reveal_spawn(me.x, me.y)
   storm_update()
   cam_x, cam_y = me.x * 8 - 156, me.y * 8 - 108
   feed = {}
@@ -15287,6 +15337,7 @@ function draw_match()
   local mx, my = cx // 8, cy // 8
   map(mx, my, 42, 30, mx * 8, my * 8)
   draw_tricks(mx, my)
+  draw_fog(mx, my)
   -- the storm's edge
   circ(C * 8 + 4, C * 8 + 4, SR * 8 + 4, 5)
   circ(C * 8 + 4, C * 8 + 4, SR * 8 + 5, 3)
@@ -15294,7 +15345,7 @@ function draw_match()
   for _, q in ipairs(slots) do
     if q ~= p then
       local x, y = q.x * 8, q.y * 8
-      if x > cx - 16 and x < cx + 336 and y > cy - 32 and y < cy + 240 then
+      if x > cx - 16 and x < cx + 336 and y > cy - 32 and y < cy + 240 and not fogged(q.x, q.y) then
         local c = q.out and 28 or q.col
         rect(x - 1, y - 1, 10, 10, c)
         if q.stun > 0 and (t() // 4) % 2 == 0 then rect(x - 2, y - 2, 12, 12, 22) end
@@ -15398,12 +15449,13 @@ function draw_minimap()
         local c
         if op[i] == 1 then c = 30 elseif op[i] == 2 then c = 26 else c = ({ 16, 10, 4 })[zone[i]] end
         if instorm(x, y) then c = 2 end
+        if fog_on() and not seen[i] then c = (x + y) % 2 == 0 and 31 or 30 end
         rectfill(x0 + x * sc, y0 + y * sc, sc, sc, c)
       end
     end
   end
   for _, q in ipairs(slots) do
-    if not q.out then rectfill(x0 + q.x * sc - 1, y0 + q.y * sc - 1, sc + 2, sc + 2, q.col) end
+    if not q.out and not fogged(q.x, q.y) then rectfill(x0 + q.x * sc - 1, y0 + q.y * sc - 1, sc + 2, sc + 2, q.col) end
   end
   if (t() // 8) % 2 == 0 then rect(x0 + me.x * sc - 3, y0 + me.y * sc - 3, sc + 6, sc + 6, 13) end
 end
@@ -15441,6 +15493,8 @@ end
     132: ['.o..Y.o.', '..oYYo..', 'oYYwwYYo', '.YwwwwY.', '.YwwwwY.', 'oYYwwYYo', '..oYYo..', '.o..Y.o.'],   // blast
     133: ['..pppp..', '.p....p.', '....pp..', '...pP...', '...p....', '........', '...P....', '........'],   // confuse
     134: ['....k...', '...kRk..', '..kRRRk.', '.kRRRRRk', '.kwRRRRk', '.kRRRRRk', '..kRRRk.', '...kkk..'],   // paint
+    138: ['SSSSSSSS', 'SSsSSSSS', 'SsssSSSS', 'SSSSSsSS', 'SSSSsssS', 'SSSSSSSS', 'SsSSSSSS', 'SSSSSSSS'],   // fog
+    139: ['SSSSSSSS', 'SSSSSsSS', 'SSSSsssS', 'SSSSSSSS', 'SSsSSSSS', 'SsssSSSS', 'SSSSSSSS', 'SSSSSSsS'],
     135: ['.PP.....', 'PPPP..P.', 'PPPPPPP.', '.PPPPPP.', '.PPPPPPP', '..PPPPP.', 'P.PPPP..', '...PP...'],   // paint blots
     136: ['....PP..', '.PPPPPP.', 'PPPPPPP.', 'PPPPPPPP', '.PPPPPPP', 'PPPPPP..', '.PP.PPP.', '.....P..'],
     137: ['P..PPP..', '.PPPPPP.', '.PPPPPPP', 'PPPPPPP.', 'PPPPPPP.', '.PPPPPPP', '..PPPP.P', '.P......'],
