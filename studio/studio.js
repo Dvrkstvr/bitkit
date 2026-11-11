@@ -2031,6 +2031,23 @@ display()                                   -- off</pre><p class="dim">The Help 
         pruneLog(s);
       }
     } else if (m.t === 'paused') { if (bit.playing === 'home') refreshHomeSoon(); }
+    else if (m.t === 'netgo') netGo(m);
+  }
+  // a linked Bit opened a net game (Sweep Storm) from its home screen: open it here too, straight into its lobby
+  function netGo(m) {
+    if (!bit.on || bit.playing !== 'home' || bit.busy || link.s) return;
+    const games = bit.games.map((g, i) => [g, i]).filter(([g]) => !g.app);
+    const code = g => { try { return g.studio ? getCode() : g.demo ? g.demo.code : decodeCart(g.data).code; } catch (e) { return ''; } };
+    const hit = games.find(([g]) => gameKey(g).fp === m.fp) || games.find(([g]) => g.name === m.name && isNetGame(code(g)));
+    if (!hit) { log(`🔗 Bit ${peerNum(m.from)} opened ${m.name}, which this Bit doesn't have`, 'sys'); return; }
+    const [g, i] = hit, key = gameKey(g);
+    let c = null;
+    try { c = g.studio ? cart : g.demo ? demoCart(g.demo) : decodeCart(g.data); } catch (e) { return; }
+    log(`🔗 Bit ${peerNum(m.from)} opened ${g.name}: joining its lobby`, 'sys');
+    bit.sel = i + 1;
+    if (g.studio) run(undefined, 'GAME_BOOT = 3\n');
+    else playCart(c, g.demo ? 'demo:' + g.name : g.file, 'GAME_BOOT = 3\n');
+    bit.cur = key;
   }
   function peersChanged() {
     const s = link.s;
@@ -2624,6 +2641,7 @@ display()                                   -- off</pre><p class="dim">The Help 
       let c = null;
       try { c = g.app ? appCart(g.app) : g.studio ? cart : g.demo ? demoCart(g.demo) : decodeCart(g.data); } catch (e) { log(`Could not start ${g.name}: ${e.message}`, 'err'); return; }
       if (linkWanted() && !isNetGame(c.code) && !g.app) { linkFromHome(g, c, key, fresh); return; }   // other Bits are on their home screens: play it together
+      if (linkWanted() && !g.app && isNetGame(g.studio ? getCode() : c.code)) linkSend({ t: 'netgo', fp: key.fp, name: g.name });   // a net game: the others open its lobby
       if (!fresh) {
         bit.busy = true;
         let snap = null;

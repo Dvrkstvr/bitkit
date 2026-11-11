@@ -118,17 +118,36 @@ function state(bits) {
     if (v && v[4] !== st[0][4]) fail(`Bit ${k + 1} ended with a different island than Bit 1`);
   });
   if (mid && !(+mid[0][11] < +mid[0][1] / 2)) fail('the storm did not close in: ' + mid[0]);
-  if (st[0] && +st[0][6] < 20) fail('player 1 dug almost nothing: ' + st[0][6]);
+  if (!st.some(v => v && +v[6] >= 20)) fail('nobody dug much: ' + st.map(v => v && v[6]));   // one Bit can hit a mine early
   // Confuse and Paint thrown by anyone reach every Bit
   const tr = st.map(v => v && +v[14]);
   if (!(tr[0] > 0) || tr.some(n => n !== tr[0])) fail('Bits saw different numbers of Confuse/Paint throws: ' + tr);
   const total = bits.reduce((n, b) => n + b.sent, 0);
   console.log('events sent:', bits.map(b => b.sent).join(', '), '(bots run on Bit 1)');
   if (total > 60 * 4 * 60 * 2) fail('too many network events for ESP-NOW: ' + total);
-  // after the results, A goes back to the lobby
-  tick(bits, bits.map(() => 1 << B.a)); tick(bits);
+  // after the results: Bit 4 goes back to the lobby with B, then Bit 2 presses A (play again) and pulls in
+  // everyone, the three Bits still on the results and Bit 4 in the lobby
+  tick(bits, [0, 0, 0, 1 << B.b]); tick(bits);
   st = state(bits);
-  if (!st[0] || st[0][0] !== 'lobby') fail('A on the results did not go back to the lobby');
+  if (!st[3] || st[3][0] !== 'lobby') fail('B on the results did not go back to the lobby');
+  if (st[0] && st[0][0] === 'lobby') fail('Bit 1 left the results by itself');
+  for (let f = 0; f < 70; f++) tick(bits);
+  tick(bits, [0, 1 << B.a]);
+  for (let f = 0; f < 5; f++) tick(bits);
+  st = state(bits);
+  st.forEach((v, k) => {
+    if (!v || v[0] === 'lobby' || v[5] !== '0' || v[0] !== st[1][0]) fail(`Bit ${k + 1} is not in the rematch: ${v}`);
+    else if (v[8] !== '4') fail(`Bit ${k + 1}: rematch has ${v[8]} humans`);
+  });
+  if (st[0] && st[0][0] === seed) fail('the rematch has the same island');
+  // Bit 3 leaves through the pause menu (Start, Down to "Back to lobby", A): it is out on every Bit
+  for (let f = 0; f < 30; f++) tick(bits);
+  const alive0 = st[0] && +st[0][10];
+  tick(bits, [0, 0, 1 << B.start]); tick(bits); tick(bits, [0, 0, 1 << B.down]); tick(bits); tick(bits, [0, 0, 1 << B.a]);
+  for (let f = 0; f < 20; f++) tick(bits);
+  st = state(bits);
+  if (!st[2] || st[2][0] !== 'lobby') fail('"Back to lobby" in the pause menu did not leave the match: ' + st[2]);
+  if (st[0] && !(+st[0][10] < alive0)) fail(`Bit 1 still counts Bit 3 as digging: ${st[0][10]} alive (was ${alive0})`);
   bits.forEach(b => b.errors.forEach(e => fail('match: ' + e)));
 
   // 3. no network (NET_ID 0): you against the bots, with a checkpoint for Continue

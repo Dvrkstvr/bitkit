@@ -64,6 +64,7 @@ static void link_frame(uint16_t mask, const uint8_t *press);
 static void link_tick(void);
 static void net_after_frame(void);
 static int  link_wanted(int n);
+static void net_go(int n);
 static void link_start_info(int *players, int *me, const char **names, int *keep_save);
 static int  link_on(void);
 static uint32_t my_net_id(int n);
@@ -476,6 +477,7 @@ int bk_host_launch(int n) {
   if (n < 1 || n > nE) return 1;
   sel = n;
   if (link_wanted(n)) return link_launch(n, 0);   /* other Bits are on their home screens: play it together */
+  net_go(n);
   if (home_slot) slot_close(home_slot);
   slot *p = paused_slot(n);
   if (p) {
@@ -565,9 +567,11 @@ int bk_host_recording(void) { return cap.rec; }
      while it waits. Start+Select or home() by anyone pauses the game on every Bit on the same frame; picking it
      again with the same Bits carries on together (each Bit keeps its copy, matched by the session it was paused in).
    - games that use net_send() don't run in lockstep: each Bit plays on its own and the events go out as NET packets.
+     Opening one from the home screen sends NETGO (fp, name): linked Bits on their home screens open it too, straight
+     into its lobby (GAME_BOOT = 3), so they meet there.
    Packets: 'B' 'K' version type, from id (u32), then the type's fields, little endian, at most 250 bytes. */
 #define LK_VER 1
-enum { LK_HI = 1, LK_START, LK_IN, LK_END, LK_NET, LK_SH_OFFER, LK_SH_ANS, LK_SH_DATA, LK_SH_ACK, LK_SH_END };
+enum { LK_HI = 1, LK_START, LK_IN, LK_END, LK_NET, LK_SH_OFFER, LK_SH_ANS, LK_SH_DATA, LK_SH_ACK, LK_SH_END, LK_NETGO };
 #define LK_PEERS 16
 #define LK_RING 32                     /* frames of buttons kept per player */
 #define LK_SEND 10                     /* frames in each IN packet */
@@ -593,6 +597,7 @@ static struct {
   lk_in in[BK_MAX_PLAYERS][LK_RING];
   uint8_t under[BK_W * 12];            /* the game's pixels under the "waiting" bar */
   int heard;
+  int netgo, netgo_rep; uint32_t netgo_at;   /* NETGO for this game (entry), still to be sent again */
   struct { uint8_t b[250]; int n; } start_pkt;   /* the START this Bit sent, again until every seat answers */
 } BK_BIG_BSS LK;                        /* PSRAM on the device */
 
@@ -689,6 +694,39 @@ static uint32_t my_net_id(int n) {
   if (!C.radio_send || LK.on || n < 1 || n > nE) return 0;
   entry_info(&E[n - 1]);
   return E[n - 1].net ? 1 + LK.id % 65534 : 0;
+}
+
+/* NETGO: a net game opened here goes to the linked Bits on their home screens too (sent again a few times over the
+   next second while this Bit is still in it: radios lose packets, and a Bit already in the game ignores the rest) */
+static void net_go_send(void) {
+  const entry *e = &E[LK.netgo - 1];
+  lk_w w; whead(&w, LK_NETGO); w32(&w, e->fp); wstr(&w, e->name, 40);
+  wsend(&w);
+  LK.netgo_at = lk_now();
+}
+static void net_go(int n) {
+  LK.netgo_rep = 0;
+  if (!C.radio_send || n < 1 || n > nE || E[n - 1].is_app || link_roster_n() < 2) return;
+  entry_info(&E[n - 1]);
+  if (!E[n - 1].net) return;
+  LK.netgo = n; LK.netgo_rep = 5;
+  net_go_send();
+}
+static void net_go_recv(lk_peer *p, lk_r *r) {
+  char game[48];
+  const uint32_t fp = r32(r);
+  rstr(r, game, sizeof(game));
+  if (r->bad || mode != MODE_HOME || LK.on) return;
+  int n = 0;
+  for (int i = 0; i < nE && !n; i++) if (!E[i].is_app) { entry_info(&E[i]); if (E[i].fp == fp && E[i].net) n = i + 1; }
+  char m[120];
+  if (!n) { snprintf(m, sizeof(m), "Bit %d opened \"%s\", which this Bit doesn't have", p ? p->num : 0, game); say(m, 1); return; }
+  snprintf(m, sizeof(m), "Bit %d opened \"%s\": joining its lobby", p ? p->num : 0, game); say(m, 0);
+  slot *old = paused_slot(n);
+  if (old) slot_close(old);          /* a new lobby, not an old match */
+  if (home_slot) slot_close(home_slot);
+  sel = n;
+  start_game(n, "GAME_BOOT = 3\n");
 }
 
 static void link_start_info(int *players, int *me, const char **names, int *keep_save) {
@@ -1022,6 +1060,7 @@ void bk_host_radio_recv(const void *pkt, int len) {
     char m[96]; snprintf(m, sizeof(m), "Bit %d %s, so the linked game ended", p ? p->num : 0, W[why & 3]); say(m, 1);
     link_leave(0);
   } else if (type == LK_NET) net_recv(from, &r);
+  else if (type == LK_NETGO) net_go_recv(p, &r);
   else if (type >= LK_SH_OFFER && type <= LK_SH_END) share_recv(type, from, p, &r);
 }
 
@@ -1035,6 +1074,9 @@ static void link_tick(void) {
   if (my_state() != LK.last_st) { LK.last_st = my_state(); LK.hi_rep = 3; LK.last_hi = now - 1000; }
   if (LK.hi_rep && now - LK.last_hi >= 100) { LK.hi_rep--; send_hi(); }
   else if (now - LK.last_hi >= 1000) send_hi();
+  if (LK.netgo_rep && now - LK.netgo_at >= 200) {
+    if (mode == MODE_GAME && cur && cur->game == LK.netgo) { LK.netgo_rep--; net_go_send(); } else LK.netgo_rep = 0;
+  }
   for (int i = 0; i < LK.npeers; i++)
     if (now - LK.peer[i].seen > LK_GONE_MS) {
       char m[48]; snprintf(m, sizeof(m), "lost Bit %d", LK.peer[i].num); say(m, 0);

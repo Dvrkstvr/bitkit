@@ -164,7 +164,8 @@ A minesweeper battle royale for up to 20 Bits, with bots filling the empty spots
 - Fog of war: you only see the ground near cells you dug yourself, and you can only walk where you can see (over dug or undug cells). Digging clears fog, and so does standing on dug ground (yours or another player's), so you can follow paths others solved. Undug ground never clears it, so when the storm comes you have to dig or find a path. It can be turned off in Settings.
 - A mine costs one of your 3 hearts and stuns you. After 40 seconds a storm closes in from the shore and standing in it costs hearts too.
 - **Goal:** have the most points when the storm closes or the time runs out (the last digger standing gets a bonus).
-- **Play together:** open more studio windows, load Sweep Storm in each and pick New game (or Continue). They find each other in the lobby and any of them can start. This uses network events (`net_send` / `net_recv`), not lockstep, so it scales to 20 PocketBits over ESP-NOW. Play alone and Continue takes you back to the match.
+- **Play together:** open more studio windows, then open Sweep Storm on one Bit's home screen: the linked Bits on their home screens open it too, straight into the lobby (on PocketBits as well, over ESP-NOW). You can also load it in each window and pick New game. They find each other in the lobby and any of them can start. This uses network events (`net_send` / `net_recv`), not lockstep, so it scales to 20 PocketBits over ESP-NOW. Play alone and Continue takes you back to the match.
+- **Again or back to the lobby:** on the results, A starts the next match with every Bit still on the results or in the lobby, and B goes back to the lobby. In a match, the pause menu's **Back to lobby** gives up (you, and the bots your Bit runs, are out for the others) and takes you there.
 
 ### Crossgate
 

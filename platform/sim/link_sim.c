@@ -2,8 +2,8 @@
      bitsim --link <flash dir> <data dir> [--loss percent] [--game name] [-v]
    Bit A and Bit B find each other, A starts Crossgate (or the --game one) from its home screen and both play it in lockstep with
    random buttons; A's Start+Select pauses it on both on the same frame (the lockstep hash must match);
-   A picks it again and both carry on; this time B leaves; then both play Sweep Storm on their own and hear
-   each other's net_send events; last, B switches off in the middle of a linked game and A goes home by itself.
+   A picks it again and both carry on; this time B leaves; then A opens Sweep Storm, B opens it by itself (NETGO)
+   and both play it on their own and hear each other's net_send events; last, B switches off in the middle of a linked game and A goes home by itself.
    Included by main_sim.c. MIT License. */
 #include <signal.h>
 #include <sys/socket.h>
@@ -43,6 +43,7 @@ static uint16_t lk_none(void) { return 0; }
 static uint16_t lk_combo(void) { return START | SELECT; }
 static int lk_two(void) { return bk_host_linked() == 2; }
 static int lk_ready(void) { return bk_host_link_ready() == 2 && !strcmp(bk_host_playing(), "home"); }   /* the other Bit is home too */
+static int lk_in_sweep(void) { return !strcmp(bk_host_playing(), "Sweep Storm"); }
 static int lk_in_game(void) { return bk_host_link_players() == 2; }
 static int lk_at_home(void) { return !strcmp(bk_host_playing(), "home") && !bk_host_link_players(); }
 static uint32_t lk_target;
@@ -84,10 +85,10 @@ static int link_bit(int is_a, const char *flash, const char *data, const char *r
   if (!is_a) lk_until(lk_at_home, lk_combo, 10); else lk_until(lk_at_home, lk_rand_mask, 15);
   if (!lk_at_home()) FAIL("%s: Start+Select on Bit B did not take this Bit home", me);
   h2 = bk_host_link_sync(&f2);
-  /* 4. Sweep Storm: each Bit on its own, talking with net_send */
-  { const double t = now_us() + 1.0e6; while (now_us() < t) lk_tick(0); }
-  /* (started directly, as alone: a net_send game is never linked) */
-  bk_host_launch(sweep);
+  /* 4. Sweep Storm: A opens it, B opens it by itself (NETGO) straight into its lobby, not in lockstep;
+     each Bit plays on its own, talking with net_send */
+  if (is_a) { if (!lk_until(lk_ready, lk_none, 6)) FAIL("Bit A: Bit B is not home for Sweep Storm"); bk_host_launch(sweep); }
+  else if (!lk_until(lk_in_sweep, lk_none, 8)) FAIL("Bit B: Sweep Storm on Bit A did not open it here (%s)", bk_host_playing());
   if (bk_host_link_players()) FAIL("%s: Sweep Storm was started in lockstep", me);
   { const double t = now_us() + 3.0e6; while (now_us() < t) lk_tick(lk_rand_mask() & (uint16_t)~START); }
   if (bk_host_net_heard() < 1) FAIL("%s: heard no net_send events from the other Bit", me);

@@ -178,6 +178,19 @@ const ok = m => console.log('ok  ', m);
     await wait(A, () => bkStudio.link.peers.size === 2);
   }
 
+  // ---- 9c. Sweep Storm is a net game: opening it on one Bit opens its lobby on the other Bits (no lockstep)
+  {
+    await launch(A, 'Sweep Storm', true);
+    const lobby = pg => wait(pg, () => !bkStudio.link.s && bkStudio.bit.playing === 'demo:Sweep Storm' && bkStudio.isRunning());
+    if (await lobby(A) && await lobby(B) && await lobby(C)) ok('Sweep Storm on Bit 1 opened it on Bits 2 and 3');
+    else fail('Sweep Storm did not open on the linked Bits: ' + JSON.stringify([await st(B), await st(C)]));
+    if (await wait(B, () => BKNet.peers() >= 1) && await wait(C, () => BKNet.peers() >= 1)) ok('their lobbies hear each other');
+    else fail('linked Sweep Storm lobbies do not hear each other');
+    await snap(B, 'sweep-linked-lobby');
+    for (const pg of [A, B, C]) await combo(pg);
+    if (await atHome(A) && await atHome(B) && await atHome(C)) ok('all 3 home after Sweep Storm'); else fail('not home after Sweep Storm');
+  }
+
   // ---- 10. a Bit closes mid-game: the host waits for it and can leave with Start+Select
   await launch(A, sprout, true);
   if (!(await inGame(A) && await inGame(C))) fail('3-Bit sprout did not start');
