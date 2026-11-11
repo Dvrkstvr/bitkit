@@ -16,7 +16,23 @@
 --     settings = {{key = "laps", name = "Laps", min = 1, max = 5, value = 3},
 --                 {key = "ai", name = "Rivals", values = {"Easy", "Normal", "Hard"}, value = 2}},
 --     music = true,                                -- adds a Music level for notes played with mus()
+--     title_draw = function(t) ... end,            -- optional: the game's own animated title screen art
+--     look = {title = 27, panel = 1, edge = 13, ...},   -- optional: the menus' colours and layout
 --   }
+--
+-- Title screen art: without title_draw the title screen is the game's first frame, darkened. With it, the
+-- shell calls title_draw(t) every frame on the title screen (and behind Settings / How to play opened from
+-- it) instead of the game's _draw, with t counting frames since the title screen opened, and draws the
+-- name, goal and menu on top without darkening it. Draw in screen space: the camera and clip are reset.
+-- look picks the colours of every menu (title, pause, settings) and where things sit on the title screen:
+--   title, shadow    colour of the game's name and of its shadow (shadow = false: none)
+--   panel, edge      menu box fill and border (edge = false: no border)
+--   text, pick, hi   menu text, the picked item, and the bar behind it
+--   goal             colour of the goal line, footer = colour of the hint at the bottom
+--   name_y, scale    where the name is drawn and how big (1-4); name_y = false: title_draw draws the name
+--   goal_y           where the goal box sits (default under the name)
+--   menu             "center", "left" or "right": where the title menu sits
+--   menu_y           top of the title menu (default: just above the footer)
 --
 --   checkpoint(t)   remember where to carry on (a table save() can store); checkpoint(nil) forgets it
 --   game_win(text)  the goal is reached: shows the "goal complete" screen (after any cutscene ends)
@@ -46,7 +62,11 @@ do
   local START_DOWN, COMBO = false, false
   local WIN_TEXT, WIN_PENDING = nil, false
   local CONFIRM = nil
+  local TT = 0                     -- frames since the title screen opened (title_draw's t)
+  local LOOK = {}                  -- the menus' colours and layout (game{look = ...})
+  local function lk(k, d) local v = LOOK[k] if v == nil then return d end return v end
   local raw_save, raw_saved, raw_sfx, raw_tone = save, saved, sfx, tone
+  local raw_shade = shade           -- a cart may define its own shade() (Beacon Keeper does): menus use the built-in one
 
   GAME = { state = "off", won = false, items = {} }
 
@@ -87,9 +107,17 @@ do
   end
 
   local function set_state(s)
+    if s == "title" and ST ~= "title" and ST ~= "settings" and ST ~= "help" and ST ~= "confirm" then TT = 0 end
     ST, GAME.state = s, s
     SEL = 1
   end
+
+  -- the title screen, or Settings / How to play / a confirm opened from it: title_draw paints behind these
+  local function on_title()
+    if ST == "title" then return true end
+    return (ST == "settings" or ST == "help" or ST == "confirm") and BACK == "title"
+  end
+  local function title_art() return CFG and CFG.title_draw and on_title() end
 
   -- ------------------------------------------------ the save file
   -- A game has a save file once it has been played (or holds a checkpoint, a win, or can_continue() says so).
@@ -231,7 +259,8 @@ do
   end
   local function shadow(s, y, c, sc)
     sc = sc or 1
-    text(s, 161 - #s * 4 * sc, y + sc, 1, sc)
+    local sh = lk("shadow", 1)
+    if sh then text(s, 161 - #s * 4 * sc, y + sc, sh, sc) end
     center(s, y, c, sc)
   end
   local function wrap(s, w)
@@ -244,58 +273,70 @@ do
     return lines
   end
   local function dim(dense)      -- darken the game behind a menu (more on the title screen)
-    shade(dense and 0.72 or 0.5)
+    raw_shade(dense and 0.72 or 0.5)
   end
   local function panel(x, y, w, h)
-    rectfill(x, y, w, h, 1)
-    rect(x, y, w, h, 13)
+    local f, e = lk("panel", 1), lk("edge", 13)
+    if f then rectfill(x, y, w, h, f) end
+    if e then rect(x, y, w, h, e) end
   end
   local function bar(x, y, v, mx, on)
-    for i = 0, mx - 1 do rectfill(x + i * 7, y, 5, 7, i < v and (on and 27 or 13) or 2) end
+    for i = 0, mx - 1 do rectfill(x + i * 7, y, 5, 7, i < v and (on and lk("pick", 27) or lk("text", 13)) or lk("hi", 2)) end
   end
 
-  local function draw_items(y0, w)
-    local x = 160 - w // 2
+  local function draw_items(y0, w, x)
+    x = x or 160 - w // 2
+    local TC, PC = lk("text", 13), lk("pick", 27)
     for i, it in ipairs(ITEMS) do
       local y = y0 + (i - 1) * 14
       local on = i == SEL
-      if on then rectfill(x + 4, y - 3, w - 8, 13, 2) end
+      if on then rectfill(x + 4, y - 3, w - 8, 13, lk("hi", 2)) end
       local name = it[1]
       if ST == "settings" then
         local r = setting_row(i)
         if r then
-          text(name, x + 14, y, on and 27 or 13)
+          text(name, x + 14, y, on and PC or TC)
           local v = row_value(r) or r.min
           if r.values then
             local s = "< " .. tostring(r.values[v] or v) .. " >"
-            text(s, x + w - 14 - #s * 8, y, on and 27 or 13)
+            text(s, x + w - 14 - #s * 8, y, on and PC or TC)
           elseif r.max <= 10 then bar(x + w - 14 - r.max * 7, y, v - r.min, r.max - r.min, on)
-          else local s = "< " .. v .. " >"; text(s, x + w - 14 - #s * 8, y, on and 27 or 13) end
+          else local s = "< " .. v .. " >"; text(s, x + w - 14 - #s * 8, y, on and PC or TC) end
         else
-          text(name, x + 14, y, on and 27 or 13)
+          text(name, x + 14, y, on and PC or TC)
         end
       else
-        text(name, x + 14, y, on and 27 or 13)
+        text(name, x + 14, y, on and PC or TC)
       end
-      if on then text(">", x + 6, y, 27) end
+      if on then text(">", x + 6, y, PC) end
     end
   end
 
-  local function footer(s) rectfill(0, 224, 320, 16, 1) center(s, 228, 29) end
+  local function footer(s)
+    local f = lk("panel", 1)
+    if f then rectfill(0, 224, 320, 16, f) end
+    center(s, 228, lk("footer", 29))
+  end
 
   local function draw_menu()
-    dim(ST == "title" or ST == "help")
+    if not CFG.title_draw then dim(ST == "title" or ST == "help")
+    elseif ST ~= "title" then dim(not on_title() or ST == "help") end   -- the art stays bright on the title itself
     if ST == "title" then
       local t = CFG.title or "BitKit game"
-      local sc = #t <= 12 and 3 or (#t <= 19 and 2 or 1)
-      shadow(t, 30, 27, sc)
+      local ny = lk("name_y", 30)
+      local sc = lk("scale", #t <= 12 and 3 or (#t <= 19 and 2 or 1))
+      if ny then shadow(t, ny, lk("title", 27), sc) end
       local g = wrap("Goal: " .. (CFG.goal or "?"), 34)
-      panel(16, 64, 288, #g * 10 + 10)
-      for i, l in ipairs(g) do center(l, 64 + 6 + (i - 1) * 10, 13) end
+      local gy = lk("goal_y", ny and ny + 8 * sc + 10 or 64)
+      panel(16, gy, 288, #g * 10 + 10)
+      for i, l in ipairs(g) do center(l, gy + 6 + (i - 1) * 10, lk("goal", lk("text", 13))) end
       local h = #ITEMS * 14 + 10
-      panel(80, 236 - 22 - h, 160, h)
-      draw_items(236 - 22 - h + 8, 160)
-      if GAME.won then text("* goal done *", 8, 228, 17) end
+      local side = lk("menu", "center")
+      local mx = side == "left" and 12 or (side == "right" and 148 or 80)
+      local my = lk("menu_y", 236 - 22 - h)
+      panel(mx, my, 160, h)
+      draw_items(my + 8, 160, mx)
+      if GAME.won then text("* goal done *", 8, 228, lk("pick", 17)) end
       footer("A: choose")
     elseif ST == "pause" or ST == "won" then
       local h = #ITEMS * 14 + 34
@@ -304,15 +345,15 @@ do
       if ST == "won" then lines = wrap(WIN_TEXT or "", 30); extra = #lines * 10 end
       local y = 120 - (h + extra) // 2
       panel(70, y, 180, h + extra)
-      shadow(ST == "won" and "GOAL COMPLETE!" or "PAUSED", y + 8, ST == "won" and 17 or 27, ST == "won" and 1 or 2)
-      for i, l in ipairs(lines) do center(l, y + 22 + (i - 1) * 10, 13) end
+      shadow(ST == "won" and "GOAL COMPLETE!" or "PAUSED", y + 8, ST == "won" and lk("goal", 17) or lk("title", 27), ST == "won" and 1 or 2)
+      for i, l in ipairs(lines) do center(l, y + 22 + (i - 1) * 10, lk("text", 13)) end
       draw_items(y + 28 + extra, 180)
       footer("A: choose   B: back to the game")
     elseif ST == "settings" then
       local h = #ITEMS * 14 + 34
       local y = 120 - h // 2
       panel(50, y, 220, h)
-      shadow("SETTINGS", y + 8, 27, 2)
+      shadow("SETTINGS", y + 8, lk("title", 27), 2)
       draw_items(y + 28, 220)
       footer("left / right: change   B: back")
     elseif ST == "help" then
@@ -322,16 +363,16 @@ do
       local h = (#lines + #g) * 10 + 60
       local y = math.max(4, 120 - h // 2)
       panel(16, y, 288, math.min(h, 232 - y))
-      shadow("HOW TO PLAY", y + 8, 27, 2)
-      for i, l in ipairs(g) do text(l, 24, y + 28 + (i - 1) * 10, 17) end
-      for i, l in ipairs(lines) do text(l, 24, y + 34 + (#g + i - 1) * 10, 13) end
+      shadow("HOW TO PLAY", y + 8, lk("title", 27), 2)
+      for i, l in ipairs(g) do text(l, 24, y + 28 + (i - 1) * 10, lk("goal", 17)) end
+      for i, l in ipairs(lines) do text(l, 24, y + 34 + (#g + i - 1) * 10, lk("text", 13)) end
       footer("B: back")
     elseif ST == "confirm" then
       local lines = wrap(CONFIRM.text, 26)
       local h = #lines * 10 + #ITEMS * 14 + 22
       local y = 120 - h // 2
       panel(60, y, 200, h)
-      for i, l in ipairs(lines) do center(l, y + 8 + (i - 1) * 10, 13) end
+      for i, l in ipairs(lines) do center(l, y + 8 + (i - 1) * 10, lk("text", 13)) end
       draw_items(y + 14 + #lines * 10, 200)
     end
   end
@@ -367,17 +408,21 @@ do
       DIRTY = true
       if CART_UPDATE then CART_UPDATE() end
     else
+      if on_title() then TT = TT + 1 end
       menu_update()
     end
     adopt()
   end
   k_draw = function()
-    if CART_DRAW then CART_DRAW() end
+    if title_art() then
+      camera() clip()
+      CFG.title_draw(TT)
+    elseif CART_DRAW then CART_DRAW() end
     adopt()
   end
   local overlay = _bk_overlay
   function _bk_overlay()
-    if overlay then overlay() end
+    if overlay and not title_art() then overlay() end   -- no cutscene bars or dialog over the title art
     if CFG and ST ~= "play" and ST ~= "screen" then
       if ST ~= "confirm" then build() end
       draw_menu()
@@ -388,6 +433,7 @@ do
   function game(cfg)
     local first = CFG == nil
     CFG = cfg or {}
+    LOOK = type(CFG.look) == "table" and CFG.look or {}
     if first then
       local _, g = unwrap(raw_saved())
       if type(g) == "table" then

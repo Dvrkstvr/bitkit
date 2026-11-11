@@ -12,6 +12,60 @@
 -- which are kept with save(). Replays can skip the cutscenes.
 -- Two players: pick 2 under Players. Each player's sprout reads its own controller.
 
+-- the title screen (game{title_draw = ...}): a sunny meadow scrolls by while a sprout hops along,
+-- picks up water drops and grows each sapling it passes into a tree
+function draw_title(t)
+  cls(22)
+  rectfill(0, 0, 320, 34, 21)
+  rectfill(0, 34, 320, 16, 22)
+  local sx, sy = 40, 112                                     -- the sun and its turning rays
+  for k = 0, 11 do
+    local a = t / 240 + k * math.pi / 6
+    line(sx + math.cos(a) * 19, sy + math.sin(a) * 19, sx + math.cos(a) * 27, sy + math.sin(a) * 27, 27)
+  end
+  circfill(sx, sy, 15, 27) circfill(sx - 4, sy - 4, 6, 12)
+  for i = 0, 3 do                                             -- clouds
+    local cx = (i * 113 - t // 4) % 440 - 60
+    local cy = 92 + (i * 29) % 40
+    circfill(cx, cy, 9, 13) circfill(cx + 11, cy - 3, 11, 13) circfill(cx + 24, cy + 1, 8, 13) rectfill(cx, cy + 2, 26, 7, 13)
+  end
+  for x = 0, 319, 2 do                                        -- far and near hills
+    local u = x + t * 0.25
+    local h1 = 150 + math.sin(u / 40) * 10 + math.sin(u / 17) * 4
+    rectfill(x, h1, 2, 240 - h1, 15)
+    local v = x + t * 0.6
+    local h2 = 172 + math.sin(v / 55 + 2) * 9
+    rectfill(x, h2, 2, 240 - h2, 16)
+  end
+  local o = t % 16                                            -- the ground scrolls under the sprout
+  for x = -16, 320, 16 do
+    spr(16, x - o, 200, 1, 1, false, false, 2)
+    spr(17, x - o, 216, 1, 1, false, false, 2)
+    spr(17, x - o, 232, 1, 1, false, false, 2)
+  end
+  local PX = 58
+  for i = 0, 5 do                                             -- flowers
+    local fx = (i * 83 + 40 - t) % 500 - 20
+    spr(19 + i % 2, fx, 184, 1, 1, false, false, 2)
+  end
+  for i = 0, 1 do                                             -- saplings grow into trees as the sprout passes
+    local tx = (i * 250 + 300 - t) % 500 - 20
+    local n = tx > PX + 40 and 40 or (tx > PX - 10 and 42 or 44)
+    spr(n, tx, 168, 2, 2, false, false, 2)
+  end
+  local ph = (t % 44) / 44                                    -- the sprout hops
+  local hy = 176 - math.sin(ph * math.pi) * 34
+  local w = 10 - (176 - hy) // 6
+  rectfill(PX + 12 - w, 199, w * 2, 2, 15)
+  spr(hy > 170 and 2 or 1, PX, hy, 1, 1, false, false, 3)
+  for i = 0, 4 do                                             -- water drops, picked up when the sprout gets there
+    local dx = (i * 97 + 150 - t * 1) % 480 - 20
+    local dy = 150 + (i * 23) % 26 + math.sin(t / 12 + i) * 3
+    if dx > PX + 20 or dx < PX - 40 then spr(3, dx, dy, 1, 1, false, false, 2)
+    elseif dx > PX - 30 then text("+1", PX + 6, hy - 12 - (PX + 20 - dx) // 2, 13) end
+  end
+end
+
 function _init()
   score, total, defeated = 0, #ents_all("drop"), 0
   spawn_x, spawn_y = PLAYER.x, PLAYER.y
@@ -24,6 +78,8 @@ function _init()
   -- title screen, pause menu (Start), settings and Continue: the game shell (see GAME_RULES.md)
   game{
     title = "Sprout Hop",
+    title_draw = draw_title,          -- its own animated title screen (above)
+    look = { title = 18, shadow = 14, panel = 14, edge = 17, hi = 15, text = 12, pick = 27, goal = 18, footer = 18, menu = "right" },
     goal = "Hop through Sunny Meadow and Mossy Cave and reach the red flag.",
     help = {
       "D-pad or stick: move. A: jump (hold for higher). Squeeze R to run. B: throw a pebble.",

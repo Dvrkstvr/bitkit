@@ -53,7 +53,7 @@ const runtime = require('../studio/runtime.js');
   const last = tag => { const l = logs.filter(x => x.startsWith(tag)).pop(); return l ? l.split(/\s+/).slice(1) : []; };
   const run = (n, input) => { for (let f = 0; f < n; f++) if (frame(input ? input(f) : 0)) return false; return true; };
   // the probe prints the state every frame
-  const PROBE = 'local _pd = _draw\nfunction _draw() _pd() print("tw", MODE, S.scrap, S.coil, S.satchel, S.done, P and math.floor(P.z) or -1, P and string.format("%.2f", P.bat) or -1, GAME.state, cutscene_playing() and "cut" or "free", #problems(), H and H.tab or 0, S.shape.nose, S.sel.m, S.sel.c, MODE == "fly" and P and string.format("%.2f", math.abs(angdiff(P.h, VIEW.a))) or -1) end\n';
+  const PROBE = 'local _pd = _bk_overlay\nfunction _bk_overlay() _pd() print("tw", MODE, S.scrap, S.coil, S.satchel, S.done, P and math.floor(P.z) or -1, P and string.format("%.2f", P.bat) or -1, GAME.state, cutscene_playing() and "cut" or "free", #problems(), H and H.tab or 0, S.shape.nose, S.sel.m, S.sel.c, MODE == "fly" and P and string.format("%.2f", math.abs(angdiff(P.h, VIEW.a))) or -1) end\n';
   const st = () => last('tw');
   const init = c => `local _i = _init\nfunction _init() _i() ${c} end\n`;
   const A = bit('a');
