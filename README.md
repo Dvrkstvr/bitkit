@@ -117,8 +117,8 @@ A kart racer drawn SNES-style: the map becomes a floor seen in perspective, with
 
 - **It's all about the karts.** In the garage, pick a body (Dart, Brick, Hopper), an engine (Buzz 2-stroke, Twin, V-Torque), tyres (Slicks, Knobbly, Softs) and a paint job. Every part changes speed, accel, grip, weight, offroad and drift.
 - **Analog throttle** on R: squeeze harder to go faster. B brakes. Steering comes in 3 stages that blend as you hold a direction: a tap nudges, a hold turns, a long hold turns hard.
-- **Drift** with L (or B while on the throttle). The sparks go white, amber, then violet; let go for a boost.
-- **Items** from crates, used with X: Nitro, Oil Slick, Bolt, Drone (chases the kart in front) and Shield. Rivals use them too.
+- **Drift** with L (or B while on the throttle). The sparks go white, amber, then violet; let go for a boost. Full lock into a drift turns just a bit tighter than normal steering, and steering against it opens the line up.
+- **Items** from crates, used with X: Nitro, Oil Slick, Bolt, Drone (chases the kart in front) and Shield. Rivals use them too. Hold down to look back, and hold down while using a Bolt or Drone to fire it backwards.
 - **Hills and jumps**: the ground rises and falls, and fast karts leave the ground over crests.
 - **Tracks are levels on the Map tab.** Each has a `start` entity and `node` entities along the middle of the road, plus optional `boost` pads, `crate`s and `hill`/`bump`/`dip` entities. Move them around or add a level with **+ level**, and the road and hills are rebuilt when the race starts. Two tracks are included: Pinewood Loop and Quarry Hills.
 
