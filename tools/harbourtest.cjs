@@ -1,7 +1,7 @@
 // CI check for the Beacon Keeper demo: plays day and night with scripted input, then checks the
 // clockwork lens, pirates and cannons, the shop, and save data with offline earnings.
 const fs = require('fs'); global.window = {};
-eval(fs.readFileSync(__dirname + '/../studio/beacon.js', 'utf8'));
+eval(fs.readFileSync(__dirname + '/../studio/harbour.js', 'utf8'));
 eval(fs.readFileSync(__dirname + '/../studio/entities.js', 'utf8'));
 let errors = [], logs = [];
 const fail = m => { console.error('FAIL', m); process.exitCode = 1; };
@@ -10,7 +10,7 @@ require('../studio/runtime.js')({ onLog: (m, e) => { if (e) errors.push(m); else
   const s = x => M.stringToNewUTF8(x);
   M._bkw_init();
   const D = (window.BK_DEMOS || []).find(d => d.name === 'Beacon Keeper');
-  if (!D) { fail('beacon.js did not register itself in BK_DEMOS'); return; }
+  if (!D) { fail('harbour.js did not register itself in BK_DEMOS'); return; }
   const cart = { tiles: new Uint8Array(32768), flags: new Uint8Array(512), map: new Uint16Array(32768) };
   D.buildGfx(cart);
   M.HEAPU8.set(cart.tiles, M._bkw_tiles()); M.HEAPU8.set(cart.flags, M._bkw_flags());
