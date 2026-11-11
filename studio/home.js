@@ -1,6 +1,8 @@
 /* PocketBit home screen. Runs as a normal cart inside the BitKit runtime.
-   The host fills BIT = { games = {{name, file, icon, studio}, ...}, sel, source, studio }
-   and draws each game's 16x16 icon into this cart's tiles. MIT License. */
+   The host fills BIT = { games = {{name, file, icon, studio, paused}, ...}, sel, source, studio }
+   and draws each game's 16x16 icon into this cart's tiles. A paused game carries on where it was left
+   when launched; track(-1, n) is the host's private signal to forget game n's pause and start it over.
+   MIT License. */
 window.BK_HOME = `
 local sel, tt, slide = 1, 0, 0
 local stars = {}
@@ -41,6 +43,7 @@ function _update()
   if btnp("right") then sel = sel % n + 1; slide = 24; sfx("E5", 4, 0.2, 4) end
   if btnp("left") then sel = (sel - 2) % n + 1; slide = -24; sfx("E5", 4, 0.2, 4) end
   if btnp("a") or btnp("start") then sfx("C6", 1, 0.3, 10); launch(sel) end
+  if BIT.games[sel].paused and btnp("x") then sfx("C5", 1, 0.3, 10); track(-1, sel) end
   if BIT.studio and btnp("y") then sfx("G5", 1, 0.3, 6); launch(sel, true) end
 end
 
@@ -73,11 +76,16 @@ function _draw()
     rect(cx - 4, 48 + bob - 4, 88, 88, 21)
     rect(cx - 5, 48 + bob - 5, 90, 90, 31)
     icon(g, cx + 8, 56 + bob, 4)
+    if g.paused then   -- pause badge on the card's corner
+      rectfill(cx + 64, 48 + bob - 2, 16, 14, 31)
+      rectfill(cx + 68, 48 + bob + 1, 3, 8, 13) rectfill(cx + 73, 48 + bob + 1, 3, 8, 13)
+    end
 
     local name = g.name
     if #name > 18 then name = string.sub(name, 1, 17) .. "." end
     ctext(name, 146, 13, 2)
-    if g.studio then ctext("open in the studio", 168, 27)
+    if g.paused then ctext("paused where you left it", 168, 21)
+    elseif g.studio then ctext("open in the studio", 168, 27)
     else ctext(g.file or "", 168, 28) end
 
     -- page dots
@@ -91,6 +99,7 @@ function _draw()
   -- bottom bar
   rectfill(0, 222, 320, 18, 31)
   local hint = n > 0 and "A play   < > choose" or ""
+  if n > 0 and BIT.games[sel].paused then hint = "A continue   X restart" end
   if BIT.studio and n > 0 then hint = hint .. "   Y edit" end
   text(hint, 8, 227, 29)
   if n > 0 then ctext("hold START+SELECT to come back", 204, 30) end

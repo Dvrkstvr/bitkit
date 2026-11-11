@@ -14970,9 +14970,114 @@ window.BKStore = (() => {
 
 </script>
 <script>
+/* BitKit Studio: paused games on the Bit. When you leave a game for the home screen, the whole runtime
+   memory (Lua state, screen, sprites, map, sound) is kept, so picking the game again carries on where you
+   left it. Snapshots are gzipped into IndexedDB, so they survive a reload too. Each snapshot remembers the
+   runtime build and the game's contents; if either changed, the game starts fresh. MIT License. */
+window.BKSnap = (() => {
+  const DB = 'bitkit-snapshots', VER = 1, KEEP = 8;
+  const mem = new Map();   // id -> { fp, heap, meta, at }
+  let dbp = null, rtId = null;
+
+  // FNV-1a over a string, as 8 hex digits
+  function hash(str) {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+    return (h >>> 0).toString(16).padStart(8, '0');
+  }
+  // the runtime build: a snapshot only fits the exact build that made it
+  function runtimeId() {
+    if (rtId === null) {
+      try { rtId = hash(String(window.BitKitRuntime)) + ':' + String(window.BitKitRuntime).length; } catch (e) { rtId = 'unknown'; }
+    }
+    return rtId;
+  }
+  function db() {
+    if (!dbp) dbp = new Promise((res, rej) => {
+      if (!window.indexedDB) { rej(new Error('no IndexedDB')); return; }
+      const r = indexedDB.open(DB, VER);
+      r.onupgradeneeded = () => r.result.createObjectStore('snap');
+      r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+    });
+    return dbp;
+  }
+  async function tx(mode, fn) {
+    const d = await db();
+    return new Promise((res, rej) => {
+      const t = d.transaction('snap', mode), r = fn(t.objectStore('snap'));
+      t.oncomplete = () => res(r && r.result); t.onerror = () => rej(t.error);
+    });
+  }
+  const canZip = typeof CompressionStream === 'function' && typeof DecompressionStream === 'function';
+  async function zip(bytes) {
+    if (!canZip) return bytes;
+    return new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer());
+  }
+  async function unzip(bytes, zipped) {
+    if (!zipped) return bytes;
+    return new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer());
+  }
+  function trim() {
+    while (mem.size > KEEP) {
+      let old = null;
+      for (const [id, s] of mem) if (!old || s.at < mem.get(old).at) old = id;
+      mem.delete(old);
+    }
+  }
+  const valid = (s, fp) => s && s.fp === fp && s.rt === runtimeId();
+
+  // keep a paused game. heap is a copy of the runtime memory; meta is the host's own state for it
+  function put(id, fp, heap, meta) {
+    const s = { fp, rt: runtimeId(), heap, meta: meta || {}, at: Date.now() };
+    mem.set(id, s); trim();
+    return (async () => {
+      try {
+        const z = await zip(heap);
+        if (mem.get(id) !== s) return;   // replaced or forgotten meanwhile
+        await tx('readwrite', st => st.put({ fp: s.fp, rt: s.rt, meta: s.meta, at: s.at, zipped: canZip, data: z }, id));
+      } catch (e) { /* memory copy still works for this session */ }
+    })();
+  }
+  // the paused game, or null if there is none (or it no longer fits the game or the runtime)
+  async function get(id, fp) {
+    const m = mem.get(id);
+    if (valid(m, fp)) return m;
+    try {
+      const r = await tx('readonly', st => st.get(id));
+      if (!valid(r, fp)) return null;
+      const s = { fp: r.fp, rt: r.rt, meta: r.meta || {}, at: r.at, heap: await unzip(r.data, r.zipped) };
+      mem.set(id, s); trim();
+      return s;
+    } catch (e) { return null; }
+  }
+  // ids of every paused game with its fingerprint (cheap: no memory is unpacked)
+  async function list() {
+    const out = new Map();
+    try {
+      const d = await db();
+      await new Promise((res, rej) => {
+        const t = d.transaction('snap', 'readonly'), c = t.objectStore('snap').openCursor();
+        c.onsuccess = () => { const cur = c.result; if (!cur) return; if (cur.value.rt === runtimeId()) out.set(cur.key, cur.value.fp); cur.continue(); };
+        t.oncomplete = res; t.onerror = () => rej(t.error);
+      });
+    } catch (e) { /* only this session's snapshots */ }
+    for (const [id, s] of mem) if (s.rt === runtimeId()) out.set(id, s.fp);
+    return out;
+  }
+  function forget(id) {
+    mem.delete(id);
+    return tx('readwrite', st => st.delete(id)).catch(() => {});
+  }
+  return { put, get, list, forget, hash };
+})();
+
+</script>
+<script>
 /* PocketBit home screen. Runs as a normal cart inside the BitKit runtime.
-   The host fills BIT = { games = {{name, file, icon, studio}, ...}, sel, source, studio }
-   and draws each game's 16x16 icon into this cart's tiles. MIT License. */
+   The host fills BIT = { games = {{name, file, icon, studio, paused}, ...}, sel, source, studio }
+   and draws each game's 16x16 icon into this cart's tiles. A paused game carries on where it was left
+   when launched; track(-1, n) is the host's private signal to forget game n's pause and start it over.
+   MIT License. */
 window.BK_HOME = `
 local sel, tt, slide = 1, 0, 0
 local stars = {}
@@ -15013,6 +15118,7 @@ function _update()
   if btnp("right") then sel = sel % n + 1; slide = 24; sfx("E5", 4, 0.2, 4) end
   if btnp("left") then sel = (sel - 2) % n + 1; slide = -24; sfx("E5", 4, 0.2, 4) end
   if btnp("a") or btnp("start") then sfx("C6", 1, 0.3, 10); launch(sel) end
+  if BIT.games[sel].paused and btnp("x") then sfx("C5", 1, 0.3, 10); track(-1, sel) end
   if BIT.studio and btnp("y") then sfx("G5", 1, 0.3, 6); launch(sel, true) end
 end
 
@@ -15045,11 +15151,16 @@ function _draw()
     rect(cx - 4, 48 + bob - 4, 88, 88, 21)
     rect(cx - 5, 48 + bob - 5, 90, 90, 31)
     icon(g, cx + 8, 56 + bob, 4)
+    if g.paused then   -- pause badge on the card's corner
+      rectfill(cx + 64, 48 + bob - 2, 16, 14, 31)
+      rectfill(cx + 68, 48 + bob + 1, 3, 8, 13) rectfill(cx + 73, 48 + bob + 1, 3, 8, 13)
+    end
 
     local name = g.name
     if #name > 18 then name = string.sub(name, 1, 17) .. "." end
     ctext(name, 146, 13, 2)
-    if g.studio then ctext("open in the studio", 168, 27)
+    if g.paused then ctext("paused where you left it", 168, 21)
+    elseif g.studio then ctext("open in the studio", 168, 27)
     else ctext(g.file or "", 168, 28) end
 
     -- page dots
@@ -15063,6 +15174,7 @@ function _draw()
   -- bottom bar
   rectfill(0, 222, 320, 18, 31)
   local hint = n > 0 and "A play   < > choose" or ""
+  if n > 0 and BIT.games[sel].paused then hint = "A continue   X restart" end
   if BIT.studio and n > 0 then hint = hint .. "   Y edit" end
   text(hint, 8, 227, 29)
   if n > 0 then ctext("hold START+SELECT to come back", 204, 30) end
@@ -16631,6 +16743,7 @@ end
   const overlay = $('gameOverlay');
 
   let playingLevels = null;   // levels of the cart being played, for level() map swaps
+  let playingLevel = 0;       // the level it is on (kept with a paused game)
   function syncToRuntime(withMap, levelIdx) {
     RT.HEAPU8.set(cart.palette, ptr.pal);
     RT.HEAPU8.set(cart.tiles, ptr.tiles);
@@ -16688,8 +16801,9 @@ end
     syncToRuntime(true, start);
     mapDirtyRT = false;
     log(`▶ running "${cart.name}"` + (start ? ` from ${cart.levels[start].name}` : ''), 'sys');
-    playingEditor = true; playingLevels = cart.levels;
+    playingEditor = true; playingLevels = cart.levels; playingLevel = start;
     if (bit.on) bit.playing = 'studio';
+    bit.cur = bit.on && playMode !== 'link' ? gameKey(bit.games.find(g => g.studio) || { studio: true }) : null;
     let np = playMode === '2' ? 2 : 1, me = 0;
     if (playMode === 'link' && link.peer) {        // linked: this window is Bit 1 and sends the cart to Bit 2
       linkSend({ t: 'start', to: link.peer, cart: serialize(), level: start });
@@ -16735,6 +16849,9 @@ end
       if (link.running) linkPump();
       while (acc >= STEP && running) {
         let m1 = input.mask, p1 = input.press;
+        if (bit.hold) {             // a resumed game sees no buttons until the one that resumed it is let go
+          if (m1) { m1 = 0; p1 = NO_PRESS; } else bit.hold = false;
+        }
         if (link.running) {          // lockstep: only run a frame once both Bits' input for it is here
           const f = linkTake();
           if (!f) { acc = Math.min(acc, STEP * 3); linkWaiting(now); break; }
@@ -16748,6 +16865,9 @@ end
         takeSave();
         const tr = RT.HEAP32;
         if (playingEditor && tr[ptr.track + 2] && route.cur) route.cur.push(tr[ptr.track], tr[ptr.track + 1]);
+        if (bit.playing === 'home' && tr[ptr.track + 2] && tr[ptr.track] === -1) {   // home screen: start game n over
+          const n = tr[ptr.track + 1]; tr[ptr.track + 2] = 0; bitRestart(n); break;
+        }
         if (tr[ptr.sys]) { const cmd = tr[ptr.sys], arg = tr[ptr.sys + 1]; tr[ptr.sys] = 0; bitRequest(cmd, arg); break; }
         acc -= STEP; ticks++; fpsCount++;
       }
@@ -16973,7 +17093,8 @@ end
     el.textContent = cartFile ? `💾 ${cartFile}` : '';
     el.title = cartFile ? `Saves to ${cartFile} on the Bit (${BKStore.label()}). Ctrl+S saves.` : '';
   }
-  const bit = { on: false, playing: null, games: [], sel: 1 };
+  const bit = { on: false, playing: null, games: [], sel: 1, cur: null, hold: false, busy: false };
+  const NO_PRESS = new Uint8Array(12);
   let comboHeld = false;
   const START = 1 << 10, SELECT = 1 << 11;
 
@@ -17016,13 +17137,63 @@ end
     demoCarts.set(d, c);
     return c;
   }
+  /* paused games: leaving a game for the home screen keeps it (studio/snapshots.js), picking it again carries on */
+  // a game's id and fingerprint; a paused game only resumes while its contents are unchanged
+  function gameKey(g) {
+    if (g.studio) { syncLevel(); return { id: 'studio', fp: BKSnap.hash(JSON.stringify(serialize())) }; }
+    if (g.demo) return { id: 'demo:' + g.name, fp: BKSnap.hash(g.demo.code) };
+    return { id: 'file:' + g.file, fp: BKSnap.hash(JSON.stringify(g.data)) };
+  }
+  // keep the game that is playing on the Bit (call before anything else runs in the runtime)
+  function suspendGame() {
+    if (!bit.on || !running || !bit.cur || bit.playing === 'home' || link.running) return;
+    takeSave();
+    BKSnap.put(bit.cur.id, bit.cur.fp, RT.HEAPU8.slice(), { saveKey, level: playingLevel });
+    log(`⏸ Bit: paused "${bit.cur.name || bit.playing}"`, 'sys');
+  }
+  // carry on with a paused game: put its memory back and keep running frames
+  function resumeGame(snap, g, c, key) {
+    if (snap.heap.length > RT.HEAPU8.length) return false;
+    stop(true);
+    startAudio();
+    overlay.classList.add('hidden');
+    clearErrLine();
+    RT.HEAPU8.set(snap.heap);
+    saveKey = snap.meta.saveKey || null;
+    playingLevel = snap.meta.level | 0;
+    gfxDirtyRT = false; mapDirtyRT = false;
+    playingEditor = !!g.studio; playingLevels = c.levels;
+    bit.playing = g.studio ? 'studio' : g.demo ? 'demo:' + g.name : g.file;
+    bit.cur = key;
+    if (g.studio) newRouteSegment(playingLevel);
+    bit.hold = true;
+    log(`▶ Bit: carrying on with "${c.name || g.name}" (X on the home screen starts it over)`, 'sys');
+    running = true; acc = 0; last = performance.now();
+    screen.focus();
+    return true;
+  }
+  function bitRestart(n) {
+    const g = bit.games[n - 1];
+    if (!g) return;
+    BKSnap.forget(gameKey(g).id);
+    bitRequest(1, n, true);
+  }
+  // pause the game when the page is hidden (tab switched or closed), so a reload can carry on too
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'hidden' || !bit.on || !running || !bit.cur || bit.playing === 'home' || link.running) return;
+    takeSave();
+    BKSnap.put(bit.cur.id, bit.cur.fp, RT.HEAPU8.slice(), { saveKey, level: playingLevel });
+  });
+
   async function bootHome() {
+    bit.cur = null; bit.hold = false;
     const lib = await libraryGames();
     const libGames = lib.filter(g => g.file !== cartFile).map(g => ({ name: g.data.name || g.file, file: g.file, data: g.data }));
     // every built-in demo is on the Bit too, unless the studio or the memory card already has a game with that name
     const taken = new Set([cart.name].concat(libGames.map(g => g.name)));
     const demos = DEMOS().filter(d => !taken.has(d.name)).map(d => ({ name: d.name, demo: d }));
     bit.games = [{ name: cart.name, studio: true, cart: null }].concat(libGames, demos);
+    const paused = await BKSnap.list();
     const tiles = new Uint8Array(TILES * 64);
     const COLORS = [3, 8, 15, 20, 25, 4, 9, 16];
     const rows = bit.games.slice(0, 96).map((g, i) => {
@@ -17030,7 +17201,8 @@ end
       let c = null;
       if (g.studio) c = cart; else if (g.demo) { try { c = demoCart(g.demo); } catch (e) { c = null; } } else { try { c = decodeCart(g.data); } catch (e) { c = null; } }
       const has = c && iconFor(c, slot, tiles);
-      return `{name=${luaStr(g.name)}, file=${luaStr(g.file || '')}, studio=${g.studio ? 'true' : 'false'}, ${has ? `icon=${slot}` : `color=${COLORS[i % COLORS.length]}`}}`;
+      const k = gameKey(g), p = paused.get(k.id) === k.fp;
+      return `{name=${luaStr(g.name)}, file=${luaStr(g.file || '')}, studio=${g.studio ? 'true' : 'false'}, paused=${p}, ${has ? `icon=${slot}` : `color=${COLORS[i % COLORS.length]}`}}`;
     });
     if (bit.sel > bit.games.length) bit.sel = 1;
     const data = `BIT = { games = {${rows.join(',')}}, sel = ${bit.sel}, studio = true, source = ${luaStr(BKStore.state === 'folder' ? BKStore.label() : '')} }`;
@@ -17048,26 +17220,37 @@ end
     overlay.classList.add('hidden');
     RT.HEAPU8.set(c.palette, ptr.pal); RT.HEAPU8.set(c.tiles, ptr.tiles); RT.HEAPU8.set(c.flags, ptr.flags);
     RT.HEAPU16.set(c.levels[0].map, ptr.map >> 1);
-    gfxDirtyRT = true; playingEditor = false; bit.playing = label; playingLevels = c.levels;
+    gfxDirtyRT = true; playingEditor = false; bit.playing = label; playingLevels = c.levels; playingLevel = 0;
     log(`▶ Bit: playing "${c.name}"`, 'sys');
     running = loadCode(c.code, BKEntities.toLua(c.entities, levelsMeta(c.levels), 0), c.name || label, playMode === '2' ? 2 : 1, 0) === 0;
     acc = 0; last = performance.now();
     screen.focus();
   }
-  async function bitRequest(cmd, arg) {
+  async function bitRequest(cmd, arg, fresh) {
     if (cmd === 4) {   // level(n): load that level's map before the next frame
       const L = playingLevels && playingLevels[arg - 1];
-      if (L) { RT.HEAPU16.set(L.map, ptr.map >> 1); if (playingEditor) newRouteSegment(arg - 1); }
+      if (L) { RT.HEAPU16.set(L.map, ptr.map >> 1); playingLevel = arg - 1; if (playingEditor) newRouteSegment(arg - 1); }
       return;
     }
-    if (cmd === 2) { if (bit.on) bootHome(); return; }
+    if (cmd === 2) { if (bit.on) { suspendGame(); bootHome(); } return; }
     const g = bit.games[arg - 1];
-    if (!bit.on || bit.playing !== 'home' || !g) return;
+    if (!bit.on || bit.playing !== 'home' || !g || bit.busy) return;
     bit.sel = arg;
     if (cmd === 1) {
+      const key = gameKey(g);
+      key.name = g.name;
+      let c = null;
+      try { c = g.studio ? cart : g.demo ? demoCart(g.demo) : decodeCart(g.data); } catch (e) { log(`Could not start ${g.name}: ${e.message}`, 'err'); return; }
+      if (!fresh) {
+        bit.busy = true;
+        let snap = null;
+        try { snap = await BKSnap.get(key.id, key.fp); } finally { bit.busy = false; }
+        if (!bit.on || bit.playing !== 'home') return;
+        if (snap && resumeGame(snap, g, c, key)) return;
+      }
       if (g.studio) run();
-      else if (g.demo) { try { playCart(demoCart(g.demo), 'demo:' + g.name); } catch (e) { log(`Could not start ${g.name}: ${e.message}`, 'err'); } }
-      else { try { playCart(decodeCart(g.data), g.file); } catch (e) { log(`Could not start ${g.file}: ${e.message}`, 'err'); } }
+      else playCart(c, g.demo ? 'demo:' + g.name : g.file);
+      bit.cur = key;
     } else if (cmd === 3) {
       if (g.studio) { toast('That is the cart in the studio'); return; }
       if (g.demo) {
@@ -17081,7 +17264,7 @@ end
   }
   function bitCombo() {
     const both = (input.mask & (START | SELECT)) === (START | SELECT);
-    if (both && !comboHeld && bit.on && bit.playing !== 'home') { stop(true); bootHome(); }
+    if (both && !comboHeld && bit.on && bit.playing !== 'home') { suspendGame(); stop(true); bootHome(); }
     comboHeld = both;
   }
   function setBitPower(on) {
@@ -17089,8 +17272,8 @@ end
     $('btnBit').classList.toggle('active', on);
     $('btnBit').textContent = on ? '⏻ Bit on' : '⏻ Bit';
     lsSet('bitkit.bitOn', on ? '1' : '0');
-    if (on) { log('Bit on: home screen. Hold Start+Select in a game to come back.', 'sys'); bootHome(); }
-    else { stop(true); bit.playing = null; bootScreen(); }
+    if (on) { log('Bit on: home screen. Hold Start+Select in a game to pause it and come back; picking it again carries on.', 'sys'); bootHome(); }
+    else { suspendGame(); stop(true); bit.playing = null; bit.cur = null; bootScreen(); }
   }
   $('btnBit').onclick = () => setBitPower(!bit.on);
 
@@ -17281,6 +17464,7 @@ end
     ['The Bit (emulated PocketBit)', [
       ['⏻ Bit button', 'Turns on the emulated PocketBit: a home screen with the studio cart and every game on its memory card. D-pad chooses, A plays, Y opens a game in the studio.'],
       ['Start + Select', 'Hold both in a game to go back to the home screen, like on the device.'],
+      ['Paused games', 'Hold Start+Select (or call home()) to go back to the home screen: the game is paused, not closed. Pick it again and it carries on where you were, even after a reload. X on the home screen starts a paused game over. Changing a game\'s code or art starts it fresh.'],
       ['Library', 'The Bit\'s memory card: a folder on your computer (Chrome/Edge) or this browser. Save carts to it, then play or open them from the home screen. Ctrl+S saves the open cart back to its file.'],
       ['launch(n, [edit]) / home()', 'System calls used by the home screen: start game n, or return home. A game can call home() from its own menu.']]],
     ['Time and randomness', [
