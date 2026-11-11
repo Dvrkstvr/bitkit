@@ -67,7 +67,7 @@ The **AI** tab is a chat that can build your game with you: *"add coins the play
 
 1. Open **[dvrkstvr.github.io/bitkit](https://dvrkstvr.github.io/bitkit/)** in Chrome, Edge or Firefox.
 2. Plug in a controller and press any button on it.
-3. The studio starts on the Bit's home screen with every demo (Sprout Hop, Beacon Keeper, Kart Lab). Pick one with ← → and press A (Z on the keyboard). Hold Start+Select to come back.
+3. The studio starts on the Bit's home screen with every demo (Sprout Hop, Beacon Keeper, Sweep Storm, Kart Lab, Crossgate). Pick one with ← → and press A (Z on the keyboard). Hold Start+Select to come back.
 4. Press **Run** (or Ctrl+Enter) to play the cart that is open in the studio.
 5. Change something and press Run again.
 
@@ -140,6 +140,19 @@ A minesweeper battle royale for up to 20 Bits, with bots filling the empty spots
 - A mine costs one of your 3 hearts and stuns you. After 40 seconds a storm closes in from the shore and standing in it costs hearts too.
 - **Goal:** have the most points when the storm closes or the time runs out (the last digger standing gets a bonus).
 - **Play together:** open more studio windows, load Sweep Storm in each and pick New game. They find each other in the lobby and any of them can start. This uses network events (`net_send` / `net_recv`), not lockstep, so it scales to 20 PocketBits over ESP-NOW. Play alone and Continue takes you back to the match.
+
+### Crossgate
+
+<img src="docs/media/crossgate.png" width="480" alt="Crossgate: two crossbow duelists on an old stone bridge">
+
+A tug-of-war crossbow duel. Wren (orange) fights east out of the Sea Gate, Rook (blue) fights west out of the Mill Gate, through seven rooms of a little town.
+
+- **A** shoots, **B** jumps, **up / down** raises or lowers the crossbow (all the way down crouches). A bolt that flies at the height of your crossbow bounces off it, so shoot where they aren't guarding.
+- Walk into your rival with a bolt loaded to stab them. Two loaded crossbows at the same height clash and push both back.
+- You hold one bolt loaded and one spare. Bolts that miss, bounce or fall from the fallen lie on the ground: walk over them to pick them up.
+- Win a fight and you get the way: run for your gate. Your rival comes back in front of you.
+- One player fights the Rook (CPU, Easy / Normal / Hard in Settings). Two players share one screen or play on linked Bits. With more players, the winner stays on and the loser goes to the back of the queue.
+- **Goal:** get out through your gate before your rival gets out of theirs.
 
 ## 🏎️ The demo: Kart Lab (2.5D)
 

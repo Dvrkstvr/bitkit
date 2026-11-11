@@ -24,6 +24,8 @@ jobs:
         run: node tools/gametest.cjs
       - name: Sweep Storm and network events
         run: node tools/sweeptest.cjs
+      - name: Crossgate checks
+        run: node tools/crossgatetest.cjs
 
   linked-bits:
     runs-on: ubuntu-latest
