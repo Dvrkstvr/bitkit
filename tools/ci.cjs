@@ -3,6 +3,7 @@
 const fs = require('fs'); global.window = {};
 eval(fs.readFileSync(__dirname + '/../studio/demo.js', 'utf8'));
 eval(fs.readFileSync(__dirname + '/../studio/entities.js', 'utf8'));
+eval(fs.readFileSync(__dirname + '/../studio/home.js', 'utf8'));
 let errors = [];
 const fail = m => { console.error('FAIL', m); process.exitCode = 1; };
 require('../studio/runtime.js')({ onLog: (m, e) => { if (e) errors.push(m); } }).then(M => {
@@ -15,6 +16,16 @@ require('../studio/runtime.js')({ onLog: (m, e) => { if (e) errors.push(m); } })
   if (M._bkw_frame(0, 0) === 0) fail('infinite loop was not stopped by the instruction budget');
   errors = [];
 
+  // home screen: lists games and asks the host to launch the selected one
+  if (M._bkw_load_ex(s('BIT = { games = {{name="A", file="a.bitkit", studio=false, color=3}, {name="B", file="b.bitkit", studio=false, color=8}}, sel = 1, studio = true, source = "" }'), s(window.BK_HOME)) !== 0) fail('home screen did not load');
+  const sys = M._bkw_sys() >> 2;
+  M._bkw_frame(0, 0); M._bkw_frame(1 << 1, 0); M._bkw_frame(0, 0);   // right: select game 2
+  M._bkw_frame(1 << 4, 0);                                         // A: launch
+  if (M.HEAP32[sys] !== 1 || M.HEAP32[sys + 1] !== 2) fail(`home screen launch request was ${M.HEAP32[sys]},${M.HEAP32[sys + 1]} (expected 1,2)`);
+  M._bkw_frame(0, 0);
+  if (M.HEAP32[sys] !== 0) fail('system request was not cleared on the next frame');
+  if (errors.length) { errors.forEach(e => fail('home screen: ' + e)); errors = []; }
+
   const cart = { tiles: new Uint8Array(32768), flags: new Uint8Array(512), map: new Uint16Array(32768) };
   window.BK_DEMO.buildGfx(cart);
   M.HEAPU8.set(cart.tiles, M._bkw_tiles()); M.HEAPU8.set(cart.flags, M._bkw_flags()); M.HEAPU16.set(cart.map, M._bkw_map() >> 1);
@@ -24,5 +35,5 @@ require('../studio/runtime.js')({ onLog: (m, e) => { if (e) errors.push(m); } })
     if (M._bkw_frame(mask, 0)) { fail('demo stopped at frame ' + f); break; }
   }
   errors.forEach(e => fail('Lua error: ' + e));
-  if (!process.exitCode) console.log('ok: runtime checks and 3000 demo frames passed');
+  if (!process.exitCode) console.log('ok: runtime checks, home screen and 3000 demo frames passed');
 });

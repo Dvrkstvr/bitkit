@@ -34,4 +34,5 @@ EMSCRIPTEN_KEEPALIVE uint16_t *bkw_map(void) { return machine.map; }
 EMSCRIPTEN_KEEPALIVE uint8_t *bkw_screen(void) { return machine.screen; }
 EMSCRIPTEN_KEEPALIVE void bkw_default_palette(void) { bk_default_palette(machine.palette); }
 EMSCRIPTEN_KEEPALIVE int32_t *bkw_track(void) { return machine.track; }
+EMSCRIPTEN_KEEPALIVE int32_t *bkw_sys(void) { return machine.sys; }
 EMSCRIPTEN_KEEPALIVE const char *bkw_error(void) { return bk_lua_error(); }

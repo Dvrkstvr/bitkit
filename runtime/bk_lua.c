@@ -232,6 +232,12 @@ static int l_track(lua_State *l) {
   return 0;
 }
 
+/* launch(n, [edit]): ask the host to start game n from the Bit's library (the home screen uses this).
+   With edit true the studio opens it for editing instead (command 3).
+   home(): ask the host to go back to the home screen. The host acts after the frame. */
+static int l_launch(lua_State *l) { BK->sys[0] = lua_toboolean(l, 2) ? 3 : 1; BK->sys[1] = ci(l, 1); return 0; }
+static int l_home(lua_State *l) { (void)l; BK->sys[0] = 2; BK->sys[1] = 0; return 0; }
+
 /* ---- print -> console ---- */
 static int l_print(lua_State *l) {
   int n = lua_gettop(l);
@@ -256,7 +262,7 @@ static const luaL_Reg API[] = {
   {"btn", l_btn}, {"btnp", l_btnp}, {"btnr", l_btnr}, {"press", l_press},
   {"t", l_t}, {"time", l_time}, {"rnd", l_rnd}, {"srand", l_srand},
   {"sfx", l_sfx}, {"tone", l_tone}, {"stop", l_stop},
-  {"print", l_print}, {"track", l_track},
+  {"print", l_print}, {"track", l_track}, {"launch", l_launch}, {"home", l_home},
   {NULL, NULL}
 };
 
@@ -344,6 +350,7 @@ int bk_lua_load_ex(const char *data, const char *code) {
 int bk_lua_frame(void) {
   if (!L) return 1;
   BK->track[2] = 0;
+  BK->sys[0] = 0;
   lua_getglobal(L, "_update");
   if (lua_isfunction(L, -1)) { if (pcall_budget(0) != LUA_OK) return 1; }
   else lua_pop(L, 1);

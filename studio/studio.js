@@ -36,7 +36,7 @@
   RT._bkw_init();
   const ptr = {
     pal: RT._bkw_palette(), tiles: RT._bkw_tiles(), flags: RT._bkw_flags(), map: RT._bkw_map(),
-    press: RT._malloc(16), track: RT._bkw_track() >> 2
+    press: RT._malloc(16), track: RT._bkw_track() >> 2, sys: RT._bkw_sys() >> 2
   };
   const DEFAULT_PAL = RT.HEAPU8.slice(ptr.pal, ptr.pal + 768);
 
@@ -96,15 +96,23 @@ end
       entities: cart.entities, entities_lua: BKEntities.toLua(cart.entities)
     };
   }
-  function deserialize(o) {
+  // decode a cart file object into a fresh cart (does not touch the editor)
+  function decodeCart(o) {
     if (!o || (o.format !== 'bitkit-cart' && o.format !== 'miniboi-cart')) throw new Error('Not a ' + APP + ' cart file');
-    cart.name = o.name || 'untitled';
-    cart.code = o.code || '';
-    cart.palette.set(o.palette ? unb64(o.palette).subarray(0, 768) : DEFAULT_PAL);
-    cart.tiles.set(o.tiles ? unrle(o.tiles, TILES * 64) : new Uint8Array(TILES * 64));
-    cart.flags.set(o.flags ? unrle(o.flags, TILES) : new Uint8Array(TILES));
-    cart.entities = o.entities && o.entities.types ? o.entities : { types: [], placed: [] };
-    cart.map.set(new Uint16Array((o.map ? unrle(o.map, MAPW * MAPH * 2) : new Uint8Array(MAPW * MAPH * 2)).buffer));
+    return {
+      name: o.name || 'untitled', code: o.code || '',
+      palette: o.palette ? unb64(o.palette).subarray(0, 768) : DEFAULT_PAL.slice(),
+      tiles: o.tiles ? unrle(o.tiles, TILES * 64) : new Uint8Array(TILES * 64),
+      flags: o.flags ? unrle(o.flags, TILES) : new Uint8Array(TILES),
+      entities: o.entities && o.entities.types ? o.entities : { types: [], placed: [] },
+      map: new Uint16Array((o.map ? unrle(o.map, MAPW * MAPH * 2) : new Uint8Array(MAPW * MAPH * 2)).buffer)
+    };
+  }
+  function deserialize(o) {
+    const c = decodeCart(o);
+    cart.name = c.name; cart.code = c.code;
+    cart.palette.set(c.palette); cart.tiles.set(c.tiles); cart.flags.set(c.flags); cart.map.set(c.map);
+    cart.entities = c.entities;
   }
 
   let dirtySave = false;
@@ -571,7 +579,11 @@ end
   window.addEventListener('keydown', e => {
     const inText = e.target.closest && (e.target.closest('.CodeMirror') || /INPUT|TEXTAREA|SELECT/.test(e.target.tagName));
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); run(); return; }
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); saveLocal(); toast('Saved in this browser'); return; }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+      e.preventDefault(); saveLocal();
+      if (cartFile) saveToBit(false); else toast('Saved in this browser');
+      return;
+    }
     if (inText || e.target === screen) return;
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
       if (activeTab === 'sprites') { tileHist.pop(); e.preventDefault(); }
@@ -723,6 +735,7 @@ end
   const sctx = screen.getContext('2d');
   const img = sctx.createImageData(W, H);
   let running = false, gfxDirtyRT = false, mapDirtyRT = false;
+  let playingEditor = false;   // the runtime is playing the studio's cart (not the home screen or a Bit game)
   const overlay = $('gameOverlay');
 
   function syncToRuntime(withMap) {
@@ -750,11 +763,13 @@ end
     syncToRuntime(true);
     mapDirtyRT = false;
     log(`▶ running "${cart.name}"`, 'sys');
+    playingEditor = true;
+    if (bit.on) bit.playing = 'studio';
     running = loadCode(getCode(), BKEntities.toLua(cart.entities)) === 0;
     acc = 0; last = performance.now();
     screen.focus();
   }
-  function stop() { if (activeTab === 'map') setTimeout(drawMap, 0); running = false; RT._bkw_stop(); log('■ stopped', 'sys'); }
+  function stop(quiet) { if (activeTab === 'map') setTimeout(drawMap, 0); running = false; RT._bkw_stop(); if (quiet !== true) log('■ stopped', 'sys'); }
   onRuntimeError = msg => {
     running = false;
     overlay.textContent = msg;
@@ -762,7 +777,7 @@ end
     showErrLine(msg);
   };
   $('btnRun').onclick = run;
-  $('btnStop').onclick = stop;
+  $('btnStop').onclick = () => { stop(); if (bit.on) setBitPower(false); };
   screen.addEventListener('mousedown', () => screen.focus());
   $('btnFull').onclick = () => { const g = $('gameWrap'); (g.requestFullscreen || g.webkitRequestFullscreen).call(g); screen.focus(); };
 
@@ -778,20 +793,22 @@ end
     requestAnimationFrame(frame);
     pollInput();
     if (running) {
-      if (gfxDirtyRT) syncToRuntime(false);   // live sprite edits while the game runs
+      if (gfxDirtyRT && playingEditor) syncToRuntime(false);   // live sprite edits while the game runs
       acc += Math.min(now - last, 100);
       let ticks = 0;
       while (acc >= STEP && running) {
         RT.HEAPU8.set(input.press, ptr.press);
         if (RT._bkw_frame(input.mask, ptr.press) !== 0) running = false;
         const tr = RT.HEAP32;
-        if (tr[ptr.track + 2] && route.cur) route.cur.push(tr[ptr.track], tr[ptr.track + 1]);
+        if (playingEditor && tr[ptr.track + 2] && route.cur) route.cur.push(tr[ptr.track], tr[ptr.track + 1]);
+        if (tr[ptr.sys]) { const cmd = tr[ptr.sys], arg = tr[ptr.sys + 1]; tr[ptr.sys] = 0; bitRequest(cmd, arg); break; }
         acc -= STEP; ticks++; fpsCount++;
       }
       if (ticks) blit();
       if (ticks && activeTab === 'map' && route.show && (++routeTick % 10) === 0) drawMap();
     }
     last = now;
+    bitCombo();
     if (now - fpsT >= 1000) { $('fps').textContent = running ? `${fpsCount} fps` : ''; fpsCount = 0; fpsT = now; }
     updateInputUI();
   }
@@ -828,11 +845,11 @@ end
     cart.name = 'my game'; cart.code = NEW_CODE; cart.palette.set(DEFAULT_PAL);
     cart.tiles.fill(0); cart.flags.fill(0); cart.map.fill(0);
     cart.entities = { types: [], placed: [] };
-    applyCart(); saveLocal();
+    setCartFile(null); applyCart(); saveLocal();
   };
   $('btnDemo').onclick = async () => {
     if (!await ask('Load the demo cart?', 'This replaces the current cart with Sprout Hop. Use Save / share first if you want to keep a copy.', 'Load demo')) return;
-    loadDemo(); run();
+    setCartFile(null); loadDemo(); run();
   };
   function cartFileName() { return (cart.name || 'cart').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').toLowerCase() + '.bitkit'; }
   $('btnSave').onclick = () => {
@@ -853,15 +870,197 @@ end
   $('btnOpen').onclick = () => {
     modal('Open cart', `<p class="dim">Pick a .bitkit file, or paste cart text. This replaces the current cart.</p><textarea id="mText" placeholder="Paste cart text here"></textarea>`, [
       ['Choose file…', () => $('fileOpen').click()],
-      ['Load pasted text', () => { try { deserialize(JSON.parse($('mText').value)); applyCart(); saveLocal(); closeModal(); toast('Cart loaded'); } catch (err) { toast('That text is not a cart: ' + err.message); } }, 'primary'],
+      ['Load pasted text', () => { try { deserialize(JSON.parse($('mText').value)); setCartFile(null); applyCart(); saveLocal(); closeModal(); toast('Cart loaded'); } catch (err) { toast('That text is not a cart: ' + err.message); } }, 'primary'],
       ['Cancel', closeModal]]);
   };
   $('fileOpen').onchange = async e => {
     const f = e.target.files[0]; if (!f) return;
-    try { deserialize(JSON.parse(await f.text())); applyCart(); saveLocal(); closeModal(); toast(`Opened ${f.name}`); }
+    try { deserialize(JSON.parse(await f.text())); setCartFile(null); applyCart(); saveLocal(); closeModal(); toast(`Opened ${f.name}`); }
     catch (err) { log('Could not open cart: ' + err.message, 'err'); }
     e.target.value = '';
   };
+
+
+  /* ------------------------------------------------------------ the Bit: emulated PocketBit + memory card */
+  // The Bit boots into a home screen (studio/home.js, a normal cart) listing the games on its memory card:
+  // a folder on this computer, or this browser where folders are not available.
+  const LS_FILE = LS.cart + '.file';
+  let cartFile = lsGet(LS_FILE) || null;   // memory-card file the editor cart came from / saves to
+  function setCartFile(f) { cartFile = f; lsSet(LS_FILE, f || ''); showCartFile(); }
+  function showCartFile() {
+    const el = $('cartFile');
+    el.textContent = cartFile ? `💾 ${cartFile}` : '';
+    el.title = cartFile ? `Saves to ${cartFile} on the Bit (${BKStore.label()}). Ctrl+S saves.` : '';
+  }
+  const bit = { on: false, playing: null, games: [], sel: 1 };
+  let comboHeld = false;
+  const START = 1 << 10, SELECT = 1 << 11;
+
+  async function libraryGames() {
+    let list = [];
+    try { list = await BKStore.list(); } catch (e) { log('Could not read the Bit memory card: ' + e.message, 'err'); }
+    return list.filter(g => g.data && !g.error);
+  }
+  function iconFor(c, slotTile, tiles) {
+    // the game's icon: the player's (or first entity's) first frame, else tile 1, scaled into a 16x16 slot
+    // of the home screen's tile sheet. Returns false when it would be blank.
+    const types = (c.entities && c.entities.types) || [];
+    const t = types.find(x => x.player) || types[0];
+    let f = 1, w = 1, h = 1;
+    const fr = t && (t.anims.find(a => a.frames.length) || {}).frames;
+    if (fr && fr.length) { f = fr[0]; w = Math.min(4, t.sw || 1); h = Math.min(4, t.sh || 1); }
+    const sw = w * 8, sh = h * 8, sz = Math.max(sw, sh), ox = (sz - sw) >> 1, oy = (sz - sh) >> 1;
+    let any = false;
+    for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+      const px = Math.floor(x * sz / 16) - ox, py = Math.floor(y * sz / 16) - oy;
+      let v = 0;
+      if (px >= 0 && py >= 0 && px < sw && py < sh) {
+        const tile = f + (py >> 3) * 16 + (px >> 3);
+        v = tile < TILES ? c.tiles[tile * 64 + (py & 7) * 8 + (px & 7)] : 0;
+      }
+      tiles[(slotTile + (y >> 3) * 16 + (x >> 3)) * 64 + (y & 7) * 8 + (x & 7)] = v;
+      if (v) any = true;
+    }
+    return any;
+  }
+  const luaStr = s => '"' + String(s).replace(/[\\"]/g, '\\$&').replace(/\n/g, ' ') + '"';
+  async function bootHome() {
+    const lib = await libraryGames();
+    bit.games = [{ name: cart.name, studio: true, cart: null }].concat(
+      lib.filter(g => g.file !== cartFile).map(g => ({ name: g.data.name || g.file, file: g.file, data: g.data })));
+    const tiles = new Uint8Array(TILES * 64);
+    const COLORS = [3, 8, 15, 20, 25, 4, 9, 16];
+    const rows = bit.games.slice(0, 96).map((g, i) => {
+      const slot = Math.floor(i / 8) * 32 + (i % 8) * 2 + 0;
+      let c = null;
+      if (g.studio) c = cart; else { try { c = decodeCart(g.data); } catch (e) { c = null; } }
+      const has = c && iconFor(c, slot, tiles);
+      return `{name=${luaStr(g.name)}, file=${luaStr(g.file || '')}, studio=${g.studio ? 'true' : 'false'}, ${has ? `icon=${slot}` : `color=${COLORS[i % COLORS.length]}`}}`;
+    });
+    if (bit.sel > bit.games.length) bit.sel = 1;
+    const data = `BIT = { games = {${rows.join(',')}}, sel = ${bit.sel}, studio = true, source = ${luaStr(BKStore.state === 'folder' ? BKStore.label() : '')} }`;
+    startAudio();
+    overlay.classList.add('hidden');
+    RT.HEAPU8.set(DEFAULT_PAL, ptr.pal); RT.HEAPU8.set(tiles, ptr.tiles);
+    RT.HEAPU8.fill(0, ptr.flags, ptr.flags + TILES); RT.HEAPU16.fill(0, ptr.map >> 1, (ptr.map >> 1) + MAPW * MAPH);
+    gfxDirtyRT = true; playingEditor = false; bit.playing = 'home';
+    running = loadCode(window.BK_HOME, data) === 0;
+    acc = 0; last = performance.now();
+    screen.focus();
+  }
+  function playCart(c, label) {
+    startAudio();
+    overlay.classList.add('hidden');
+    RT.HEAPU8.set(c.palette, ptr.pal); RT.HEAPU8.set(c.tiles, ptr.tiles); RT.HEAPU8.set(c.flags, ptr.flags);
+    RT.HEAPU16.set(c.map, ptr.map >> 1);
+    gfxDirtyRT = true; playingEditor = false; bit.playing = label;
+    log(`▶ Bit: playing "${c.name}"`, 'sys');
+    running = loadCode(c.code, BKEntities.toLua(c.entities)) === 0;
+    acc = 0; last = performance.now();
+    screen.focus();
+  }
+  async function bitRequest(cmd, arg) {
+    if (cmd === 2) { if (bit.on) bootHome(); return; }
+    const g = bit.games[arg - 1];
+    if (!bit.on || bit.playing !== 'home' || !g) return;
+    bit.sel = arg;
+    if (cmd === 1) {
+      if (g.studio) run();
+      else { try { playCart(decodeCart(g.data), g.file); } catch (e) { log(`Could not start ${g.file}: ${e.message}`, 'err'); } }
+    } else if (cmd === 3) {
+      if (g.studio) { toast('That is the cart in the studio'); return; }
+      openFromBit(g.file, g.data);
+    }
+  }
+  function bitCombo() {
+    const both = (input.mask & (START | SELECT)) === (START | SELECT);
+    if (both && !comboHeld && bit.on && bit.playing !== 'home') { stop(true); bootHome(); }
+    comboHeld = both;
+  }
+  function setBitPower(on) {
+    bit.on = on;
+    $('btnBit').classList.toggle('active', on);
+    $('btnBit').textContent = on ? '⏻ Bit on' : '⏻ Bit';
+    if (on) { log('Bit on: home screen. Hold Start+Select in a game to come back.', 'sys'); bootHome(); }
+    else { stop(true); bit.playing = null; bootScreen(); }
+  }
+  $('btnBit').onclick = () => setBitPower(!bit.on);
+
+  async function openFromBit(file, data) {
+    if (!await ask(`Open "${data.name || file}" in the studio?`, 'This replaces the cart in the studio. If you want to keep it, save it to the Bit first.', 'Open')) return;
+    try { deserialize(data); } catch (e) { toast(e.message); return; }
+    setCartFile(file); applyCart(); saveLocal();
+    closeModal(); toast(`Opened ${file}`);
+    if (bit.on) bootHome();
+  }
+  async function saveToBit(confirmNew) {
+    const file = cartFile || cartFileName();
+    try {
+      if (!cartFile && confirmNew && await BKStore.exists(file) &&
+          !await ask(`Replace ${file}?`, 'A game with this file name is already on the Bit.', 'Replace')) return false;
+      await BKStore.save(file, serialize());
+      setCartFile(file);
+      toast(`Saved to the Bit: ${file}`);
+      return true;
+    } catch (e) { log('Could not save to the Bit: ' + e.message, 'err'); toast('Save failed'); return false; }
+  }
+
+  async function showLibrary() {
+    const games = await BKStore.list().catch(e => { log(e.message, 'err'); return []; });
+    const st = BKStore.state;
+    const where = st === 'folder' ? `📁 <b>${escapeHtml(BKStore.label())}</b> on this computer`
+      : st === 'reconnect' ? `📁 <b>${escapeHtml(BKStore.label())}</b>`
+      : `🌐 <b>this browser</b>${BKStore.canPickFolder ? '' : ' (this browser can\'t open folders; Chrome or Edge can)'}`;
+    const rows = games.map((g, i) => {
+      const nm = g.data ? escapeHtml(g.data.name || g.file) : `<span class="err">${escapeHtml(g.file)} (unreadable)</span>`;
+      const cur = g.file === cartFile ? ' <span class="lib-tag">in studio</span>' : '';
+      return `<div class="lib-row"><canvas width="16" height="16" data-i="${i}"></canvas><div class="lib-name">${nm}${cur}<div class="dim small">${escapeHtml(g.file)}</div></div>
+        ${g.data ? `<button class="tiny" data-play="${i}">Play</button><button class="tiny" data-open="${i}">Open</button>` : ''}<button class="tiny danger" data-del="${i}">✕</button></div>`;
+    }).join('') || '<div class="dim">No games yet. Save the current cart to put it on the Bit.</div>';
+    modal('Bit library', `<div class="lib-where">Memory card: ${where}</div>
+      <div class="lib-actions">
+        ${BKStore.canPickFolder ? '<button id="libPick" class="tiny">Choose folder…</button>' : ''}
+        ${st === 'reconnect' ? '<button id="libReconnect" class="tiny primary">Reconnect folder</button>' : ''}
+        ${st !== 'browser' ? '<button id="libBrowser" class="tiny">Use this browser instead</button>' : ''}
+      </div>
+      <div class="lib-list">${rows}</div>`, [
+      ['Save current cart to the Bit', async () => { if (await saveToBit(true)) showLibrary(); }, 'primary'],
+      ['Close', closeModal]]);
+    // icons
+    document.querySelectorAll('.lib-row canvas').forEach(cv => {
+      const g = games[+cv.dataset.i]; if (!g.data) return;
+      try {
+        const c = decodeCart(g.data), x = cv.getContext('2d'), im = x.createImageData(16, 16), tl = new Uint8Array(64 * 18);
+        iconFor(c, 0, tl);
+        for (let y = 0; y < 16; y++) for (let xx = 0; xx < 16; xx++) {
+          const v = tl[((y >> 3) * 16 + (xx >> 3)) * 64 + (y & 7) * 8 + (xx & 7)], o = (y * 16 + xx) * 4;
+          im.data[o] = c.palette[v * 3]; im.data[o + 1] = c.palette[v * 3 + 1]; im.data[o + 2] = c.palette[v * 3 + 2]; im.data[o + 3] = v ? 255 : 0;
+        }
+        x.putImageData(im, 0, 0);
+      } catch (e) { /* no icon */ }
+    });
+    const on = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
+    on('libPick', async () => {
+      try { await BKStore.chooseFolder(); showCartFile(); toast(`Memory card: ${BKStore.label()}`); if (bit.on) bootHome(); showLibrary(); }
+      catch (e) { if (e.name !== 'AbortError') { log('Folder not available here: ' + e.message, 'err'); toast('Folders are blocked here. Open the studio in its own tab.'); } }
+    });
+    on('libReconnect', async () => { try { await BKStore.reconnect(); } catch (e) { log(e.message, 'err'); } if (bit.on) bootHome(); showLibrary(); });
+    on('libBrowser', async () => { await BKStore.useBrowser(); setCartFile(null); if (bit.on) bootHome(); showLibrary(); });
+    document.querySelectorAll('[data-play]').forEach(b => b.onclick = () => {
+      const g = games[+b.dataset.play]; closeModal();
+      try { if (!bit.on) { bit.on = true; $('btnBit').classList.add('active'); $('btnBit').textContent = '⏻ Bit on'; } playCart(decodeCart(g.data), g.file); } catch (e) { log(e.message, 'err'); }
+    });
+    document.querySelectorAll('[data-open]').forEach(b => b.onclick = () => { const g = games[+b.dataset.open]; openFromBit(g.file, g.data); });
+    document.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
+      const g = games[+b.dataset.del];
+      if (!await ask(`Delete ${g.file}?`, BKStore.state === 'folder' ? 'The file is deleted from the folder on your computer. This cannot be undone.' : 'It is removed from this browser.', 'Delete')) { showLibrary(); return; }
+      try { await BKStore.remove(g.file); if (g.file === cartFile) setCartFile(null); toast('Deleted'); } catch (e) { log(e.message, 'err'); }
+      if (bit.on && bit.playing === 'home') bootHome();
+      showLibrary();
+    });
+  }
+  $('btnLib').onclick = showLibrary;
+  BKStore.init().then(showCartFile, () => {});
 
   /* in-page dialogs (native confirm() is unavailable in some embeds) */
   const modalEl = $('modal');
@@ -941,6 +1140,11 @@ end
       ['raycast(x,y,dx,dy,len,[what],[ignore])', 'Cast a line. Returns hit, hx, hy, thing. what: "wall", "player", "any", "enemy", "friend" or an entity name. Walls block it.'],
       ['circlecast(x,y,r,[what],[ignore])', 'List of things (entities or PLAYER) inside the circle.'],
       ['Teams and damage', 'Entities with touch damage hurt the other team when they first touch. The player is on the friend team, so enemy damage sends "player_hurt". Projectiles vanish after hitting.']]],
+    ['The Bit (emulated PocketBit)', [
+      ['⏻ Bit button', 'Turns on the emulated PocketBit: a home screen with the studio cart and every game on its memory card. D-pad chooses, A plays, Y opens a game in the studio.'],
+      ['Start + Select', 'Hold both in a game to go back to the home screen, like on the device.'],
+      ['Library', 'The Bit\'s memory card: a folder on your computer (Chrome/Edge) or this browser. Save carts to it, then play or open them from the home screen. Ctrl+S saves the open cart back to its file.'],
+      ['launch(n, [edit]) / home()', 'System calls used by the home screen: start game n, or return home. A game can call home() from its own menu.']]],
     ['Time and randomness', [
       ['t()', 'Frames since the cart started (60 per second).'],
       ['time()', 'Seconds since the cart started.'],
@@ -970,7 +1174,7 @@ end
   requestAnimationFrame(frame);
 
   // expose for tests / debugging
-  window.bkStudio = { cart, run, stop, input, RT, isRunning: () => running };
+  window.bkStudio = { cart, run, stop, input, RT, isRunning: () => running, bit, setBitPower, showLibrary, saveToBit, BKStore };
 })().catch(e => {
   document.body.innerHTML = `<pre style="color:#ff6b5e;padding:20px">Studio failed to start: ${e && e.stack || e}</pre>`;
 });
