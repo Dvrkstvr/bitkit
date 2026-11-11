@@ -12006,10 +12006,10 @@ end
 
 W, H = 480, 360                           -- the sea is bigger than the screen
 LX, LY = 240, 168                         -- the lamp
-ISLE = { x = 240, y = 188, r = 30 }       -- the lighthouse island
+ISLE = { x = 240, y = 186, r = 21 }       -- the lighthouse island (small, so the beam isn't hidden)
 DAYLEN, NIGHTLEN = 3600, 3600             -- one minute of day, one minute of night
 DOCKS = { { x = 40, y = 340 }, { x = 440, y = 340 } }
-CANNONS = { { x = 214, y = 196 }, { x = 266, y = 196 }, { x = 226, y = 212 }, { x = 254, y = 212 } }
+CANNONS = { { x = 224, y = 196 }, { x = 256, y = 196 }, { x = 230, y = 203 }, { x = 250, y = 203 } }
 MOOR = { { x = 196, y = 214 }, { x = 284, y = 214 }, { x = 196, y = 160 }, { x = 284, y = 160 } }
 PCOL = { 17, 21, 26, 27 }                 -- boat colours for players 1-4
 CAP = 6                                   -- crates a rowboat can carry
@@ -12618,6 +12618,7 @@ function _draw()
     end
   end
 
+  draw_island(night)
   if oil > 0 or t() % 6 < 3 then
     if night then draw_beam(19, beam_r > 120 and 21 or 20) else draw_beam(21, beam_r > 120 and 23 or 22) end
   end
@@ -12684,7 +12685,7 @@ function _draw()
   end
   for _, b in ipairs(balls) do circfill(b.x, b.y, 1, 31) pset(b.x, b.y, 28) end
 
-  draw_island(night)
+  draw_tower()
   draw_coast()
   draw_boats()
 
@@ -12722,14 +12723,18 @@ function draw_boats()
   end
 end
 
+-- the island is drawn under the beam, the tower and cannons on top of it
 function draw_island(night)
   circfill(ISLE.x, ISLE.y, ISLE.r + 3, night and 19 or 22)        -- surf
   circfill(ISLE.x, ISLE.y, ISLE.r, 11)                           -- sand
-  circfill(ISLE.x - 4, ISLE.y + 2, ISLE.r - 6, 30)
-  circfill(ISLE.x - 12, ISLE.y + 8, 12, 28) circfill(ISLE.x + 12, ISLE.y + 10, 10, 28)
-  pset(ISLE.x - 16, ISLE.y + 4, 29) pset(ISLE.x + 8, ISLE.y + 14, 29)
+  circfill(ISLE.x - 2, ISLE.y + 2, ISLE.r - 5, 30)
+  circfill(ISLE.x - 8, ISLE.y + 6, 8, 28) circfill(ISLE.x + 8, ISLE.y + 7, 7, 28)
+  pset(ISLE.x - 11, ISLE.y + 3, 29) pset(ISLE.x + 6, ISLE.y + 10, 29)
   -- jetty where the rowboats unload
   rectfill(ISLE.x - 4, ISLE.y + ISLE.r - 2, 8, 12, 7)
+end
+
+function draw_tower()
   for c = 1, G.cannon do
     local C = CANNONS[c]
     spr(6, C.x - 4, C.y - 6, 1, 1, C.x > ISLE.x)
