@@ -1328,8 +1328,8 @@ static void share_tick(void) {
   char q[120], nm[16];
   #define PUT(...) do { if (o < sizeof(lua)) o += (size_t)snprintf(lua + o, sizeof(lua) - o, __VA_ARGS__); } while (0)
   lua_q(q, sizeof(q), bs.name[0] ? bs.name : "");
-  PUT("SHARE = {v = %u, me = {name = %s, num = %d, color = %d}, items = {", ++SH.v, q, my_num(), bs.color);
-  for (int i = 0; i < SH.nitems; i++) { lua_q(q, sizeof(q), SH.item[i].name); PUT("{name = %s, kind = \"%s\", size = %u},", q, SH_KIND[SH.item[i].kind], SH.item[i].size); }
+  PUT("SHARE = {v = %u, me = {name = %s, num = %d, color = %d}, items = {", (unsigned)++SH.v, q, my_num(), bs.color);
+  for (int i = 0; i < SH.nitems; i++) { lua_q(q, sizeof(q), SH.item[i].name); PUT("{name = %s, kind = \"%s\", size = %u},", q, SH_KIND[SH.item[i].kind], (unsigned)SH.item[i].size); }
   PUT("}, bits = {");
   for (int i = 0; i < SH.nbits; i++) {
     const lk_peer *p = find_peer(SH.bit[i]);
@@ -1339,13 +1339,13 @@ static void share_tick(void) {
   PUT("}");
   if (SH.offer) {
     char who[40]; lua_q(who, sizeof(who), SH.o_who); lua_q(q, sizeof(q), SH.o_name);
-    PUT(", offer = {from = %s, kind = \"%s\", name = %s, size = %u}", who, SH_KIND[SH.o_kind], q, SH.o_size);
+    PUT(", offer = {from = %s, kind = \"%s\", name = %s, size = %u}", who, SH_KIND[SH.o_kind], q, (unsigned)SH.o_size);
   }
   if (SH.x != SH_NONE) {
     static const char *ST[6] = { "", "ask", "go", "ok", "no", "fail" };
     char who[40], why[100]; lua_q(who, sizeof(who), SH.who); lua_q(q, sizeof(q), SH.name); lua_q(why, sizeof(why), SH.why);
     PUT(", xfer = {dir = \"%s\", name = %s, kind = \"%s\", peer = %s, size = %u, done = %u, state = \"%s\", why = %s}",
-        SH.dir == 1 ? "send" : "recv", q, SH_KIND[SH.kind], who, SH.size, SH.done, ST[SH.x], why);
+        SH.dir == 1 ? "send" : "recv", q, SH_KIND[SH.kind], who, (unsigned)SH.size, (unsigned)SH.done, ST[SH.x], why);
   }
   PUT("}");
   #undef PUT
