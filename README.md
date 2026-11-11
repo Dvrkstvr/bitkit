@@ -229,6 +229,19 @@ A potion kitchen. The order cards at the top show which three ingredients each c
 - **Teams** (2 players or more): two mirrored kitchens get the same orders at the same moments. Most coins wins.
 - **Goal:** earn the shift's target in coins, or out-brew the other kitchen. Continue carries on the shift with your coins and the time left.
 
+#### Mind Laps
+
+<img src="docs/media/mind-laps.png" width="400" alt="Mind Laps: a number sequence with four answers on the d-pad, in a park by a running track">
+
+A daily brain jog: five laps of 30 seconds, one quick exercise each. Answers sit on the d-pad, so you press the direction of the right one.
+
+- **Quick Sums** (maths), **Arrow Echo** (memory: watch the arrows, then press them back), **Next Up** (logic: what comes next in the row), **Firefly Jars** (counting at a glance: which jar has more) and **Lanterns** (reaction: A the moment a lantern glows green, never on red).
+- **Daily Jog** (alone): the same five laps for everybody on the same day, scored out of 500 with a bronze, silver or gold medal. A jog every day grows your streak of days in a row; the Bit's clock (the PocketBit's RTC) dates it. The last 7 days show as medals.
+- **Practice** (alone): one exercise at a time. Every exercise has its own level (1-9) that goes up when you do well and down when you struggle.
+- **Race** (2-8 players, one screen or linked Bits): everyone gets the same question, the first right answer scores, a wrong one locks you out of that question.
+- **Team** (2-8 players): every right answer counts towards one shared score and medal.
+- **Goal:** a gold medal (400 points) on a Daily Jog. Continue takes you back to the next lap of today's jog.
+
 ## ✨ Shaders
 
 The Bit has no GPU, so shaders are small C routines that run on the 320x240 picture. Three kinds:
