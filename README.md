@@ -16,7 +16,7 @@ The game runtime and browser studio for **PocketBit**, a DIY ESP32-S3 handheld.
 ![ESP32-S3](https://img.shields.io/badge/ESP32--S3-target-E7352C?logo=espressif&logoColor=white)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-4aa3df.svg)](CONTRIBUTING.md)
 
-### [▶ Open the studio](https://dvrkstvr.github.io/bitkit/) · [Offline version](dist/bitkit-studio.html) · [Hardware repo](https://github.com/Dvrkstvr/pocketbit)
+### [▶ Open the studio](https://dvrkstvr.github.io/bitkit/) · [🎮 Share website](https://dvrkstvr.github.io/bitkit/hub.html) · [Offline version](dist/bitkit-studio.html) · [Hardware repo](https://github.com/Dvrkstvr/pocketbit)
 
 <img src="docs/media/sprout-hop.gif" width="560" alt="Sprout Hop, the demo game, running in BitKit">
 

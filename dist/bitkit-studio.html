@@ -457,6 +457,8 @@ button.primary { background: #2f6b3a; border-color: #4fa04a; }
 button.primary:hover { background: #3a7f46; }
 button.active { background: #3a2e5c; border-color: #8e4fb0; }
 button.tiny { padding: 0 6px; font-size: 11px; }
+a.btnlink { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; color: inherit; text-decoration: none; white-space: nowrap; }
+a.btnlink:hover { border-color: var(--dim); }
 select { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; }
 .dim { color: var(--dim); }
 .small { font-size: 11px; }
@@ -32873,7 +32875,7 @@ window.BKShare = (() => {
   }
   async function showHub(body, fresh) {
     body.innerHTML = `<div class="hub-bar"><div class="seg">${['all', 'game', 'app', 'photo', 'clip'].map(k => `<button data-hf="${k}" class="${hubFilter === k ? 'active' : ''}">${k === 'all' ? 'Everything' : KINDS[k]}</button>`).join('')}</div>
-      <span class="grow"></span><a class="small" href="${SITE}hub.html" target="_blank" rel="noopener" title="The Share hub as a website, to browse and pass around">website ↗</a><button id="hubRefresh" class="tiny" title="Load the hub again">⟳</button></div><div id="hubGrid" class="hub-grid"><p class="dim">Loading the hub…</p></div>`;
+      <span class="grow"></span><a class="btnlink" href="${SITE}hub.html" target="_blank" rel="noopener" title="The Share hub as a website, to browse and pass around">🎮 Open the Share website ↗</a><button id="hubRefresh" class="tiny" title="Load the hub again">⟳</button></div><div id="hubGrid" class="hub-grid"><p class="dim">Loading the hub…</p></div>`;
     body.querySelectorAll('[data-hf]').forEach(b => { b.onclick = () => { hubFilter = b.dataset.hf; showHub(body); }; });
     document.getElementById('hubRefresh').onclick = () => showHub(body, true);
     const grid = document.getElementById('hubGrid');
@@ -35778,6 +35780,7 @@ display()                                   -- off</pre><p class="dim">The Help 
         ${st !== 'browser' ? '<button id="libBrowser" class="tiny">Use this browser instead</button>' : ''}</div>
       <div class="games-head"><b>Built-in games</b><span class="dim small">Play them, or open one to see how it is made.</span></div>
       <div class="game-cards">${cards}</div>
+      <div class="games-head"><b>Games by other people</b><span class="dim small">Games and utility apps people shared, to play here or put on your PocketBit.</span><span class="grow"></span><a id="gmSite" class="btnlink" href="https://dvrkstvr.github.io/bitkit/hub.html" target="_blank" rel="noopener">🎮 Open the Share website ↗</a></div>
       <p class="dim small">Switching games never loses work: a game you changed is kept as it was when you left it.</p></div>`,
       [['Close', closeModal, 'primary']], 'wide');
     document.querySelectorAll('canvas[data-mine]').forEach(cv => { const g = mine[+cv.dataset.mine]; if (g.data) { try { drawIcon(cv, decodeCart(g.data)); } catch (e) { /* no icon */ } } });
