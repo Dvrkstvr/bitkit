@@ -135,6 +135,18 @@ BitKit's flagship game, and it is growing. You arrive in the valley of Windrow w
   the day's prices and tops up an empty trough.
 
   ![The tractor on its route beside the silo](docs/media/windrow-route.png)
+- **A wide valley to explore.** West of the woods lies Sedge Fen with its pools, reeds and fireflies,
+  and north of that the Flint Hills, where rocks, copper and iron can be broken above ground with the
+  pickaxe (they are back the next morning). An axe clears the fallen pine on the way south to Gull
+  Shore, and with a waterskin you can cross from there into the Dry Reach and its oasis. Every region
+  has its own wild finds (shells, pearls, bogberries, thyme, flint, dates, amber) and an old tin box.
+
+  ![Gull Shore](docs/media/windrow-shore.png) ![The Dry Reach](docs/media/windrow-desert.png)
+- **Fishing.** With a rod from Marrow, A at any water casts the line. Strike when it bites, reel while
+  the fish rests and ease off while it runs, or the line snaps (a light press reels gently on analog
+  buttons). 15 kinds of fish, each water with its own, some of them rare.
+
+  ![Fishing from the jetty](docs/media/windrow-fishing.png)
 - **Neighbours.** Every Bit keeps its own farm, and Bits in reach are neighbours (in the studio: open
   Windrow in two windows). The north road lists them; pick one and you walk over to their farm as it
   really is, in their season and weather. There you can water their crops, see each other walk about,
