@@ -197,7 +197,7 @@ const ok = m => console.log('ok  ', m);
   await A.waitForTimeout(1500);
   await combo(A);
   if (await atHome(A)) ok('Bit 1 left the stuck game with Start+Select'); else fail('Bit 1 stuck in a game with no other Bits');
-  if ((await st(A)).peers === 0) ok('Bit 1 is on its own again'); else fail('closed Bits still listed');
+  if (await wait(A, () => bkStudio.link.peers.size === 0, null, 6000)) ok('Bit 1 is on its own again'); else fail('closed Bits still listed');   // (a closed window that sends no goodbye drops out after 4 s)
   // alone again: games are single player and pausing works as before
   await launch(A, sprout, true);
   if (await wait(A, () => !bkStudio.link.s && bkStudio.isRunning() && bkStudio.bit.playing !== 'home')) ok('alone: plays on its own'); else fail('alone: game did not start');
