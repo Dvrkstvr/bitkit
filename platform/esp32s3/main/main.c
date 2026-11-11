@@ -16,6 +16,10 @@
 #include <string.h>
 #include <sys/stat.h>
 
+#ifndef CONFIG_BIT_BENCH
+#define CONFIG_BIT_BENCH 0
+#endif
+
 static const char *TAG = "bit";
 static QueueHandle_t console_q;           /* Lua lines from the serial console, run between frames */
 
@@ -87,14 +91,20 @@ static void console_task(void *arg) {
   }
 }
 
+#if CONFIG_BIT_BENCH
+static void bench_task(void *arg) { bit_bench(); for (;;) vTaskDelay(pdMS_TO_TICKS(1000)); }
+#endif
+
 void app_main(void) {
   ESP_LOGI(TAG, "PocketBit: BitKit runtime, %d KB PSRAM free", (int)(psram_free() / 1024));
   bit_clock_init();
   static bit_storage stor;
   ESP_ERROR_CHECK(bit_storage_init(&stor));
+#if !CONFIG_BIT_BENCH
   ESP_ERROR_CHECK(bit_lcd_init());
   ESP_ERROR_CHECK(bit_audio_init());
   ESP_ERROR_CHECK(bit_input_init());
+#endif
 
   static bk_host_config cfg;
   cfg.home_lua = "/flash/sys/home.lua";
@@ -114,7 +124,7 @@ void app_main(void) {
   cfg.log = logger;
   /* linked Bits over ESP-NOW (Kconfig BIT_LINK); without it the home screen just doesn't show other Bits */
   uint32_t id = 0;
-  if (bit_radio_init(&id) == ESP_OK) { cfg.radio_send = bit_radio_send; cfg.bit_id = id; cfg.millis = millis; }
+  if (!CONFIG_BIT_BENCH && bit_radio_init(&id) == ESP_OK) { cfg.radio_send = bit_radio_send; cfg.bit_id = id; cfg.millis = millis; }
   else ESP_LOGW(TAG, "no radio: linked play is off");
   /* the emulator apps (Game Boy, GBC, NES) find your ROMs here; battery saves and states go next to them */
   const char *roms = stor.sd ? "/sdcard/roms" : "/flash/roms";
@@ -122,6 +132,10 @@ void app_main(void) {
   bk_emu_fs_init(roms);
   if (bk_host_init(&cfg)) { ESP_LOGE(TAG, "the host did not start (out of memory?)"); return; }
 
+#if CONFIG_BIT_BENCH
+  xTaskCreatePinnedToCore(bench_task, "bench", 48 * 1024, NULL, 5, NULL, 1);
+  return;
+#endif
   console_q = xQueueCreate(4, sizeof(char *));
   xTaskCreatePinnedToCore(console_task, "console", 4096, NULL, 3, NULL, 0);
   /* Lua's parser recurses in C: the game loop gets a big stack in internal RAM */

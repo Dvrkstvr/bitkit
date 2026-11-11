@@ -1,0 +1,3 @@
+# Benchmark build: flash it, open the serial monitor, and every built-in game is measured at boot (docs/DEVICE.md)
+CONFIG_BIT_BENCH=y
+CONFIG_BIT_BENCH_FRAMES=600

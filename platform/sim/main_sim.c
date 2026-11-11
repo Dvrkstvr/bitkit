@@ -275,6 +275,17 @@ int main(int argc, char **argv) {
   if (rf) {
     fprintf(rf, "| Game | avg ms/frame (host) | max ms | Lua peak KB |\n|---|---:|---:|---:|\n");
     for (int i = 0; i < np; i++) fprintf(rf, "| %s | %.3f | %.2f | %zu |\n", P[i].name, P[i].avg / 1000, P[i].max / 1000, P[i].peak / 1024);
+    /* the picture with each screen look (the same cost on every game: they work on the pixels) */
+    fprintf(rf, "\n| Screen look | picture ms/frame (host) |\n|---|---:|\n");
+    static const char *looks[] = { "off", "sepia", "vivid", "night", "handheld", "arcade", "crt" };
+    for (size_t i = 0; i < sizeof(looks) / sizeof(looks[0]); i++) {
+      __typeof__(BK->display) keep = BK->display;
+      bk_display_preset(looks[i]);
+      const double t0 = now_us();
+      for (int f = 0; f < 60; f++) { bk_present_begin(); for (int y = 0; y < BK_H; y += 20) bk_present_rgb565(frame_buf, y, y + 20); }
+      BK->display = keep;
+      fprintf(rf, "| %s | %.3f |\n", looks[i], (now_us() - t0) / 60 / 1000);
+    }
     fclose(rf);
   }
   printf("%-16s %10s %9s %9s\n", "game", "avg ms", "max ms", "Lua KB");
