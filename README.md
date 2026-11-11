@@ -45,7 +45,6 @@ The game runtime and browser studio for **PocketBit**, a DIY ESP32-S3 handheld.
 | **Entities** | Sprites, animations, team, HP, stats, effects (heal, slow…) and a behavior tree with presets |
 | **Cutscenes** | Dialog with portraits, camera pans, walks, fades and screen shake. Play them when a level starts, from a trigger zone on the map, or from code |
 | **Controller** | Live view of every button, remapping, threshold and deadzone |
-| **✨ AI** | Chat with Claude or Gemini to make your game. It reads and changes code, sprites, maps and entities, tests the game, and shows you the changes to apply or discard |
 | **Help** | Full API reference |
 
 <details>
@@ -54,14 +53,6 @@ The game runtime and browser studio for **PocketBit**, a DIY ESP32-S3 handheld.
 <img src="docs/media/studio-map.png" alt="Map editor with the player route overlay">
 
 </details>
-
-### ✨ AI helper
-
-The **AI** tab is a chat that can build your game with you: *"add coins the player can collect"*, *"draw a 16×16 slime and make it patrol"*, *"why do I fall through the floor?"*. It works on a copy of your cart, runs the game to check its work, and then shows a **Proposed changes** card with a code diff and new sprites. Nothing changes until you press **Apply**, and **Undo** puts things back.
-
-- **Claude** (Anthropic) or **Gemini** (Google), your pick of model.
-- **Bring your own API key.** BitKit has no server, so the studio calls the provider straight from your browser. The key is stored only in this browser (or only for this tab) and is only sent to that provider. Get one at [platform.claude.com](https://platform.claude.com/settings/keys) or [Google AI Studio](https://aistudio.google.com/apikey).
-- A Claude Pro/Max or Gemini app subscription can't be used as the login: those plans don't include API access for other apps.
 
 ## 🚀 Quick start
 

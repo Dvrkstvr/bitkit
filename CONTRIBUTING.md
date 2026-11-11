@@ -16,13 +16,11 @@ cd studio && python3 -m http.server 8000   # studio dev server, no build step
 ./build.sh                                 # rebuild studio/runtime.js after changing C or runtime/*.lua (needs Emscripten)
 node tools/ci.cjs                          # the same check CI runs
 node tools/gametest.cjs                    # the game shell and the game rules in every demo
-node tools/aitest.cjs                      # AI chat in a real browser against fake Claude/Gemini APIs (needs Playwright)
 python3 tools/bundle.py dist/bitkit-studio.html   # refresh the offline single-file build
 ```
 
 - `runtime/` is portable C and Lua. It must also run on the ESP32-S3, so avoid big allocations and platform APIs.
 - `studio/` is plain HTML, CSS and JavaScript with no framework and no bundler.
-- Never commit API keys. The AI tab keeps keys in the user's browser only.
 - If you change the runtime, commit the rebuilt `studio/runtime.js` and `dist/bitkit-studio.html`.
 
 ## Licence and code origin
