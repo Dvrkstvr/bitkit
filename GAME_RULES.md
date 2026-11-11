@@ -112,6 +112,7 @@ game{
   can_continue = function() return ... end,    -- Continue for games that keep their own save (optional)
   new_game = function() ... end,               -- reset such a game (optional)
   pause = {{"Back to checkpoint", fn}},        -- extra pause menu items (optional)
+  menu = {{"Levels", fn}},                     -- extra title screen items, after New game (optional)
   settings = {                                 -- extra settings (optional)
     {key = "laps", name = "Laps", min = 1, max = 5, value = 3},
     {key = "ai", name = "Rivals", values = {"Easy", "Normal", "Hard"}, value = 2},
@@ -127,7 +128,11 @@ game{
 | `setting(key)` | A settings value. `"volume"` and `"music"` are 0 to 10. |
 | `mus(note, ...)` | Same as `sfx()`, but also follows the Music level. |
 | `game_play()` | Skip the menus and go straight into play (for example when a level is started from the editor). |
-| `GAME.state` | `"title"`, `"play"`, `"pause"`, `"settings"`, `"help"`, `"confirm"` or `"won"`. |
+| `game_screen()` | Hand the screen to your own menu, like a level select: `_update` and `_draw` run, the shell draws nothing and Start does nothing. It isn't gameplay yet, so Continue on the title still works. Leave with `game_play()` or `game_title()`. |
+| `game_title()` | Back to the title screen. |
+| `GAME.state` | `"title"`, `"play"`, `"screen"`, `"pause"`, `"settings"`, `"help"`, `"confirm"` or `"won"`. |
+
+Sprout Hop shows how the pieces fit together for a level select: **Levels** on the title (`menu`) and in the pause menu (`pause`) opens a `game_screen()` that lists the levels you have reached with your stats for each (kept with `save()`), and starting one calls `game_play()`. Continue still skips it and goes straight back to the checkpoint.
 
 The checkpoint and settings are stored in the game's save next to (not inside) what you keep with `save()`, so `save()` and `saved()` keep working as before.
 

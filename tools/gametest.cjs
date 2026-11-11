@@ -66,7 +66,7 @@ require('../studio/runtime.js')({ onLog: (m, e) => { if (e) errors.push(m); else
   if (st()[0] !== 'play') fail('Start during a cutscene should skip it, not pause, got ' + st()[0]);
   tap('start'); run(1);
   if (st()[0] !== 'pause') fail('Start should open the pause menu, got ' + st()[0]);
-  tap('down'); tap('down'); tap('a');               // Resume, Back to checkpoint, [Settings]
+  tap('down'); tap('down'); tap('down'); tap('a');   // Resume, Back to checkpoint, Level select, [Settings]
   if (st()[0] !== 'settings') fail('Settings should open from the pause menu, got ' + st()[0]);
   tap('left'); tap('left'); tap('left');
   if (st()[1] !== '7') fail('left x3 should turn the volume down to 7, got ' + st()[1]);
@@ -90,7 +90,7 @@ require('../studio/runtime.js')({ onLog: (m, e) => { if (e) errors.push(m); else
 
   // 4. Quit to title, then New game asks the host to load the cart again (sys 5, mode 2)
   tap('start'); run(1);
-  for (let i = 0; i < 4; i++) tap('down');          // Resume, Back to checkpoint, Settings, How to play, [Quit to title]
+  for (let i = 0; i < 5; i++) tap('down');          // Resume, Back to checkpoint, Level select, Settings, How to play, [Quit to title]
   tap('a'); run(1);
   if (st()[0] !== 'title') fail('Quit to title should show the title screen, got ' + st()[0]);
   sysReq = null;

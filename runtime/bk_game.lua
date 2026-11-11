@@ -12,6 +12,7 @@
 --     new_game = function() ... end,               -- optional: reset a game that loaded its own save
 --     can_continue = function() return ... end,    -- optional: Continue for games that keep their own save
 --     pause = {{"Back to checkpoint", function() ... end}},   -- optional extra pause menu items
+--     menu = {{"Levels", function() ... end}},     -- optional extra title screen items (after New game)
 --     settings = {{key = "laps", name = "Laps", min = 1, max = 5, value = 3},
 --                 {key = "ai", name = "Rivals", values = {"Easy", "Normal", "Hard"}, value = 2}},
 --     music = true,                                -- adds a Music level for notes played with mus()
@@ -21,7 +22,11 @@
 --   game_win(text)  the goal is reached: shows the "goal complete" screen (after any cutscene ends)
 --   setting(key)    a value from the Settings screen (volume and music are 0..10)
 --   game_play()     skip the menus and go straight to gameplay
---   GAME.state      "title", "play", "pause", "settings", "help", "confirm" or "won"
+--   game_screen()   hand the whole screen to the game's own menu (a level select, a garage): _update and
+--                   _draw run, but it isn't gameplay yet, so Continue still works. Leave with game_play()
+--                   or game_title()
+--   game_title()    back to the title screen
+--   GAME.state      "title", "play", "screen", "pause", "settings", "help", "confirm" or "won"
 --
 -- Start opens the pause menu (Start+Select still goes to the Bit's home screen). Volume scales every
 -- sfx() and tone(). The settings and the checkpoint are kept in the cart's save, next to (not inside)
@@ -124,6 +129,7 @@ do
           confirm("Start over? Your progress here is lost.", "Start over", start_new)
         else start_new() end
       end)
+      for _, it in ipairs(CFG.menu or {}) do add(it[1], it[2]) end
       add("Settings", function() BACK = "title"; set_state("settings") end)
       if CFG.help then add("How to play", function() BACK = "title"; set_state("help") end) end
     elseif ST == "pause" then
@@ -310,7 +316,9 @@ do
     if d ~= k_draw then CART_DRAW = d; _G._draw = k_draw end
   end
   k_update = function()
-    if ST == "play" then
+    if ST == "screen" then           -- the game's own menu screen: no pause menu, and not gameplay yet
+      if CART_UPDATE then CART_UPDATE() end
+    elseif ST == "play" then
       if WIN_PENDING and not (cutscene_playing and cutscene_playing()) then
         WIN_PENDING = false; set_state("won")
         adopt()
@@ -341,7 +349,7 @@ do
   local overlay = _bk_overlay
   function _bk_overlay()
     if overlay then overlay() end
-    if CFG and ST ~= "play" then
+    if CFG and ST ~= "play" and ST ~= "screen" then
       if ST ~= "confirm" then build() end
       draw_menu()
     end
@@ -376,6 +384,8 @@ do
   end
 
   function game_play() if CFG then play() end end
+  function game_screen() if CFG then set_state("screen") end end
+  function game_title() if CFG then set_state("title") end end
 
   function checkpoint(t)
     KIT.cp = t

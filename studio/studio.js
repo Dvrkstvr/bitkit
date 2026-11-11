@@ -191,7 +191,7 @@ end
   /* ------------------------------------------------------------ code editor */
   const API_NAMES = ['cls', 'pset', 'pget', 'line', 'rect', 'rectfill', 'circ', 'circfill', 'text', 'spr', 'map', 'mget', 'mset',
     'fget', 'fset', 'camera', 'clip', 'pal', 'palt', 'palette', 'btn', 'btnp', 'btnr', 'press', 't', 'time', 'rnd', 'srand',
-    'sfx', 'tone', 'stop', 'print', '_init', '_update', '_draw', 'cutscene', 'cutscene_playing', 'tune', 'game', 'checkpoint', 'game_win', 'save', 'saved'];
+    'sfx', 'tone', 'stop', 'print', '_init', '_update', '_draw', 'cutscene', 'cutscene_playing', 'cutscene_skip', 'cutscenes_reset', 'tune', 'game', 'checkpoint', 'game_win', 'game_play', 'game_screen', 'game_title', 'save', 'saved'];
   let cm = null, ta = null, errLine = null;
   if (window.CodeMirror) {
     // highlight the engine API on top of the lua mode
@@ -2605,13 +2605,15 @@ LEVEL = tune("Rivals", "Normal", {"Easy", "Normal", "Hard"})   -- a list</pre>
       ['_draw()', 'Called after every _update. Put drawing here.'],
       ['print(...)', 'Write to the studio console (for debugging).']]],
     ['Game shell: menus every game has (GAME_RULES.md)', [
-      ['game{title=, goal=, help=, continue=, ...}', 'Call in _init. Adds the title screen (Continue, New game, Settings, How to play), the pause menu on Start (Resume, Settings, Quit to title) and volume settings. Fields: title, goal, help (list of lines), continue(cp), new_game(), can_continue(), pause ({{"name", fn}}), settings ({{key=, name=, min=, max=, value=} or {key=, name=, values={...}}}), music.'],
+      ['game{title=, goal=, help=, continue=, ...}', 'Call in _init. Adds the title screen (Continue, New game, Settings, How to play), the pause menu on Start (Resume, Settings, Quit to title) and volume settings. Fields: title, goal, help (list of lines), continue(cp), new_game(), can_continue(), pause ({{"name", fn}}), menu (extra title items, {{"Levels", fn}}), settings ({{key=, name=, min=, max=, value=} or {key=, name=, values={...}}}), music.'],
       ['checkpoint(t)', 'Remember where to carry on: Continue on the title screen calls continue(t). checkpoint(nil) forgets it.'],
       ['game_win(text)', 'The goal is reached: shows the "goal complete" screen (after any cutscene ends) and puts a star on the title screen.'],
       ['setting(key)', 'A value from the Settings screen. "volume" and "music" are 0..10; volume already scales sfx() and tone().'],
       ['mus(note, ...)', 'sfx() for music: also turned down by the Music level (game{music=true}).'],
       ['game_play()', 'Skip the menus and go straight to gameplay.'],
-      ['GAME.state', '"title", "play", "pause", "settings", "help", "confirm" or "won".']]],
+      ['game_screen()', 'Your own menu screen (a level select, a shop): _update and _draw run, the shell draws nothing and Start does nothing. Leave with game_play() or game_title(). Sprout Hop\'s Levels screen uses it.'],
+      ['game_title()', 'Back to the title screen.'],
+      ['GAME.state', '"title", "play", "screen", "pause", "settings", "help", "confirm" or "won".']]],
     ['Game tab: numbers to play with', [
       ['tune(name, default, [min, max, step])', 'A number the Game tab shows as a slider: SPEED = tune("Speed", 2, 1, 6). Returns the value picked there, or the default. The picked values are saved with the game.'],
       ['tune(name, true)', 'A switch on the Game tab. Returns true or false.'],
@@ -2683,6 +2685,8 @@ LEVEL = tune("Rivals", "Normal", {"Easy", "Normal", "Hard"})   -- a list</pre>
       ['Cutscenes tab', 'Make a list of steps: Say, Move camera to, Walk, Jump, Turn, Fade, Shake, Wait and more. Preview plays it right away.'],
       ['cutscene(name, [once])', 'Play a cutscene. With once = true it only plays the first time. Returns false if there is no such cutscene.'],
       ['cutscene_playing()', 'Returns true and the name while one plays. Behaviors pause, nothing takes damage and ents_camera() follows the cutscene.'],
+      ['cutscene_skip()', 'Jump to the end of the playing cutscene, like START. Call it from on("cutscene", fn) to skip cutscenes (Sprout Hop does on replays).'],
+      ['cutscenes_reset()', 'Forget which cutscenes have played, so level intros and once-only cutscenes play again.'],
       ['on("cutscene_end", fn)', 'Called with the name when a cutscene finishes or is skipped. on("cutscene", fn) is called when one starts.'],
       ['Trigger zones', 'An invisible entity with the "Play cutscene" step. "Place a trigger zone" on the Cutscenes tab makes one for you. Level intros play when their level starts.'],
       ['Needs', 'ents_update() in _update (it runs the cutscene) and ents_camera() if the camera should pan. The dialog box, bars and fades are drawn for you on top of _draw. START skips.']]],
