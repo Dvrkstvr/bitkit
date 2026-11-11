@@ -228,7 +228,7 @@ end
   }
 
   /* ------------------------------------------------------------ code editor */
-  const API_NAMES = ['cls', 'pset', 'pget', 'line', 'rect', 'rectfill', 'circ', 'circfill', 'text', 'spr', 'map', 'mget', 'mset',
+  const API_NAMES = ['cls', 'pset', 'pget', 'line', 'rect', 'rectfill', 'trifill', 'quadfill', 'circ', 'circfill', 'text', 'spr', 'map', 'mget', 'mset',
     'fget', 'fset', 'camera', 'clip', 'pal', 'palt', 'palette', 'btn', 'btnp', 'btnr', 'press', 't', 'time', 'rnd', 'srand',
     'sfx', 'tone', 'stop', 'print', '_init', '_update', '_draw', 'cutscene', 'cutscene_playing', 'cutscene_skip', 'cutscenes_reset', 'tune', 'game', 'checkpoint', 'game_win', 'game_play', 'game_screen', 'game_title', 'save', 'saved',
     'shade', 'tint', 'fog', 'dither', 'remap', 'wave', 'ripple', 'pixelate', 'glitch', 'display', 'sprfx', 'raster',
@@ -3142,6 +3142,7 @@ display()                                   -- off</pre><p class="dim">The Help 
       ['line(x0,y0,x1,y1,c)', 'Draw a line.'],
       ['rect(x,y,w,h,c) / rectfill', 'Rectangle outline or filled.'],
       ['circ(x,y,r,c) / circfill', 'Circle outline or filled.'],
+      ['trifill(x1,y1,x2,y2,x3,y3,c) / quadfill(x1,y1,..,x4,y4,c)', 'Filled triangle, or a filled four-corner shape (corners in order around it). Fast enough to draw a whole 3D slope from.'],
       ['text(s,x,y,[c],[scale])', 'Draw text with the 8x8 font. Returns the width in pixels.'],
       ['font([style],[outline])', 'The letters for text() from now on: "classic", "bold", "slant" or "heavy" (slanted bold), and an outline colour (or none). font() goes back to classic.'],
       ['sget(x,y) / sset(x,y,c)', 'Read or change one pixel of the sprite sheet (128 pixels wide, 256 tall), to paint a picture once and draw it with spr().'],

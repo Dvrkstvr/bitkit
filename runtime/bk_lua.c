@@ -42,6 +42,8 @@ static int l_pget(lua_State *l) { lua_pushinteger(l, bk_pget(ci(l, 1), ci(l, 2))
 static int l_line(lua_State *l) { bk_line(ci(l, 1), ci(l, 2), ci(l, 3), ci(l, 4), ci(l, 5)); return 0; }
 static int l_rect(lua_State *l) { bk_rect(ci(l, 1), ci(l, 2), ci(l, 3), ci(l, 4), ci(l, 5)); return 0; }
 static int l_rectfill(lua_State *l) { bk_rectfill(ci(l, 1), ci(l, 2), ci(l, 3), ci(l, 4), ci(l, 5)); return 0; }
+static int l_trifill(lua_State *l) { bk_trifill(ci(l, 1), ci(l, 2), ci(l, 3), ci(l, 4), ci(l, 5), ci(l, 6), ci(l, 7)); return 0; }
+static int l_quadfill(lua_State *l) { bk_quadfill(ci(l, 1), ci(l, 2), ci(l, 3), ci(l, 4), ci(l, 5), ci(l, 6), ci(l, 7), ci(l, 8), ci(l, 9)); return 0; }
 static int l_shade(lua_State *l) { bk_shade((float)optn(l, 1, 0.5)); return 0; }
 /* ---- screen shaders (bk_core.c) ---- */
 static int l_tint(lua_State *l) { bk_tint(ci(l, 1), (float)optn(l, 2, 0.5)); return 0; }
@@ -519,7 +521,7 @@ static int l_print(lua_State *l) {
 
 static const luaL_Reg API[] = {
   {"cls", l_cls}, {"pset", l_pset}, {"pget", l_pget}, {"line", l_line},
-  {"rect", l_rect}, {"rectfill", l_rectfill}, {"shade", l_shade}, {"tint", l_tint}, {"fog", l_fog}, {"dither", l_dither}, {"remap", l_remap}, {"wave", l_wave}, {"ripple", l_ripple}, {"pixelate", l_pixelate}, {"glitch", l_glitch}, {"display", l_display}, {"sprfx", l_sprfx}, {"raster", l_raster}, {"circ", l_circ}, {"circfill", l_circfill},
+  {"rect", l_rect}, {"rectfill", l_rectfill}, {"trifill", l_trifill}, {"quadfill", l_quadfill}, {"shade", l_shade}, {"tint", l_tint}, {"fog", l_fog}, {"dither", l_dither}, {"remap", l_remap}, {"wave", l_wave}, {"ripple", l_ripple}, {"pixelate", l_pixelate}, {"glitch", l_glitch}, {"display", l_display}, {"sprfx", l_sprfx}, {"raster", l_raster}, {"circ", l_circ}, {"circfill", l_circfill},
   {"text", l_text}, {"font", l_font}, {"sget", l_sget}, {"sset", l_sset}, {"spr", l_spr}, {"map", l_map}, {"floor", l_floorplane}, {"floorh", l_floorh}, {"hset", l_hset}, {"hget", l_hget}, {"depth", l_depth}, {"project", l_project}, {"sspr", l_sspr}, {"mget", l_mget}, {"mset", l_mset},
   {"fget", l_fget}, {"fset", l_fset}, {"camera", l_camera}, {"clip", l_clip},
   {"pal", l_pal}, {"palt", l_palt}, {"palette", l_palette},

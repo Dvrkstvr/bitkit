@@ -250,6 +250,19 @@ A daily brain jog: five laps of 30 seconds, one quick exercise each. Answers sit
 - **Team** (2-8 players): every right answer counts towards one shared score and medal.
 - **Goal:** a gold medal (400 points) on a Daily Jog. Continue takes you back to the next lap of today's jog.
 
+#### Snowbelly
+
+<img src="docs/media/snowbelly.png" width="400" alt="Snowbelly: a penguin belly-sliding down a half pipe at sunset, rings floating over the lips">
+
+A downhill belly-slide race for 1-8 penguins and seals, on one screen (split in 2 or 4) or on linked Bits, with CPU rivals filling the start gate.
+
+- **Left / right** steers (in a half pipe it pumps you from wall to wall), **up** tucks, **down** brakes. **A** jumps: right at the red lip of a ramp it's a **Perfect Pop** with more height.
+- **B** in the air is a trick: hold it to keep turning, let go and the trick finishes its turn. Land only once it's done, or it's a wipeout; land right after it finishes for **PERFECT**. B alone is a Twirl, B + up a Flipper, B + down a Backflop, and mixing them in one jump scores more.
+- Rings in the air and flag gates score, and so does your finish place. Crates give **Snowballs** (X throws one at the rider ahead), **Fish** (a burst of speed), a **Magnet** (pulls rings in) or a **Guard** that saves your next bad landing or hit.
+- **Penguins** are light and nimble: sharp turns, quick tricks, a bigger pop. **Seals** are heavy and fast: a higher top speed, they shove penguins aside and shrug off snowballs, but their tricks turn slower. Pick your body colour and scarf in the rider yard.
+- Three slopes: Frostpine Run, Glacier Gully (long half pipes) and Aurora Drop (a night run with cliffs). After every run the top 3 stand on the podium.
+- **Goal:** win the Snowbelly Cup, the most points after all three slopes. Continue takes you straight to your next cup run.
+
 ## ✨ Shaders
 
 The Bit has no GPU, so shaders are small C routines that run on the 320x240 picture. Three kinds:
@@ -320,7 +333,7 @@ The theme file format and how the firmware draws it are in [docs/THEMES.md](docs
 |---|---|
 | Callbacks | `_init` `_update` `_draw` |
 | Game shell | `game{}` `checkpoint` `game_win` `setting` `mus` `game_play` `GAME.state` (title screen, pause menu, settings: see [GAME_RULES.md](GAME_RULES.md)) |
-| Graphics | `cls pset pget line rect rectfill circ circfill text font spr sget sset map camera clip pal palt palette` |
+| Graphics | `cls pset pget line rect rectfill trifill quadfill circ circfill text font spr sget sset map camera clip pal palt palette` |
 | Shaders | `tint shade fog dither remap wave ripple pixelate glitch raster` (screen), `sprfx{}` (sprites), `display()` (the whole screen's look) |
 | Tunables | `tune(name, default, min, max)` (a slider on the studio's Game tab, saved with the game) |
 | Map | `mget mset fget fset` |
