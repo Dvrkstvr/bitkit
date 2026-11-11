@@ -53,7 +53,7 @@ const runtime = require('../studio/runtime.js');
   const last = tag => { const l = logs.filter(x => x.startsWith(tag)).pop(); return l ? l.split(/\s+/).slice(1) : []; };
   const run = (n, input) => { for (let f = 0; f < n; f++) if (frame(input ? input(f) : 0)) return false; return true; };
   // the probe prints the state every frame
-  const PROBE = 'local _pd = _draw\nfunction _draw() _pd() print("tw", MODE, S.scrap, S.coil, S.satchel, S.done, P and math.floor(P.z) or -1, P and string.format("%.2f", P.bat) or -1, GAME.state, cutscene_playing() and "cut" or "free", #problems(), H and H.tab or 0, S.shape.nose, S.sel.m, S.sel.c) end\n';
+  const PROBE = 'local _pd = _draw\nfunction _draw() _pd() print("tw", MODE, S.scrap, S.coil, S.satchel, S.done, P and math.floor(P.z) or -1, P and string.format("%.2f", P.bat) or -1, GAME.state, cutscene_playing() and "cut" or "free", #problems(), H and H.tab or 0, S.shape.nose, S.sel.m, S.sel.c, MODE == "fly" and P and string.format("%.2f", math.abs(angdiff(P.h, VIEW.a))) or -1) end\n';
   const st = () => last('tw');
   const init = c => `local _i = _init\nfunction _init() _i() ${c} end\n`;
   const A = bit('a');
@@ -106,6 +106,8 @@ const runtime = require('../studio/runtime.js');
   if (!(+st()[5] > 40) || !(+st()[6] < 0.95)) fail('flying with the motor should climb and use battery: ' + st().join(' '));
   run(30, f => A | bit('right'));
   shot('flight');
+  // the chase camera stays behind the plane while it turns (it used to share a field with the model maths)
+  for (let f = 0; f < 90; f++) { run(1, () => A | bit(f < 60 ? 'right' : 'left')); if (!(+st()[14] < 0.5)) { fail('the camera should stay behind the plane in a turn, lag ' + st()[14]); break; } }
   run(40);
   const bat = +st()[6];
   run(120);

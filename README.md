@@ -155,7 +155,7 @@ A tug-of-war crossbow duel. Wren (orange) fights east out of the Sea Gate, Rook 
 
 ### Tinwing (2.5D)
 
-<img src="docs/media/tinwing.png" width="480" alt="Tinwing: an orange RC plane flying past the Drowned Belltower over a flooded sea">
+<img src="docs/media/tinwing.png" width="480" alt="Tinwing: an orange RC plane banking towards the Drowned Belltower over a flooded sea">
 <img src="docs/media/tinwing-hangar.png" width="480" alt="Tinwing: the hangar blueprint, where you drag the corners of the plane so the motor and battery fit">
 
 A story game drawn in 2.5D like Kart Lab. Perch is a town on stilts, on a planet that is nearly all sea: letters go by pigeon and people go by boat. You play Pip, who builds radio-controlled planes. You're either in the hangar building, or in the air.
