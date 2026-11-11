@@ -17352,7 +17352,7 @@ end
   try { const s = lsGet(LS.cart); if (s) { deserialize(JSON.parse(s)); restored = true; } } catch (e) { log('Saved cart was unreadable, starting fresh', 'sys'); }
   if (!restored) { const d = DEMOS()[0]; cart.name = d.name; cart.code = d.code; d.buildGfx(cart); normalizeLevels(); }
   applyCart();
-  log(`${APP} Studio ready. ${restored ? 'Restored your last cart.' : 'Loaded the demo cart.'} Press Run (Ctrl+Enter).`, 'sys');
+  log(`${APP} Studio ready${window.BK_BUILD ? ` (build ${window.BK_BUILD})` : ''}. ${restored ? 'Restored your last cart.' : 'Loaded the demo cart.'} Press Run (Ctrl+Enter).`, 'sys');
   showTab(lsGet(LS.settings + '.tab') || 'code');
   if (IS_BIT2) {
     document.body.classList.add('bit-only');
