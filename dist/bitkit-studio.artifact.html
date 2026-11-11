@@ -16007,6 +16007,9 @@ DAYLEN, NIGHTLEN = 60 * tune("Day length (seconds)", 60, 20, 180, 10), 60 * tune
 DOCKS = { { x = 40, y = 340 }, { x = 440, y = 340 } }
 CANNONS = { { x = 224, y = 196 }, { x = 256, y = 196 }, { x = 230, y = 203 }, { x = 250, y = 203 } }
 MOOR = { { x = 212, y = 204 }, { x = 268, y = 204 }, { x = 212, y = 170 }, { x = 268, y = 170 } }   -- close enough to count as docked
+HULLS = { 17, 21, 26, 27, 10, 5, 9, 12 }      -- boat yard: hull paints
+SAILS = { 13, 12, 26, 21, 27, 17, 5, 30 }     -- sail cloths
+RIGS = { { name = "LATEEN", spr = 10 }, { name = "SQUARE", spr = 11 }, { name = "SLOOP", spr = 12 }, { name = "JUNK", spr = 13 } }
 PCOL = { 17, 21, 26, 27 }                 -- boat colours for players 1-4
 CAP = tune("Crates a rowboat carries", 6, 2, 12)                                   -- crates a rowboat can carry
 KINDS = {
@@ -16103,7 +16106,7 @@ function _init()
     new_game = function() save(nil); _init() end,
   }
   G = { coins = 0, tank = 0, lens = 0, pump = 0, lantern = 0, cannon = 0, harbour = 0, auto = 0,
-        day = 1, clk = 300, docked = 0, lost = 0, best = 0, goal = false }
+        day = 1, clk = 300, docked = 0, lost = 0, best = 0, goal = false, hull = 0, sail = 1, rig = 1 }
   local d = saved and saved()
   if type(d) == "table" then
     for k, v in pairs(d) do if G[k] ~= nil and type(v) == type(G[k]) then G[k] = v end end
@@ -16116,8 +16119,14 @@ function _init()
   cannon_cd, cannon_by, cannon_ang = { 0, 0, 0, 0 }, { 0, 0, 0, 0 }, {}
   for c = 1, 4 do cannon_ang[c] = math.atan(CANNONS[c].y - ISLE.y, CANNONS[c].x - ISLE.x) end
   hint_t = G.docked < 10 and 1200 or 0
-  boats = {}
-  for n = 1, 4 do boats[n] = { n = n, x = MOOR[n].x, y = MOOR[n].y, vx = 0, vy = 0, a = 0, cargo = 0, val = 0, stun = 0 } end
+  boats = {}   -- one rowboat per connected player
+  for n = 1, math.min(PLAYERS, 4) do boats[n] = { n = n, x = MOOR[n].x, y = MOOR[n].y, vx = 0, vy = 0, a = 0, cargo = 0, val = 0, stun = 0 } end
+  -- every player's boat look; player 1's is saved with the harbour
+  look = {}
+  for n = 1, 4 do look[n] = { hull = n, sail = 1, rig = 1, row = 1, ready = false } end
+  if G.hull > 0 then look[1].hull, look[1].sail, look[1].rig = G.hull, G.sail, G.rig end
+  yard = need_yard()
+  apply_looks()
   -- one keeper at a time: player 1 starts in the lighthouse, everyone else in a rowboat at the island
   role, lamp_pn = {}, 1
   for n = 1, 4 do role[n] = n == 1 and "lamp" or "boat" end
@@ -16236,6 +16245,7 @@ function _update()
     return
   end
   if btnp("x") then shop = not shop; sfx("E5", 4, 0.2, 4) end
+  if yard then update_yard() return end
   if shop then update_shop() return end
 
   G.clk = G.clk + 1
@@ -16641,7 +16651,84 @@ function update_cannons()
   end
 end
 
+-- the boat yard: everyone picks a hull paint, a sail cloth and a rig before casting off.
+-- Up / down picks a line, left / right changes it, A when ready. It opens for every game with
+-- friends, and in a fresh solo harbour (later from the shop with Y).
+function need_yard() return PLAYERS > 1 or G.hull == 0 end
+
+function apply_looks()
+  for n = 1, 4 do PCOL[n] = HULLS[look[n].hull] end
+end
+
+function update_yard()
+  local all = true
+  for pn = 1, PLAYERS do
+    local L = look[pn]
+    if btnp("a", pn) then L.ready = not L.ready; sfx(L.ready and "C5" or "G4", 1, 0.3, 8) end
+    if not L.ready then
+      if btnp("up", pn) then L.row = (L.row - 2) % 3 + 1; sfx("E5", 4, 0.15, 3) end
+      if btnp("down", pn) then L.row = L.row % 3 + 1; sfx("E5", 4, 0.15, 3) end
+      local d = (btnp("right", pn) and 1 or 0) - (btnp("left", pn) and 1 or 0)
+      if d ~= 0 then
+        if L.row == 1 then L.hull = (L.hull - 1 + d) % #HULLS + 1
+        elseif L.row == 2 then L.sail = (L.sail - 1 + d) % #SAILS + 1
+        else L.rig = (L.rig - 1 + d) % #RIGS + 1 end
+        sfx("A5", 4, 0.2, 4)
+      end
+    end
+    all = all and L.ready
+  end
+  apply_looks()
+  if all then
+    yard = false
+    for pn = 1, 4 do look[pn].ready = false end
+    G.hull, G.sail, G.rig = look[1].hull, look[1].sail, look[1].rig
+    persist()
+    sfx("C5", 4, 0.3, 10) sfx("G5", 4, 0.3, 16)
+  end
+end
+
+-- a rowboat with its player's hull, sail and rig
+function draw_rowboat(n, x, y, flip, sc, stun)
+  local L = look[n]
+  pal(10, HULLS[L.hull]) pal(8, 30)
+  if stun then pal(10, 13) end
+  spr(8, x, y, 1, 1, flip, false, sc)
+  pal()
+  pal(13, SAILS[L.sail])
+  spr(RIGS[L.rig].spr, x, y, 1, 1, flip, false, sc)
+  pal()
+end
+
+function draw_yard()
+  rectfill(0, 0, 320, 240, 31)
+  text("BOAT YARD", 124, 10, 27)
+  local np = PLAYERS
+  local pw = math.min(78, 312 // np)
+  local x0 = 160 - pw * np // 2
+  for pn = 1, np do
+    local L, x = look[pn], x0 + (pn - 1) * pw
+    rect(x + 2, 26, pw - 4, 186, L.ready and 17 or 29)
+    text("P" .. pn, x + pw // 2 - 8, 32, PCOL[pn])
+    rectfill(x + pw // 2 - 22, 46, 44, 40, 20)
+    draw_rowboat(pn, x + pw // 2 - 16, 50 + (t() // 25) % 2, false, 4)
+    local rows = { { "HULL", HULLS[L.hull] }, { "SAIL", SAILS[L.sail] }, { RIGS[L.rig].name } }
+    for i, r in ipairs(rows) do
+      local y = 98 + (i - 1) * 30
+      local on = i == L.row and not L.ready
+      text(i == 3 and "RIG" or r[1], x + 8, y, on and 13 or 29)
+      if on then text("<", x + 6, y + 12, 27) text(">", x + pw - 14, y + 12, 27) end
+      if r[2] then rectfill(x + pw // 2 - 12, y + 11, 24, 9, r[2]) rect(x + pw // 2 - 12, y + 11, 24, 9, 13)
+      else text(r[1], x + pw // 2 - #r[1] * 4, y + 12, on and 27 or 13) end
+    end
+    if L.ready then text("READY", x + pw // 2 - 20, 194, 17)
+    else text("A READY", x + pw // 2 - 28, 194, t() // 30 % 2 == 0 and 12 or 30) end
+  end
+  text("UP/DOWN PICK  LEFT/RIGHT CHANGE", 36, 220, 29)
+end
+
 function update_shop()
+  if btnp("y") and PLAYERS == 1 then shop, yard = false, true; return end
   if btnp("up") then sel = (sel - 2) % #SHOP + 1; sfx("E5", 4, 0.15, 3) end
   if btnp("down") then sel = sel % #SHOP + 1; sfx("E5", 4, 0.15, 3) end
   if btnp("b") then shop = false end
@@ -16837,6 +16924,7 @@ function _draw()
   end
   if shop then draw_shop() end
   if report then draw_report() end
+  if yard and not report then draw_yard() end
 end
 
 function draw_boats()
@@ -16844,10 +16932,7 @@ function draw_boats()
     local on = boat_on(b)
     do
       local bob = (t() + b.n * 13) // 25 % 2
-      pal(10, PCOL[b.n]) pal(8, 30)
-      if b.stun > 0 and t() % 6 < 3 then pal(PCOL[b.n], 13) end
-      spr(8, b.x - 8, b.y - 10 + bob, 1, 1, math.cos(b.a) < 0, false, 2)
-      pal()
+      draw_rowboat(b.n, b.x - 8, b.y - 10 + bob, math.cos(b.a) < 0, 2, b.stun > 0 and t() % 6 < 3)
       if on then
         text(b.n, b.x - 3, b.y - 22, PCOL[b.n])
         if b.cargo > 0 then
@@ -16971,7 +17056,7 @@ function draw_shop()
     end
   end
   text(SHOP[sel].info, 160 - #SHOP[sel].info * 4, 180, 22)
-  text("A BUY   B CLOSE", 100, 198, 29)
+  text(PLAYERS == 1 and "A BUY  B CLOSE  Y BOAT YARD" or "A BUY   B CLOSE", PLAYERS == 1 and 52 or 100, 198, 29)
 end
 
 function draw_report()
@@ -16999,7 +17084,11 @@ end
         '.EeeeeeeeeeeeeE.', 'BBBBBBBBBBBBBBBB', '.BbbbbbbbbbbbbB.', '..BBBBBBBBBBBB..'],
     5: ['..r.....', '..kSSS..', '..kSwS..', '.kkSSS..', '..kSSS..', 'NNNNNNNN', '.NSSSSN.', '........'],   // pirate
     6: ['........', '.....eee', '...eeEEe', '..eEEee.', '.eEee...', '.nNNNn..', 'nNcnNc..', '.n..n...'],   // cannon
-    8: ['........', '...cc...', '...ww...', '.N.ww.N.', 'oooooooo', '.OooooO.', '..OOOO..', '........'],   // rowboat (hull recoloured per player)
+    8: ['........', '........', '........', '.N....N.', 'oooooooo', '.OooooO.', '..OOOO..', '........'],   // rowboat hull (recoloured per player)
+    10: ['...k....', '...kw...', '...kww..', '...kwww.', '........', '........', '........', '........'],  // lateen sail (w recoloured)
+    11: ['.kkkkkk.', '.wwkwww.', '.wwkwww.', '...k....', '........', '........', '........', '........'],  // square sail
+    12: ['...k....', '..wkw...', '.wwkww..', 'wwwkwww.', '........', '........', '........', '........'],  // sloop: jib + main
+    13: ['...kww..', '..wkkkk.', '..wkwww.', '.wwkkkkk', '........', '........', '........', '........'],  // junk with battens
     9: ['........', '.nnnnnn.', '.nNnnNn.', '.nnNNnn.', '.nnNNnn.', '.nNnnNn.', '.nnnnnn.', '........'],   // crate
     7: ['..YYYY..', '.YYooYY.', 'YYoYYYYY', 'YYoYYYYY', 'YYoYYYYY', 'YYYooYYY', '.YYYYYY.', '..YYYY..'],   // coin
     32: ['......kkkk......', '.....kYYYYk.....', '.....kYwwYk.....', '....kkkkkkkk....',                   // lighthouse
