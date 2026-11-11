@@ -511,52 +511,91 @@ canvas.pix { image-rendering: pixelated; }
 .modal[hidden] { display: none; }
 
 /* entities */
-.ent-layout { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
+.ent-layout { display: flex; gap: 16px; align-items: flex-start; }
 .ent-col { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.ent-listcol { width: 200px; }
-.ent-main { flex: 1; min-width: 360px; }
-.ent-list { display: flex; flex-direction: column; gap: 3px; }
-.ent-item { display: flex; align-items: center; gap: 8px; text-align: left; }
-.ent-item span:nth-child(2) { flex: 1; }
+.ent-listcol { width: 210px; flex: none; position: sticky; top: 0; }
+.ent-main { flex: 1; min-width: 380px; }
+.side-head { display: flex; align-items: center; gap: 6px; margin-top: 6px; text-transform: uppercase; letter-spacing: .06em; font-size: 11px; color: var(--dim); }
+.side-head b { font-weight: 600; }
+.ent-list { display: flex; flex-direction: column; gap: 2px; max-height: 46vh; overflow-y: auto; }
+.ent-item { display: flex; align-items: center; gap: 8px; text-align: left; background: transparent; border-color: transparent; padding: 3px 8px; }
+.ent-item:hover { background: var(--panel); border-color: var(--line); }
+.ent-item span:nth-child(2) { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ent-item canvas, .a-frames canvas { image-rendering: pixelated; background: #000; border-radius: 2px; }
-.ent-props { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin-bottom: 8px; }
-.ent-props label { display: flex; align-items: center; gap: 5px; color: var(--dim); }
-.ent-props input[type=number] { width: 56px; }
-.ent-props input, .bt input { background: var(--panel2); border: 1px solid var(--line); border-radius: 5px; padding: 2px 5px; }
-#entName { width: 120px; }
-.ent-anim-wrap { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 8px; }
-.ent-anims { flex: 1; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.anim-row { display: flex; align-items: center; gap: 6px; padding: 3px 5px; border: 1px solid transparent; border-radius: 6px; flex-wrap: wrap; }
-.anim-row.active { border-color: var(--line); background: var(--panel); }
-.anim-row .a-name { width: 70px; background: var(--panel2); border: 1px solid var(--line); border-radius: 5px; padding: 2px 5px; }
+.ent-help { margin-top: 10px; color: var(--dim); font-size: 12px; border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+.ent-help summary { cursor: pointer; color: var(--text); }
+.ent-help ol { padding-left: 18px; margin: 6px 0; }
+.ent-help p { margin: 6px 0 2px; }
+button.danger:hover { border-color: var(--err); color: var(--err); }
+.ent-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.ent-head canvas { width: 32px; height: 32px; border-radius: 6px; }
+.ent-name { font-size: 16px; font-weight: 600; background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 2px 6px; width: 200px; }
+.ent-name:hover, .ent-name:focus { border-color: var(--line); background: var(--panel2); outline: none; }
+.subtabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
+.subtabs button { background: transparent; border: 0; border-bottom: 2px solid transparent; border-radius: 0; padding: 6px 14px; color: var(--dim); }
+.subtabs button:hover { color: var(--text); }
+.subtabs button.active { color: var(--text); border-bottom-color: var(--accent); background: transparent; }
+.subtabs .count { display: inline-block; min-width: 16px; padding: 0 5px; margin-left: 4px; border-radius: 8px; background: var(--panel2); font-size: 10px; color: var(--dim); }
+.subtabs .count:empty { display: none; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.card-title { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); }
+.card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }
+.card-wide { grid-column: 1 / -1; }
+.prop-grid { display: grid; grid-template-columns: max-content 1fr; gap: 8px 12px; align-items: center; }
+.prop-grid > span:nth-child(odd) { color: var(--dim); }
+.prop-grid input[type=number] { width: 60px; }
+.prop-grid input, .bt input { background: var(--panel2); border: 1px solid var(--line); border-radius: 5px; padding: 2px 5px; }
+.hint { color: var(--dim); font-size: 11px; }
+.look-layout { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
+.look-main { flex: 1; display: flex; flex-direction: column; gap: 10px; min-width: 260px; }
+.look-sheet canvas { width: 192px; height: 384px; }
+.look-sheet .sheet-scroll { max-height: 60vh; }
+.look-sheet { flex: none; display: flex; flex-direction: column; gap: 4px; }
+.ent-anim-wrap { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
+.ent-anim-wrap canvas { border-radius: 8px; flex: none; width: 96px; height: 96px; }
+.ent-anim-wrap .prop-grid { flex: 1; min-width: 200px; align-content: start; }
+#entAnims { display: flex; flex-direction: column; gap: 4px; }
+.anim-row { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border: 1px solid transparent; border-radius: 6px; flex-wrap: wrap; }
+.anim-row.active { border-color: var(--line); background: var(--panel2); }
+.anim-row .a-name { width: 80px; background: var(--panel2); border: 1px solid var(--line); border-radius: 5px; padding: 2px 5px; }
 .anim-row .a-speed { width: 44px; background: var(--panel2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 4px; }
-.a-frames { display: flex; gap: 3px; flex-wrap: wrap; flex: 1; }
-.a-frames canvas { cursor: pointer; }
-.a-frames canvas:hover { outline: 1px solid var(--err); }
-.ent-tree-box { border-top: 1px solid var(--line); padding-top: 4px; }
+.anim-row .a-frames { flex: 1; display: flex; gap: 3px; flex-wrap: wrap; }
+.ent-tree-box .toolbar { margin-bottom: 6px; }
 .bt-node { margin: 3px 0; }
-.bt-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 4px 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
+.bt-head { display: flex; align-items: flex-start; gap: 6px; padding: 4px 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
+.bt-params { flex: 1; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.bt-ctl { flex: none; display: flex; gap: 2px; opacity: .35; transition: opacity .12s; padding-top: 2px; }
+.bt-head:hover > .bt-ctl, .bt-ctl:focus-within { opacity: 1; }
+.bt-tag { padding-top: 3px; }
+.bt-clear { margin-top: 8px; }
 .g-flow > .bt-head { border-left: 3px solid #8e4fb0; }
 .g-check > .bt-head { border-left: 3px solid #ffd23f; }
 .g-sense > .bt-head { border-left: 3px solid #6ec3f0; }
 .g-do > .bt-head { border-left: 3px solid #8ad35a; }
 .bt-tag { width: 14px; text-align: center; color: var(--dim); }
-.bt-type { max-width: 230px; }
+.bt-type { max-width: 190px; }
 .bt-kids { margin-left: 18px; padding-left: 8px; border-left: 1px dashed var(--line); }
 .bt-empty { padding: 4px; }
 .np { display: inline-flex; align-items: center; gap: 4px; }
 .np input[type=number] { width: 60px; }
 .np input[type=text] { width: 120px; }
 
-.fx-head { margin-top: 12px; }
-.ent-stats { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; }
-.stat-chip, .fx-mod { display: inline-flex; gap: 4px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 2px 4px; }
+.ent-stats { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.ent-stats:empty::before { content: "No stats yet."; color: var(--dim); font-size: 11px; }
+.stat-chip, .fx-mod { display: inline-flex; gap: 4px; align-items: center; background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 2px 4px; }
 .stat-chip input, .fx-mod input, .fx-mod select { background: var(--panel2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 4px; }
 .stat-chip input:first-child { width: 70px; } .stat-chip input[type=number], .fx-mod input[type=number] { width: 60px; }
 .fx-mods { display: flex; flex-direction: column; gap: 4px; margin: 4px 0; align-items: flex-start; }
-.swatch { display: inline-block; width: 16px; height: 16px; border: 1px solid var(--line); border-radius: 3px; }
+.swatch { display: inline-block; width: 16px; height: 16px; border: 1px solid var(--line); border-radius: 3px; vertical-align: middle; }
+.swatch.big { width: 32px; height: 32px; border-radius: 6px; }
 #fxForm input[type=number] { width: 64px; }
-#fxName { width: 120px; }
+#fxForm > .hint { margin-top: 10px; }
+.fx-mods:empty::before { content: "None. Add one to change speed, jump or any stat while the effect lasts."; color: var(--dim); font-size: 11px; }
+@media (max-width: 900px) { .ent-layout, .look-layout { flex-direction: column; } .ent-listcol { width: 100%; position: static; } .ent-main { min-width: 0; width: 100%; } }
+.anim-row .a-ctl { display: flex; gap: 3px; margin-left: auto; white-space: nowrap; }
+.fx-mod input:first-child { width: 90px; }
+.ent-head { flex-wrap: wrap; }
+#entPlaced { white-space: nowrap; }
 
 </style>
 </head>
@@ -673,69 +712,171 @@ canvas.pix { image-rendering: pixelated; }
 
     <div id="tab-entities" class="tab">
       <div class="ent-layout">
-        <div class="ent-col ent-listcol">
-          <div class="toolbar"><button id="entNew" class="primary">New</button><button id="entDup">Copy</button><button id="entDel">Delete</button></div>
+        <aside class="ent-col ent-listcol">
+          <div class="side-head"><b>Entities</b><span class="grow"></span><button id="entNew" class="tiny primary" title="Make a new entity">+ new</button></div>
           <div id="entList" class="ent-list"></div>
-          <div class="toolbar fx-head"><b>Effects</b><span class="grow"></span><button id="fxNew" class="tiny">+ effect</button></div>
+          <div class="side-head"><b>Effects</b><span class="grow"></span><button id="fxNew" class="tiny" title="Make a new effect">+ new</button></div>
           <div id="fxList" class="ent-list"></div>
-          <p class="dim small">Place entities on the Map tab (switch the layer to Entities). In your code call <code>ents_update()</code> in <code>_update</code> and <code>ents_draw()</code> in <code>_draw</code>. Tick <b>is the player</b> on your player entity, and use the <b>Player controls</b> step in its behavior. See Help for stats, effects, events and sensors.</p>
-        </div>
-        <div class="ent-col ent-main">
+          <details class="ent-help">
+            <summary>How entities work</summary>
+            <ol>
+              <li>Make an entity and give it frames on the <b>Look</b> page.</li>
+              <li>Set its team, health and movement on <b>Properties</b>.</li>
+              <li>Give it a <b>Behavior</b>, or start from a preset.</li>
+              <li>Place it on the Map tab, using the <b>Entities</b> layer.</li>
+            </ol>
+            <p>Your code needs <code>ents_update()</code> in <code>_update</code> and <code>ents_draw()</code> in <code>_draw</code>. For the player, tick <b>is the player</b> and use the <b>Player controls</b> step. The Help tab has stats, effects, events and sensors.</p>
+          </details>
+        </aside>
+
+        <section class="ent-col ent-main">
           <div id="entForm">
-            <div class="ent-props">
-              <label>Name <input id="entName" spellcheck="false"></label>
-              <label>Size <select id="entW"><option value="1">8</option><option value="2">16</option><option value="3">24</option><option value="4">32</option></select> x
-                <select id="entH"><option value="1">8</option><option value="2">16</option><option value="3">24</option><option value="4">32</option></select> px</label>
-              <label>HP <input id="entHp" type="number" min="0" max="999" title="0 = can't be hurt"></label>
-              <label>Team <select id="entTeam" title="Damage only hits the other team. The player is on the friend team."><option value="enemy">enemy</option><option value="friend">friend</option><option value="neutral">neutral</option></select></label>
-              <label title="Damage dealt to the other team on touch. Projectiles vanish after a hit.">Touch damage <input id="entDmg" type="number" min="0" max="99"></label>
-              <label title="Shrinks the hitbox by this many pixels on the sides and top">Hitbox inset <input id="entInset" type="number" min="0" max="3"></label>
-              <label class="chk"><input type="checkbox" id="entGrav"> gravity</label>
-              <label class="chk"><input type="checkbox" id="entCollide"> stops at walls</label>
-              <label class="chk"><input type="checkbox" id="entLeft"> sprite faces left</label>
-              <label class="chk" title="Not drawn in the game. Good for triggers and sensors."><input type="checkbox" id="entHidden"> invisible</label>
-              <label class="chk" title="This is the player: other entities chase, sense and hurt it, and the camera can follow it"><input type="checkbox" id="entPlayer"> is the player</label>
-              <label class="chk" title="The player damages it by landing on its head"><input type="checkbox" id="entStomp"> stompable</label>
-              <label title="Effect given to the other team on touch">Touch effect <select id="entTouchFx"></select></label>
-              <label title="Frames it can't be hurt again after a hit">Hurt cooldown <input id="entHurt" type="number" min="0" max="600"></label>
+            <div class="ent-head">
+              <canvas id="entHeadThumb" width="32" height="32" class="pix checker"></canvas>
+              <input id="entName" class="ent-name" spellcheck="false" title="Name (used in code and behavior steps)">
+              <span id="entPlaced" class="dim small"></span>
+              <span class="grow"></span>
+              <button id="entDup" class="tiny" title="Make a copy">Copy</button>
+              <button id="entDel" class="tiny danger" title="Delete this entity">Delete</button>
             </div>
-            <div class="ent-stats">
-              <span class="dim small" title="Use stat(e, &quot;name&quot;) in code. speed and jump scale movement; effects can change any stat.">Stats</span>
-              <span id="entStats"></span>
-              <button id="entStatAdd" class="tiny">+ stat</button>
-            </div>
-            <div class="ent-anim-wrap">
-              <canvas id="entPreview" width="128" height="128" class="pix checker"></canvas>
-              <div class="ent-anims">
-                <div class="dim small">Animations: <b>idle</b>, <b>walk</b> and <b>jump</b> play automatically. Click a frame to remove it.</div>
-                <div id="entAnims"></div>
-                <button id="entAnimAdd" class="tiny">+ animation</button>
+            <nav class="subtabs" role="tablist">
+              <button data-sub="look" class="active">Look</button>
+              <button data-sub="props">Properties</button>
+              <button data-sub="behavior">Behavior <span id="entStepCount" class="count"></span></button>
+            </nav>
+
+            <div class="subpage" data-page="look">
+              <div class="look-layout">
+                <div class="look-main">
+                  <div class="card">
+                    <div class="card-title">Sprite</div>
+                    <div class="ent-anim-wrap">
+                      <canvas id="entPreview" width="128" height="128" class="pix checker"></canvas>
+                      <div class="prop-grid">
+                        <span>Size</span>
+                        <span><select id="entW"><option value="1">8</option><option value="2">16</option><option value="3">24</option><option value="4">32</option></select> ×
+                          <select id="entH"><option value="1">8</option><option value="2">16</option><option value="3">24</option><option value="4">32</option></select> px</span>
+                        <span>Hitbox inset</span>
+                        <span><input id="entInset" type="number" min="0" max="3"> <span class="hint">px trimmed from sides and top (red box)</span></span>
+                        <span>Faces left</span>
+                        <span><label class="chk"><input type="checkbox" id="entLeft"> <span class="hint">tick if the art looks left, so it flips correctly</span></label></span>
+                        <span>Invisible</span>
+                        <span><label class="chk"><input type="checkbox" id="entHidden"> <span class="hint">not drawn; good for triggers and sensors</span></label></span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="card">
+                    <div class="card-title">Animations <span class="grow"></span><button id="entAnimAdd" class="tiny">+ animation</button></div>
+                    <div class="hint">Name them <b>idle</b>, <b>walk</b> and <b>jump</b> to play automatically. Pick a tile on the right, then press <b>+ tile</b>. Click a frame to remove it.</div>
+                    <div id="entAnims"></div>
+                  </div>
+                </div>
+                <div class="look-sheet">
+                  <div class="dim small">Tile <b id="entTileInfo">1</b></div>
+                  <div class="sheet-scroll small-sheet"><canvas id="entSheet" width="256" height="512" class="pix"></canvas></div>
+                </div>
               </div>
             </div>
-            <div id="entTreeBox" class="ent-tree-box">
-              <div class="toolbar"><b>Behavior</b> <span class="dim small">runs top to bottom every frame</span><span class="grow"></span><select id="entPreset"></select></div>
-              <div id="entTree" class="bt"></div>
+
+            <div class="subpage" data-page="props" hidden>
+              <div class="card-grid">
+                <div class="card">
+                  <div class="card-title">Role</div>
+                  <div class="prop-grid">
+                    <span>Player</span>
+                    <span><label class="chk"><input type="checkbox" id="entPlayer"> <span class="hint">is the player (others chase it, camera follows)</span></label></span>
+                    <span>Team</span>
+                    <span><select id="entTeam"><option value="enemy">enemy</option><option value="friend">friend</option><option value="neutral">neutral</option></select> <span class="hint">damage only hits the other team</span></span>
+                  </div>
+                </div>
+                <div class="card">
+                  <div class="card-title">Health</div>
+                  <div class="prop-grid">
+                    <span>HP</span>
+                    <span><input id="entHp" type="number" min="0" max="999"> <span class="hint">0 = can't be hurt</span></span>
+                    <span>Hurt cooldown</span>
+                    <span><input id="entHurt" type="number" min="0" max="600"> <span class="hint">frames safe after a hit</span></span>
+                    <span>Stompable</span>
+                    <span><label class="chk"><input type="checkbox" id="entStomp"> <span class="hint">the player hurts it by landing on it</span></label></span>
+                  </div>
+                </div>
+                <div class="card">
+                  <div class="card-title">On touch</div>
+                  <div class="prop-grid">
+                    <span>Damage</span>
+                    <span><input id="entDmg" type="number" min="0" max="99"> <span class="hint">to the other team; projectiles vanish after a hit</span></span>
+                    <span>Effect</span>
+                    <span><select id="entTouchFx"></select> <span class="hint">given to the other team</span></span>
+                  </div>
+                </div>
+                <div class="card">
+                  <div class="card-title">Movement</div>
+                  <div class="prop-grid">
+                    <span>Gravity</span>
+                    <span><label class="chk"><input type="checkbox" id="entGrav"> <span class="hint">falls and can stand on ground</span></label></span>
+                    <span>Solid</span>
+                    <span><label class="chk"><input type="checkbox" id="entCollide"> <span class="hint">stops at walls</span></label></span>
+                  </div>
+                </div>
+                <div class="card card-wide">
+                  <div class="card-title">Stats <span class="grow"></span><button id="entStatAdd" class="tiny">+ stat</button></div>
+                  <div class="hint"><b>speed</b> and <b>jump</b> scale movement. Effects can change any stat; read them in code with <code>stat(e, "name")</code>.</div>
+                  <div id="entStats" class="ent-stats"></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="subpage" data-page="behavior" hidden>
+              <div id="entTreeBox" class="ent-tree-box">
+                <div class="toolbar"><span class="hint">Runs top to bottom every frame. <b>◆</b> groups, <b>?</b> checks, <b>◎</b> senses, <b>▶</b> does.</span><span class="grow"></span><select id="entPreset"></select></div>
+                <div id="entTree" class="bt"></div>
+              </div>
             </div>
           </div>
+
           <div id="fxForm" hidden>
-            <div class="ent-props">
-              <label>Name <input id="fxName" spellcheck="false"></label>
-              <label title="0 = instant (only the HP change on apply)">Lasts <input id="fxDur" type="number" min="0" max="36000"> frames</label>
-              <label title="What happens when it is applied again while active">Again <select id="fxStack"><option value="refresh">restart timer</option><option value="stack">stack</option><option value="keep">ignore</option></select></label>
-              <label title="Instant HP change when applied (negative hurts)">HP on apply <input id="fxHp" type="number"></label>
-              <label title="HP change repeated while active (poison, regeneration)">Every <input id="fxEvery" type="number" min="0"> frames change HP by <input id="fxTick" type="number"></label>
-              <label title="Palette colour the entity flashes while affected (-1 = none)">Flash colour <input id="fxTint" type="number" min="-1" max="255"><span id="fxTintSw" class="swatch"></span></label>
+            <div class="ent-head">
+              <span id="fxHeadSw" class="swatch big"></span>
+              <input id="fxName" class="ent-name" spellcheck="false" title="Effect name">
+              <span class="dim small">effect</span>
+              <span class="grow"></span>
+              <button id="fxDel" class="tiny danger">Delete</button>
             </div>
-            <div class="dim small">Stat changes while active</div>
-            <div id="fxMods" class="fx-mods"></div>
-            <div class="toolbar"><button id="fxModAdd" class="tiny">+ stat change</button><span class="grow"></span><button id="fxDel" class="tiny">Delete effect</button></div>
-            <p class="dim small">Apply it with a behavior step (Apply effect…), the Touch effect property, or in code with <code>fx_apply(e, "name")</code>. Check it with <code>fx_has(e, "name")</code> and read stats with <code>stat(e, "speed")</code>.</p>
+            <div class="card-grid">
+              <div class="card">
+                <div class="card-title">Timing</div>
+                <div class="prop-grid">
+                  <span>Lasts</span>
+                  <span><input id="fxDur" type="number" min="0" max="36000"> <span class="hint">frames (60 = 1 s, 0 = instant)</span></span>
+                  <span>Applied again</span>
+                  <span><select id="fxStack"><option value="refresh">restart timer</option><option value="stack">stack</option><option value="keep">ignore</option></select></span>
+                </div>
+              </div>
+              <div class="card">
+                <div class="card-title">Health</div>
+                <div class="prop-grid">
+                  <span>On apply</span>
+                  <span><input id="fxHp" type="number"> <span class="hint">HP (negative hurts)</span></span>
+                  <span>Over time</span>
+                  <span>every <input id="fxEvery" type="number" min="0"> frames, <input id="fxTick" type="number"> HP</span>
+                </div>
+              </div>
+              <div class="card">
+                <div class="card-title">Look</div>
+                <div class="prop-grid">
+                  <span>Flash colour</span>
+                  <span><input id="fxTint" type="number" min="-1" max="255"><span id="fxTintSw" class="swatch"></span> <span class="hint">palette index, -1 = none</span></span>
+                </div>
+              </div>
+              <div class="card card-wide">
+                <div class="card-title">Stat changes while active <span class="grow"></span><button id="fxModAdd" class="tiny">+ stat change</button></div>
+                <div id="fxMods" class="fx-mods"></div>
+              </div>
+            </div>
+            <p class="hint">Apply it with an <b>Apply effect</b> behavior step, the <b>On touch → Effect</b> property, or in code with <code>fx_apply(e, "name")</code>. Check it with <code>fx_has(e, "name")</code>.</p>
           </div>
-        </div>
-        <div class="ent-col">
-          <div class="dim small">Pick a tile (tile <b id="entTileInfo">1</b>), then press + tile</div>
-          <div class="sheet-scroll small-sheet"><canvas id="entSheet" width="256" height="512" class="pix"></canvas></div>
-        </div>
+          <div id="entEmpty" class="dim" hidden>No entity selected. Press <b>+ new</b> to make one.</div>
+        </section>
       </div>
     </div>
 
@@ -11601,13 +11742,39 @@ window.BKEntities = (function () {
   // ------------------------------------------------------------ editor
   function init(ctx) {
     const { cart, $, toast, changed, getAtlas, escapeHtml, tileThumb } = ctx;
-    const st = { sel: 0, anim: 0, tile: 1, mode: 'ent', fx: 0 };
+    let savedPage = 'look';
+    try { savedPage = localStorage.getItem('bitkit.entPage') || 'look'; } catch (e) {}
+    const st = { sel: 0, anim: 0, tile: 1, mode: 'ent', fx: 0, page: savedPage };
     cart.entities.effects = cart.entities.effects || [];
     const listEl = $('entList'), formEl = $('entForm'), treeEl = $('entTree');
     const prev = $('entPreview'), pctx = prev.getContext('2d');
     const sheet = $('entSheet'), sctx = sheet.getContext('2d');
 
     function cur() { return cart.entities.types[st.sel]; }
+    const subBtns = [...document.querySelectorAll('#entForm .subtabs [data-sub]')];
+    function showPage() {
+      subBtns.forEach(b => b.classList.toggle('active', b.dataset.sub === st.page));
+      document.querySelectorAll('#entForm .subpage').forEach(pg => { pg.hidden = pg.dataset.page !== st.page; });
+    }
+    subBtns.forEach(b => b.onclick = () => {
+      st.page = b.dataset.sub; showPage();
+      try { localStorage.setItem('bitkit.entPage', st.page); } catch (e) {}
+      if (st.page === 'behavior') renderTree();
+    });
+    function countSteps(n) { let k = 0; walk(n, () => k++); return k; }
+    function renderHead() {
+      const t = cur(); if (!t) return;
+      const c = $('entHeadThumb'), x = c.getContext('2d');
+      x.clearRect(0, 0, c.width, c.height); x.imageSmoothingEnabled = false;
+      const f = (t.anims.find(a => a.frames.length) || { frames: [0] }).frames[0];
+      const th = thumb(t, f, 32);
+      const sc = Math.min(c.width / th.width, c.height / th.height);
+      x.drawImage(th, (c.width - th.width * sc) / 2, (c.height - th.height * sc) / 2, th.width * sc, th.height * sc);
+      const n = cart.entities.placed.filter(p => p.type === t.name).length;
+      $('entPlaced').textContent = n ? `${n} on the map` : 'not on the map yet';
+      const k = t.tree ? countSteps(t.tree) : 0;
+      $('entStepCount').textContent = k ? k : '';
+    }
     // picture of a whole multi-tile sprite starting at tile f
     function thumb(t, f, px) {
       const w = t.sw || 1, h = t.sh || 1, s = Math.max(1, Math.floor(px / (8 * Math.max(w, h))));
@@ -11668,7 +11835,7 @@ window.BKEntities = (function () {
     $('entNew').onclick = () => {
       const t = newType(uniqueName('enemy'));
       t.anims[0].frames = [st.tile];
-      cart.entities.types.push(t); st.sel = cart.entities.types.length - 1; st.anim = 0; st.mode = 'ent';
+      cart.entities.types.push(t); st.sel = cart.entities.types.length - 1; st.anim = 0; st.mode = 'ent'; st.page = 'look';
       changed(); render();
     };
     $('entDup').onclick = () => {
@@ -11690,8 +11857,10 @@ window.BKEntities = (function () {
       const t = cur();
       formEl.hidden = !t || st.mode !== 'ent';
       $('fxForm').hidden = st.mode !== 'fx';
+      $('entEmpty').hidden = !(st.mode === 'ent' && !t);
       if (st.mode === 'fx') { renderFx(); return; }
       if (!t) return;
+      showPage(); renderHead();
       $('entPlayer').checked = !!t.player; $('entStomp').checked = !!t.stomp; $('entHurt').value = t.hurt ?? (t.player ? 60 : 15);
       $('entTouchFx').innerHTML = '<option value="">none</option>' + cart.entities.effects.map(f => `<option${f.name === t.touch_fx ? ' selected' : ''}>${escapeHtml(f.name)}</option>`).join('');
       renderStats(t);
@@ -11712,7 +11881,7 @@ window.BKEntities = (function () {
       changed(); renderList(); renderTree();
     });
     function bindProp(id, key, conv) {
-      $(id).addEventListener('change', e => { const t = cur(); if (!t) return; t[key] = conv(e.target); changed(); renderList(); drawPreview(); });
+      $(id).addEventListener('change', e => { const t = cur(); if (!t) return; t[key] = conv(e.target); changed(); renderList(); renderHead(); drawPreview(); });
     }
     bindProp('entW', 'sw', el => +el.value); bindProp('entH', 'sh', el => +el.value);
     bindProp('entGrav', 'grav', el => el.checked); bindProp('entCollide', 'collide', el => el.checked);
@@ -11746,6 +11915,7 @@ window.BKEntities = (function () {
       $('fxName').value = f.name; $('fxDur').value = f.dur; $('fxStack').value = f.stack || 'refresh';
       $('fxHp').value = f.hp || 0; $('fxEvery').value = f.every || 0; $('fxTick').value = f.tick || 0; $('fxTint').value = f.tint ?? -1;
       $('fxTintSw').style.background = f.tint >= 0 ? palHex(f.tint) : 'transparent';
+      $('fxHeadSw').style.background = f.tint >= 0 ? palHex(f.tint) : 'transparent';
       const box = $('fxMods'); box.innerHTML = '';
       const statNames = new Set(['speed', 'jump', 'damage', 'hp']);
       cart.entities.types.forEach(t => (t.stats || []).forEach(q => statNames.add(q.name)));
@@ -11794,20 +11964,19 @@ window.BKEntities = (function () {
         row.innerHTML = `<input class="a-name" value="${escapeHtml(a.name)}" title="Animation name (idle, walk and jump play automatically)">
           <label class="dim small">speed <input class="a-speed" type="number" min="1" max="60" value="${a.speed}" title="Frames per picture (lower is faster)"></label>
           <span class="a-frames"></span>
-          <button class="tiny a-add" title="Add the tile picked on the right">+ tile</button>
-          <button class="tiny a-del" title="Delete animation">✕</button>`;
+          <span class="a-ctl"><button class="tiny a-add" title="Add the tile picked on the right">+ tile</button><button class="tiny a-del" title="Delete animation">✕</button></span>`;
         const fr = row.querySelector('.a-frames');
         a.frames.forEach((f, k) => {
           const c = thumb(t, f, 16);
           c.title = `tile ${f} (click to remove)`;
-          c.onclick = ev => { ev.stopPropagation(); a.frames.splice(k, 1); changed(); renderAnims(); renderList(); };
+          c.onclick = ev => { ev.stopPropagation(); a.frames.splice(k, 1); changed(); renderAnims(); renderList(); renderHead(); };
           fr.appendChild(c);
         });
         if (!a.frames.length) fr.innerHTML = '<span class="dim small">no frames</span>';
         row.onclick = () => { if (st.anim !== i) { st.anim = i; renderAnims(); } };
         row.querySelector('.a-name').onchange = e => { a.name = e.target.value.trim().replace(/\W/g, '_') || 'anim'; e.target.value = a.name; changed(); renderTree(); };
         row.querySelector('.a-speed').onchange = e => { a.speed = Math.max(1, +e.target.value || 8); changed(); };
-        row.querySelector('.a-add').onclick = ev => { ev.stopPropagation(); a.frames.push(st.tile); st.anim = i; changed(); renderAnims(); renderList(); };
+        row.querySelector('.a-add').onclick = ev => { ev.stopPropagation(); a.frames.push(st.tile); st.anim = i; changed(); renderAnims(); renderList(); renderHead(); };
         row.querySelector('.a-del').onclick = ev => { ev.stopPropagation(); t.anims.splice(i, 1); st.anim = 0; changed(); renderAnims(); };
         animsEl.appendChild(row);
       });
@@ -11900,11 +12069,9 @@ window.BKEntities = (function () {
       const head = document.createElement('div');
       head.className = 'bt-head';
       head.innerHTML = `<span class="bt-tag">${{ Flow: '◆', Check: '?', Sense: '◎', Do: '▶' }[meta.g]}</span>
-        <select class="bt-type" title="${escapeHtml(meta.help || '')}">${typeOptions(n.t)}</select>
-        ${(meta.p || []).map(pp => paramInput(n, pp, t)).join('')}
-        <span class="grow"></span>
-        ${meta.kids ? '<button class="tiny bt-add" title="Add a step inside">+ step</button>' : ''}
-        ${parent ? '<button class="tiny bt-up" title="Move up">↑</button><button class="tiny bt-down" title="Move down">↓</button><button class="tiny bt-del" title="Delete">✕</button>' : ''}`;
+        <span class="bt-params"><select class="bt-type" title="${escapeHtml(meta.help || '')}">${typeOptions(n.t)}</select>
+        ${(meta.p || []).map(pp => paramInput(n, pp, t)).join('')}</span>
+        <span class="bt-ctl">${meta.kids ? '<button class="tiny bt-add" title="Add a step inside">+ step</button>' : ''}${parent ? '<button class="tiny bt-up" title="Move up">↑</button><button class="tiny bt-down" title="Move down">↓</button><button class="tiny bt-del" title="Delete step">✕</button>' : ''}</span>`;
       el.appendChild(head);
       head.querySelector('.bt-type').onchange = e => {
         const nn = node(e.target.value);
@@ -11941,6 +12108,7 @@ window.BKEntities = (function () {
     function renderTree() {
       const t = cur();
       treeEl.innerHTML = '';
+      if (t) renderHead();
       $('entTreeBox').hidden = !t;
       if (!t) return;
       if (!t.tree) {
@@ -11950,7 +12118,7 @@ window.BKEntities = (function () {
       }
       treeEl.appendChild(nodeEl(t.tree, null, 0, t));
       const clear = document.createElement('button');
-      clear.className = 'tiny'; clear.textContent = 'Remove behavior';
+      clear.className = 'tiny danger bt-clear'; clear.textContent = 'Remove behavior';
       clear.onclick = () => { t.tree = null; changed(); renderTree(); };
       treeEl.appendChild(clear);
     }

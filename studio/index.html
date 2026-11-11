@@ -120,69 +120,171 @@
 
     <div id="tab-entities" class="tab">
       <div class="ent-layout">
-        <div class="ent-col ent-listcol">
-          <div class="toolbar"><button id="entNew" class="primary">New</button><button id="entDup">Copy</button><button id="entDel">Delete</button></div>
+        <aside class="ent-col ent-listcol">
+          <div class="side-head"><b>Entities</b><span class="grow"></span><button id="entNew" class="tiny primary" title="Make a new entity">+ new</button></div>
           <div id="entList" class="ent-list"></div>
-          <div class="toolbar fx-head"><b>Effects</b><span class="grow"></span><button id="fxNew" class="tiny">+ effect</button></div>
+          <div class="side-head"><b>Effects</b><span class="grow"></span><button id="fxNew" class="tiny" title="Make a new effect">+ new</button></div>
           <div id="fxList" class="ent-list"></div>
-          <p class="dim small">Place entities on the Map tab (switch the layer to Entities). In your code call <code>ents_update()</code> in <code>_update</code> and <code>ents_draw()</code> in <code>_draw</code>. Tick <b>is the player</b> on your player entity, and use the <b>Player controls</b> step in its behavior. See Help for stats, effects, events and sensors.</p>
-        </div>
-        <div class="ent-col ent-main">
+          <details class="ent-help">
+            <summary>How entities work</summary>
+            <ol>
+              <li>Make an entity and give it frames on the <b>Look</b> page.</li>
+              <li>Set its team, health and movement on <b>Properties</b>.</li>
+              <li>Give it a <b>Behavior</b>, or start from a preset.</li>
+              <li>Place it on the Map tab, using the <b>Entities</b> layer.</li>
+            </ol>
+            <p>Your code needs <code>ents_update()</code> in <code>_update</code> and <code>ents_draw()</code> in <code>_draw</code>. For the player, tick <b>is the player</b> and use the <b>Player controls</b> step. The Help tab has stats, effects, events and sensors.</p>
+          </details>
+        </aside>
+
+        <section class="ent-col ent-main">
           <div id="entForm">
-            <div class="ent-props">
-              <label>Name <input id="entName" spellcheck="false"></label>
-              <label>Size <select id="entW"><option value="1">8</option><option value="2">16</option><option value="3">24</option><option value="4">32</option></select> x
-                <select id="entH"><option value="1">8</option><option value="2">16</option><option value="3">24</option><option value="4">32</option></select> px</label>
-              <label>HP <input id="entHp" type="number" min="0" max="999" title="0 = can't be hurt"></label>
-              <label>Team <select id="entTeam" title="Damage only hits the other team. The player is on the friend team."><option value="enemy">enemy</option><option value="friend">friend</option><option value="neutral">neutral</option></select></label>
-              <label title="Damage dealt to the other team on touch. Projectiles vanish after a hit.">Touch damage <input id="entDmg" type="number" min="0" max="99"></label>
-              <label title="Shrinks the hitbox by this many pixels on the sides and top">Hitbox inset <input id="entInset" type="number" min="0" max="3"></label>
-              <label class="chk"><input type="checkbox" id="entGrav"> gravity</label>
-              <label class="chk"><input type="checkbox" id="entCollide"> stops at walls</label>
-              <label class="chk"><input type="checkbox" id="entLeft"> sprite faces left</label>
-              <label class="chk" title="Not drawn in the game. Good for triggers and sensors."><input type="checkbox" id="entHidden"> invisible</label>
-              <label class="chk" title="This is the player: other entities chase, sense and hurt it, and the camera can follow it"><input type="checkbox" id="entPlayer"> is the player</label>
-              <label class="chk" title="The player damages it by landing on its head"><input type="checkbox" id="entStomp"> stompable</label>
-              <label title="Effect given to the other team on touch">Touch effect <select id="entTouchFx"></select></label>
-              <label title="Frames it can't be hurt again after a hit">Hurt cooldown <input id="entHurt" type="number" min="0" max="600"></label>
+            <div class="ent-head">
+              <canvas id="entHeadThumb" width="32" height="32" class="pix checker"></canvas>
+              <input id="entName" class="ent-name" spellcheck="false" title="Name (used in code and behavior steps)">
+              <span id="entPlaced" class="dim small"></span>
+              <span class="grow"></span>
+              <button id="entDup" class="tiny" title="Make a copy">Copy</button>
+              <button id="entDel" class="tiny danger" title="Delete this entity">Delete</button>
             </div>
-            <div class="ent-stats">
-              <span class="dim small" title="Use stat(e, &quot;name&quot;) in code. speed and jump scale movement; effects can change any stat.">Stats</span>
-              <span id="entStats"></span>
-              <button id="entStatAdd" class="tiny">+ stat</button>
-            </div>
-            <div class="ent-anim-wrap">
-              <canvas id="entPreview" width="128" height="128" class="pix checker"></canvas>
-              <div class="ent-anims">
-                <div class="dim small">Animations: <b>idle</b>, <b>walk</b> and <b>jump</b> play automatically. Click a frame to remove it.</div>
-                <div id="entAnims"></div>
-                <button id="entAnimAdd" class="tiny">+ animation</button>
+            <nav class="subtabs" role="tablist">
+              <button data-sub="look" class="active">Look</button>
+              <button data-sub="props">Properties</button>
+              <button data-sub="behavior">Behavior <span id="entStepCount" class="count"></span></button>
+            </nav>
+
+            <div class="subpage" data-page="look">
+              <div class="look-layout">
+                <div class="look-main">
+                  <div class="card">
+                    <div class="card-title">Sprite</div>
+                    <div class="ent-anim-wrap">
+                      <canvas id="entPreview" width="128" height="128" class="pix checker"></canvas>
+                      <div class="prop-grid">
+                        <span>Size</span>
+                        <span><select id="entW"><option value="1">8</option><option value="2">16</option><option value="3">24</option><option value="4">32</option></select> ×
+                          <select id="entH"><option value="1">8</option><option value="2">16</option><option value="3">24</option><option value="4">32</option></select> px</span>
+                        <span>Hitbox inset</span>
+                        <span><input id="entInset" type="number" min="0" max="3"> <span class="hint">px trimmed from sides and top (red box)</span></span>
+                        <span>Faces left</span>
+                        <span><label class="chk"><input type="checkbox" id="entLeft"> <span class="hint">tick if the art looks left, so it flips correctly</span></label></span>
+                        <span>Invisible</span>
+                        <span><label class="chk"><input type="checkbox" id="entHidden"> <span class="hint">not drawn; good for triggers and sensors</span></label></span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="card">
+                    <div class="card-title">Animations <span class="grow"></span><button id="entAnimAdd" class="tiny">+ animation</button></div>
+                    <div class="hint">Name them <b>idle</b>, <b>walk</b> and <b>jump</b> to play automatically. Pick a tile on the right, then press <b>+ tile</b>. Click a frame to remove it.</div>
+                    <div id="entAnims"></div>
+                  </div>
+                </div>
+                <div class="look-sheet">
+                  <div class="dim small">Tile <b id="entTileInfo">1</b></div>
+                  <div class="sheet-scroll small-sheet"><canvas id="entSheet" width="256" height="512" class="pix"></canvas></div>
+                </div>
               </div>
             </div>
-            <div id="entTreeBox" class="ent-tree-box">
-              <div class="toolbar"><b>Behavior</b> <span class="dim small">runs top to bottom every frame</span><span class="grow"></span><select id="entPreset"></select></div>
-              <div id="entTree" class="bt"></div>
+
+            <div class="subpage" data-page="props" hidden>
+              <div class="card-grid">
+                <div class="card">
+                  <div class="card-title">Role</div>
+                  <div class="prop-grid">
+                    <span>Player</span>
+                    <span><label class="chk"><input type="checkbox" id="entPlayer"> <span class="hint">is the player (others chase it, camera follows)</span></label></span>
+                    <span>Team</span>
+                    <span><select id="entTeam"><option value="enemy">enemy</option><option value="friend">friend</option><option value="neutral">neutral</option></select> <span class="hint">damage only hits the other team</span></span>
+                  </div>
+                </div>
+                <div class="card">
+                  <div class="card-title">Health</div>
+                  <div class="prop-grid">
+                    <span>HP</span>
+                    <span><input id="entHp" type="number" min="0" max="999"> <span class="hint">0 = can't be hurt</span></span>
+                    <span>Hurt cooldown</span>
+                    <span><input id="entHurt" type="number" min="0" max="600"> <span class="hint">frames safe after a hit</span></span>
+                    <span>Stompable</span>
+                    <span><label class="chk"><input type="checkbox" id="entStomp"> <span class="hint">the player hurts it by landing on it</span></label></span>
+                  </div>
+                </div>
+                <div class="card">
+                  <div class="card-title">On touch</div>
+                  <div class="prop-grid">
+                    <span>Damage</span>
+                    <span><input id="entDmg" type="number" min="0" max="99"> <span class="hint">to the other team; projectiles vanish after a hit</span></span>
+                    <span>Effect</span>
+                    <span><select id="entTouchFx"></select> <span class="hint">given to the other team</span></span>
+                  </div>
+                </div>
+                <div class="card">
+                  <div class="card-title">Movement</div>
+                  <div class="prop-grid">
+                    <span>Gravity</span>
+                    <span><label class="chk"><input type="checkbox" id="entGrav"> <span class="hint">falls and can stand on ground</span></label></span>
+                    <span>Solid</span>
+                    <span><label class="chk"><input type="checkbox" id="entCollide"> <span class="hint">stops at walls</span></label></span>
+                  </div>
+                </div>
+                <div class="card card-wide">
+                  <div class="card-title">Stats <span class="grow"></span><button id="entStatAdd" class="tiny">+ stat</button></div>
+                  <div class="hint"><b>speed</b> and <b>jump</b> scale movement. Effects can change any stat; read them in code with <code>stat(e, "name")</code>.</div>
+                  <div id="entStats" class="ent-stats"></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="subpage" data-page="behavior" hidden>
+              <div id="entTreeBox" class="ent-tree-box">
+                <div class="toolbar"><span class="hint">Runs top to bottom every frame. <b>◆</b> groups, <b>?</b> checks, <b>◎</b> senses, <b>▶</b> does.</span><span class="grow"></span><select id="entPreset"></select></div>
+                <div id="entTree" class="bt"></div>
+              </div>
             </div>
           </div>
+
           <div id="fxForm" hidden>
-            <div class="ent-props">
-              <label>Name <input id="fxName" spellcheck="false"></label>
-              <label title="0 = instant (only the HP change on apply)">Lasts <input id="fxDur" type="number" min="0" max="36000"> frames</label>
-              <label title="What happens when it is applied again while active">Again <select id="fxStack"><option value="refresh">restart timer</option><option value="stack">stack</option><option value="keep">ignore</option></select></label>
-              <label title="Instant HP change when applied (negative hurts)">HP on apply <input id="fxHp" type="number"></label>
-              <label title="HP change repeated while active (poison, regeneration)">Every <input id="fxEvery" type="number" min="0"> frames change HP by <input id="fxTick" type="number"></label>
-              <label title="Palette colour the entity flashes while affected (-1 = none)">Flash colour <input id="fxTint" type="number" min="-1" max="255"><span id="fxTintSw" class="swatch"></span></label>
+            <div class="ent-head">
+              <span id="fxHeadSw" class="swatch big"></span>
+              <input id="fxName" class="ent-name" spellcheck="false" title="Effect name">
+              <span class="dim small">effect</span>
+              <span class="grow"></span>
+              <button id="fxDel" class="tiny danger">Delete</button>
             </div>
-            <div class="dim small">Stat changes while active</div>
-            <div id="fxMods" class="fx-mods"></div>
-            <div class="toolbar"><button id="fxModAdd" class="tiny">+ stat change</button><span class="grow"></span><button id="fxDel" class="tiny">Delete effect</button></div>
-            <p class="dim small">Apply it with a behavior step (Apply effect…), the Touch effect property, or in code with <code>fx_apply(e, "name")</code>. Check it with <code>fx_has(e, "name")</code> and read stats with <code>stat(e, "speed")</code>.</p>
+            <div class="card-grid">
+              <div class="card">
+                <div class="card-title">Timing</div>
+                <div class="prop-grid">
+                  <span>Lasts</span>
+                  <span><input id="fxDur" type="number" min="0" max="36000"> <span class="hint">frames (60 = 1 s, 0 = instant)</span></span>
+                  <span>Applied again</span>
+                  <span><select id="fxStack"><option value="refresh">restart timer</option><option value="stack">stack</option><option value="keep">ignore</option></select></span>
+                </div>
+              </div>
+              <div class="card">
+                <div class="card-title">Health</div>
+                <div class="prop-grid">
+                  <span>On apply</span>
+                  <span><input id="fxHp" type="number"> <span class="hint">HP (negative hurts)</span></span>
+                  <span>Over time</span>
+                  <span>every <input id="fxEvery" type="number" min="0"> frames, <input id="fxTick" type="number"> HP</span>
+                </div>
+              </div>
+              <div class="card">
+                <div class="card-title">Look</div>
+                <div class="prop-grid">
+                  <span>Flash colour</span>
+                  <span><input id="fxTint" type="number" min="-1" max="255"><span id="fxTintSw" class="swatch"></span> <span class="hint">palette index, -1 = none</span></span>
+                </div>
+              </div>
+              <div class="card card-wide">
+                <div class="card-title">Stat changes while active <span class="grow"></span><button id="fxModAdd" class="tiny">+ stat change</button></div>
+                <div id="fxMods" class="fx-mods"></div>
+              </div>
+            </div>
+            <p class="hint">Apply it with an <b>Apply effect</b> behavior step, the <b>On touch → Effect</b> property, or in code with <code>fx_apply(e, "name")</code>. Check it with <code>fx_has(e, "name")</code>.</p>
           </div>
-        </div>
-        <div class="ent-col">
-          <div class="dim small">Pick a tile (tile <b id="entTileInfo">1</b>), then press + tile</div>
-          <div class="sheet-scroll small-sheet"><canvas id="entSheet" width="256" height="512" class="pix"></canvas></div>
-        </div>
+          <div id="entEmpty" class="dim" hidden>No entity selected. Press <b>+ new</b> to make one.</div>
+        </section>
       </div>
     </div>
 
