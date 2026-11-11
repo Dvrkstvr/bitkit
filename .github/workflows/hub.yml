@@ -1,0 +1,51 @@
+name: Share hub
+
+# Games, photos and clips are posted as issues (form: .github/ISSUE_TEMPLATE/share.yml). This builds the hub from
+# them on the "hub" branch (index.json + files), which the studio reads. No server and no keys: just this token.
+# A post shows when its issue is open and either its author is a maintainer or it has the label "hub-ok".
+# To take something down: close the issue, or add the label "hub-hide".
+on:
+  issues:
+    types: [opened, edited, labeled, unlabeled, closed, reopened, deleted]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: share-hub
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.issue.title, '[Share]') || contains(github.event.issue.labels.*.name, 'share') || github.event.label.name == 'share'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check out the hub branch
+        run: |
+          if git ls-remote --exit-code --heads origin hub >/dev/null; then
+            git fetch --depth 1 origin hub && git worktree add -B hub hubdata origin/hub
+          else
+            git worktree add --detach hubdata && cd hubdata && git checkout --orphan hub && git rm -rfq . && git clean -fdq
+          fi
+      - name: Build the hub
+        run: node tools/hub_publish.cjs hubdata
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_ACTION: ${{ github.event.action }}
+          EVENT_ISSUE: ${{ github.event.issue.number }}
+          EVENT_LABEL: ${{ github.event.label.name }}
+      - name: Publish
+        run: |
+          cd hubdata
+          git add -A
+          if git diff --cached --quiet; then echo "hub unchanged"; exit 0; fi
+          git -c user.name="BitKit hub" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -qm "hub: update from issue #${{ github.event.issue.number }}"
+          git push origin hub

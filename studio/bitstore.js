@@ -111,5 +111,46 @@ window.BKStore = (() => {
       return out.sort((a, b) => (b.t || 0) - (a.t || 0));
     }
   };
-  return { init, chooseFolder, reconnect, useBrowser, list, save, remove, exists, label, canPickFolder, drafts, get state() { return state; } };
+  // captures: photos (.png) and clips (.gif) from the Bit, in captures/ on the memory card, like the PocketBit's SD card
+  // (so pointing the studio at the SD card shows the device's captures too), or in this browser
+  const isCap = n => /\.(png|gif)$/i.test(n);
+  async function capDir(create) { return dir.getDirectoryHandle('captures', { create: !!create }); }
+  const captures = {
+    async list() {
+      const out = [];
+      if (state === 'folder') {
+        let d; try { d = await capDir(false); } catch (e) { return out; }
+        for await (const [name, h] of d.entries()) {
+          if (h.kind !== 'file' || !isCap(name)) continue;
+          const f = await h.getFile(); out.push({ name, blob: f, t: f.lastModified, size: f.size });
+        }
+      } else {
+        const d = await db();
+        await new Promise((res, rej) => {
+          const t = d.transaction('kv', 'readonly'), r = t.objectStore('kv').openCursor(IDBKeyRange.bound('cap:', 'cap:\uffff'));
+          r.onsuccess = () => { const c = r.result; if (c) { out.push({ name: String(c.key).slice(4), blob: c.value.blob, t: c.value.t, size: c.value.blob.size }); c.continue(); } };
+          t.oncomplete = res; t.onerror = () => rej(t.error);
+        });
+      }
+      return out.sort((a, b) => b.t - a.t);
+    },
+    async put(name, blob) {
+      if (state === 'folder') {
+        const h = await (await capDir(true)).getFileHandle(name, { create: true });
+        const w = await h.createWritable(); await w.write(blob); await w.close();
+      } else await kvSet('cap:' + name, { blob, t: Date.now() });
+    },
+    async remove(name) {
+      if (state === 'folder') await (await capDir(false)).removeEntry(name);
+      else await kvDel('cap:' + name);
+    },
+    // a free name like captures/kart-lab-3.png
+    async freeName(game, ext) {
+      const base = String(game || 'bit').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'bit';
+      const have = new Set((await captures.list().catch(() => [])).map(c => c.name));
+      let n = 1; while (have.has(`${base}-${n}.${ext}`)) n++;
+      return `${base}-${n}.${ext}`;
+    }
+  };
+  return { init, chooseFolder, reconnect, useBrowser, list, save, remove, exists, label, canPickFolder, drafts, captures, get state() { return state; } };
 })();

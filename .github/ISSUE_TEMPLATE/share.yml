@@ -1,0 +1,51 @@
+name: Share in the hub
+description: Post a game, a photo or a clip to the BitKit Share hub
+title: "[Share] "
+labels: [share]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The easiest way is the studio's **🌍 Share hub** button: it fills this form in for you.
+        Once it is posted, a robot checks it and puts it in the hub. Posts from new people show up after a quick look by a maintainer.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What is it?
+      options: [Game, Photo, Clip]
+    validations:
+      required: true
+  - type: input
+    id: name
+    attributes:
+      label: Name
+      placeholder: Sprout Hop
+    validations:
+      required: true
+  - type: textarea
+    id: link
+    attributes:
+      label: Game
+      description: For a game, the play link from the studio (Share hub, Share this game). A long link comes as a .link.txt file; drag it here. A .bitkit file works too if you rename it to .json.
+  - type: textarea
+    id: media
+    attributes:
+      label: Photos and clips
+      description: Drag photos (.png) and clips (.gif, .mp4) here. They are in the studio's Share hub under My photos and clips.
+  - type: textarea
+    id: about
+    attributes:
+      label: About it
+      description: Optional. A line or two, how to play, or the story behind it.
+  - type: input
+    id: credit
+    attributes:
+      label: Show me as
+      description: Optional. Otherwise your GitHub name is shown.
+  - type: checkboxes
+    id: ok
+    attributes:
+      label: Sharing
+      options:
+        - label: I made this (or may share it), and it may be shown in the BitKit Share hub and shared under the MIT licence.
+          required: true
