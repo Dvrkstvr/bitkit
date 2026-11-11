@@ -16,6 +16,22 @@ require('../studio/runtime.js')({ onLog: (m, e) => { if (e) errors.push(m); else
   if (M._bkw_frame(0, 0) === 0) fail('infinite loop was not stopped by the instruction budget');
   errors = [];
 
+  // save data: save() fills the host's save block, saved() reads it back on the next run; clock() is unix time
+  {
+    const sv = M._bkw_save() >> 2;
+    logs = [];
+    M._bkw_load(s('save({coins = 12, name = "moss", plots = {true, false, 2.5}, [3] = "x"})'));
+    if (M.HEAP32[sv + 1] !== 1 || M.HEAP32[sv] <= 0) fail('save() did not mark the save block');
+    M.HEAP32[sv + 1] = 0;
+    M._bkw_load(s('local d = saved() print("saved", d.coins, d.name, d.plots[1], d.plots[3], d[3], clock() > 1700000000)'));
+    const l = logs.find(x => x.startsWith('saved')) || '';
+    if (l.split(/\s+/).join(' ') !== 'saved 12 moss true 2.5 x true') fail('saved() round trip: ' + l);
+    M.HEAP32[sv] = -1;
+    M._bkw_load(s('print("none", saved() == nil)'));
+    if (!logs.some(x => /^none\s+true/.test(x))) fail('saved() should be nil with no save');
+    if (errors.length) { errors.forEach(e => fail('save: ' + e)); errors = []; }
+  }
+
   // home screen: lists games and asks the host to launch the selected one
   if (M._bkw_load_ex(s('BIT = { games = {{name="A", file="a.bitkit", studio=false, color=3}, {name="B", file="b.bitkit", studio=false, color=8}}, sel = 1, studio = true, source = "" }'), s(window.BK_HOME)) !== 0) fail('home screen did not load');
   const sys = M._bkw_sys() >> 2;
@@ -71,5 +87,5 @@ require('../studio/runtime.js')({ onLog: (m, e) => { if (e) errors.push(m); else
   // playing level 2 from the start
   for (let f = 0; f < 1500; f++) if (frame((1 << 1) | ((f % 30) < 12 ? 1 << 4 : 0))) { fail('level 2 stopped at frame ' + f); break; }
   errors.forEach(e => fail('Lua error: ' + e));
-  if (!process.exitCode) console.log('ok: runtime checks, home screen, 3000 demo frames, level switching and cutscenes passed');
+  if (!process.exitCode) console.log('ok: runtime checks, home screen, 3000 demo frames, level switching, cutscenes and save data passed');
 });

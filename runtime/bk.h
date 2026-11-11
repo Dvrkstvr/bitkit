@@ -16,6 +16,7 @@
 #define BK_CHANNELS 8
 #define BK_SAMPLE_RATE 44100
 #define BK_FPS 60
+#define BK_SAVE_MAX 4096      /* bytes of save data per cart */
 
 /* Buttons. Bit index in the button mask and index for btn()/press(). */
 enum {
@@ -63,6 +64,9 @@ typedef struct {
 
   /* --- system requests to the host (launcher) --- */
   int32_t sys[2];                       /* command (0 none, 1 launch, 2 home, 3 edit, 4 load level map), argument; set this frame */
+
+  /* --- save data: the cart writes it with save(), the host keeps it per cart (browser storage / flash) --- */
+  struct { int32_t len; int32_t dirty; char data[BK_SAVE_MAX]; } save;   /* len -1 = nothing saved */
 
   /* --- time / rng --- */
   uint32_t frame;

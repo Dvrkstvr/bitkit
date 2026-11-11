@@ -28,6 +28,8 @@ EMSCRIPTEN_KEEPALIVE float *bkw_audio(int frames) {
   return audio_buf;
 }
 EMSCRIPTEN_KEEPALIVE uint8_t *bkw_palette(void) { return machine.palette; }
+/* save data block: int32 len (-1 none), int32 dirty, char data[BK_SAVE_MAX] */
+EMSCRIPTEN_KEEPALIVE int32_t *bkw_save(void) { return &machine.save.len; }
 EMSCRIPTEN_KEEPALIVE uint8_t *bkw_tiles(void) { return machine.tiles; }
 EMSCRIPTEN_KEEPALIVE uint8_t *bkw_flags(void) { return machine.flags; }
 EMSCRIPTEN_KEEPALIVE uint16_t *bkw_map(void) { return machine.map; }

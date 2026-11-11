@@ -571,6 +571,51 @@ function ents_spawn(name, x, y)
   return e
 end
 
+-- ---------------------------------------------------------------- save data
+-- save(t): keep a table (numbers, strings, booleans, nested tables) for next time. save(nil) clears it.
+-- saved(): the table from the last save(), or nil. The host stores it per cart (browser storage, flash on the device).
+local lua_load = load
+local function ser(v, depth)
+  local ty = type(v)
+  if ty == "number" then
+    if math.type(v) == "integer" then return tostring(v) end
+    if v ~= v or v == math.huge or v == -math.huge then return "0" end
+    return string.format("%.17g", v)
+  elseif ty == "string" then return string.format("%q", v)
+  elseif ty == "boolean" then return tostring(v)
+  elseif ty == "table" then
+    if depth > 16 then error("save: tables nested too deep", 3) end
+    local keys = {}
+    for k in pairs(v) do
+      local kt = type(k)
+      if kt ~= "number" and kt ~= "string" then error("save: keys must be numbers or strings", 3) end
+      keys[#keys + 1] = k
+    end
+    table.sort(keys, function(a, b)
+      if type(a) == type(b) then return a < b end
+      return type(a) == "number"
+    end)
+    local out = {}
+    for i = 1, #keys do out[i] = "[" .. ser(keys[i], depth + 1) .. "]=" .. ser(v[keys[i]], depth + 1) end
+    return "{" .. table.concat(out, ",") .. "}"
+  end
+  error("save: can't store a " .. ty, 3)
+end
+function save(v)
+  if v == nil then _save_raw(nil) return true end
+  _save_raw(ser(v, 0))
+  return true
+end
+function saved()
+  local s = _load_raw()
+  if not s or s == "" then return nil end
+  local f = lua_load("return " .. s, "save", "t", {})
+  if not f then return nil end
+  local ok, v = pcall(f)
+  if ok then return v end
+  return nil
+end
+
 -- ---------------------------------------------------------------- cutscenes
 -- A cutscene is a list of steps made on the studio's Cutscenes tab (or by hand):
 --   ents_cutscenes({ intro = {level = 1, steps = {{t = "say", p = {who = "sage", text = "Hi!"}}, ...}} })
