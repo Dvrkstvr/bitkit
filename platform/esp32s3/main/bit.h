@@ -22,3 +22,7 @@ esp_err_t bit_storage_init(bit_storage *st);          /* /flash (internal), /sdc
 
 void bit_clock_init(void);                            /* system time from the RTC chip, if there is one */
 int bit_clock_set(int64_t unix_seconds);              /* set it (serial console "time <unix>") */
+
+esp_err_t bit_radio_init(uint32_t *id);               /* ESP-NOW; id = this Bit's id from its MAC address */
+int bit_radio_send(const void *data, int len);        /* broadcast one packet (at most 250 bytes) */
+int bit_radio_poll(void (*fn)(const void *data, int len));   /* hand every packet that came in to fn; on the loop's thread */

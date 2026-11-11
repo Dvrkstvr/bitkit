@@ -67,6 +67,8 @@ jobs:
         run: platform/sim/build.sh
       - name: Play every game and app on the device host
         run: platform/sim/build/bitsim --test build/device-flash build/device-data --frames 1200 --report build/device-report.md
+      - name: Two linked Bits (lockstep, pause together, net_send) with packets lost
+        run: platform/sim/build/bitsim --link build/device-flash build/device-link --loss 15
       - name: Frame times on the CI machine
         if: always()
         run: cat build/device-report.md >> "$GITHUB_STEP_SUMMARY" || true

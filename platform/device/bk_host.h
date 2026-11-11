@@ -22,7 +22,10 @@ typedef struct {
   void *(*mem_realloc)(void *p, size_t n);
   size_t (*mem_free)(void);      /* free bytes in that memory, or NULL */
   void (*log)(const char *msg, int is_error);
-  int link;                      /* 1 = show linked Bits on the home screen (set by the radio layer) */
+  /* linked Bits (ESP-NOW on the device). NULL radio_send = no radio. The host's own packets are under 250 bytes. */
+  int (*radio_send)(const void *pkt, int len);   /* broadcast one packet to every Bit in reach */
+  uint32_t bit_id;               /* this Bit's id on the radio (from its MAC address); 0 = pick one */
+  uint32_t (*millis)(void);      /* a clock in milliseconds for the radio's timeouts; NULL = count frames */
 } bk_host_config;
 
 typedef struct {
@@ -54,4 +57,13 @@ const char *bk_host_last_error(void);
 int  bk_host_recording(void);                        /* a clip is being recorded */
 int  bk_host_launch(int n);                          /* as if picked on the home screen (1-based) */
 void bk_host_go_home(void);                          /* as if Start+Select were held */
-void bk_host_restart(int how);                       /* the game shell's _restart(): 1 title, 2 new game, 3 play */
+void bk_host_restart(int how);
+
+/* Linked Bits (docs/DEVICE.md). Bits find each other by themselves; a game started on the home screen starts on
+   every Bit that is on its home screen too, and they play it in lockstep (every Bit runs every frame with every
+   player's buttons, sent a few frames ahead). Games that use net_send() run on their own and talk with events. */
+void bk_host_radio_recv(const void *pkt, int len);   /* a packet from another Bit: call between frames, on the loop's thread */
+int  bk_host_linked(void);                           /* Bits in reach, this one too (1 = alone) */
+int  bk_host_link_players(void);                     /* players in the linked game running now, 0 = none */
+uint32_t bk_host_link_sync(uint32_t *frame);         /* lockstep frames run and a hash of their buttons and rnd() state */
+int  bk_host_net_heard(void);                        /* net_send() events from other Bits so far */                       /* the game shell's _restart(): 1 title, 2 new game, 3 play */

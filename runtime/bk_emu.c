@@ -16,7 +16,7 @@
 
 /* ------------------------------------------------------------------ sound: one ring of stereo samples */
 #define RING 8192                                   /* stereo frames, a power of two */
-static int16_t ring[RING * 2];
+static BK_BIG_BSS int16_t ring[RING * 2];   /* PSRAM on the device: internal RAM is short once the radio is on */
 static volatile uint32_t ring_w, ring_r;            /* the emulator writes, the audio side reads */
 static int ring_mute;                               /* fast-forward frames make no sound */
 

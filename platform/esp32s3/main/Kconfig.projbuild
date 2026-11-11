@@ -174,6 +174,17 @@ menu "PocketBit hardware"
             depends on BIT_RTC
     endmenu
 
+    menu "Linked Bits (ESP-NOW)"
+        config BIT_LINK
+            bool "Link with other PocketBits nearby over ESP-NOW"
+            default y
+        config BIT_LINK_CHANNEL
+            int "Wi-Fi channel (every Bit must use the same one)"
+            default 1
+            range 1 13
+            depends on BIT_LINK
+    endmenu
+
     config BIT_MAX_PAUSED
         int "Games kept paused in memory"
         default 4

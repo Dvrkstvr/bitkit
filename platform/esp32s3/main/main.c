@@ -24,6 +24,7 @@ static void *psram_realloc(void *p, size_t n) {
   return heap_caps_realloc(p, n, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 }
 static size_t psram_free(void) { return heap_caps_get_free_size(MALLOC_CAP_SPIRAM); }
+static uint32_t millis(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
 static void logger(const char *m, int err) { if (err) ESP_LOGE(TAG, "%s", m); else printf("%s\n", m); }
 
 /* frame timing, printed every 5 seconds: where the 16.7 ms go */
@@ -38,6 +39,7 @@ static void game_loop(void *arg) {
     char *line;
     while (xQueueReceive(console_q, &line, 0) == pdTRUE) { bk_host_eval(line); free(line); }
 
+    bit_radio_poll(bk_host_radio_recv);              /* linked Bits: packets that came in since the last frame */
     const int64_t t0 = esp_timer_get_time();
     const uint16_t mask = bit_input_read(press);
     bk_host_frame(mask, press);
@@ -110,6 +112,10 @@ void app_main(void) {
   cfg.mem_realloc = psram_realloc;
   cfg.mem_free = psram_free;
   cfg.log = logger;
+  /* linked Bits over ESP-NOW (Kconfig BIT_LINK); without it the home screen just doesn't show other Bits */
+  uint32_t id = 0;
+  if (bit_radio_init(&id) == ESP_OK) { cfg.radio_send = bit_radio_send; cfg.bit_id = id; cfg.millis = millis; }
+  else ESP_LOGW(TAG, "no radio: linked play is off");
   /* the emulator apps (Game Boy, GBC, NES) find your ROMs here; battery saves and states go next to them */
   const char *roms = stor.sd ? "/sdcard/roms" : "/flash/roms";
   mkdir(roms, 0775);
