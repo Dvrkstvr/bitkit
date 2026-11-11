@@ -82,7 +82,7 @@ window.BKStore = (() => {
     return !!(await tx('carts', 'readonly', s => s.get(file)));
   }
   async function save(file, data) {
-    if (state === 'reconnect') throw new Error('The folder needs permission again. Press Reconnect in the Library.');
+    if (state === 'reconnect') throw new Error('The folder needs permission again. Press Reconnect folder in the Games menu.');
     if (state === 'folder') {
       const h = await dir.getFileHandle(file, { create: true });
       const w = await h.createWritable();
@@ -95,5 +95,21 @@ window.BKStore = (() => {
     if (state === 'folder') await dir.removeEntry(file);
     else await tx('carts', 'readwrite', s => s.delete(file));
   }
-  return { init, chooseFolder, reconnect, useBrowser, list, save, remove, exists, label, canPickFolder, get state() { return state; } };
+  // drafts: games you changed and then left for another one, kept in this browser so nothing is lost
+  // (the studio keys them by game: "demo:Kart Lab", "file:my-game.bitkit", "new:abc123")
+  const drafts = {
+    get: k => kvGet('draft:' + k),
+    put: (k, v) => kvSet('draft:' + k, v),
+    del: k => kvDel('draft:' + k),
+    async list() {
+      const d = await db(), out = [];
+      await new Promise((res, rej) => {
+        const t = d.transaction('kv', 'readonly'), r = t.objectStore('kv').openCursor(IDBKeyRange.bound('draft:', 'draft:\uffff'));
+        r.onsuccess = () => { const c = r.result; if (c) { out.push(Object.assign({ key: String(c.key).slice(6) }, c.value)); c.continue(); } };
+        t.oncomplete = res; t.onerror = () => rej(t.error);
+      });
+      return out.sort((a, b) => (b.t || 0) - (a.t || 0));
+    }
+  };
+  return { init, chooseFolder, reconnect, useBrowser, list, save, remove, exists, label, canPickFolder, drafts, get state() { return state; } };
 })();

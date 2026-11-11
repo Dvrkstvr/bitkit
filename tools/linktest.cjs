@@ -26,6 +26,7 @@ const ok = m => console.log('ok  ', m);
   await ctx.addInitScript(() => {
     const n = (location.search.match(/bit=(\d+)/) || [])[1] || '1';
     try { sessionStorage.setItem('bitkit.inputPick.bit' + n, '[{"k":"kb"}]'); } catch (e) {}
+    try { localStorage.setItem('bitkit.mode', 'play'); } catch (e) {}   // Play mode: the studio window is a Bit on its home screen
   });
   const errs = [];
   const pages = {};

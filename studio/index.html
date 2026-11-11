@@ -10,66 +10,99 @@
 <body>
 <header class="topbar">
   <div class="brand"><span class="logo"></span><span id="appName">BitKit</span> <span class="dim">Studio</span></div>
-  <input id="cartName" class="cartname" spellcheck="false" title="Cart name">
+  <div class="mode-switch" role="tablist" aria-label="Edit or play">
+    <button id="modeEdit" role="tab" class="active" title="Make the game: code, sprites, maps and more">✎ Edit</button>
+    <button id="modePlay" role="tab" title="Play it like on a PocketBit: one Bit, or two side by side">▶ Play</button>
+  </div>
+  <button id="btnGames" title="Switch to another game, start a new one or open a file">Games ▾</button>
+  <input id="cartName" class="cartname" spellcheck="false" title="The name of this game. Click to rename it">
   <span id="cartFile" class="dim small cart-file"></span>
+  <span id="saveState" class="dim small save-state" title="Your work is saved in this browser as you go"></span>
   <div class="actions">
-    <button id="btnRun" class="primary" title="Run (Ctrl+Enter)">&#9654; Run</button>
-    <button id="btnStop" title="Stop">&#9632; Stop</button>
-    <span class="sep"></span>
-    <button id="btnNew" title="New cart">New</button>
-    <button id="btnDemo" title="Load the demo cart">Demo</button>
-    <button id="btnOpen" title="Open a .bitkit cart file">Open</button>
-    <button id="btnSave" title="Download or copy this cart">Save / share</button>
-    <button id="btnRules" title="Check this game against the BitKit game rules">Rules</button>
-    <span class="sep"></span>
-    <button id="btnLib" title="Games on the Bit's memory card (a folder on your computer)">Library</button>
+    <button id="btnRun" class="primary" title="Run the game on the test screen (Ctrl+Enter)">&#9654; Run</button>
+    <button id="btnStop" title="Stop the game">&#9632; Stop</button>
+    <span class="sep edit-only"></span>
+    <button id="btnSave" title="Download this game as a file, or copy it as text">Save / share</button>
+    <button id="btnRules" title="The things every BitKit game has: title screen, goal, pause menu...">Checklist</button>
     <input type="file" id="fileOpen" accept=".bitkit,.mboi,.json" hidden>
   </div>
 </header>
 
 <main class="layout">
   <section class="left">
-    <div id="gameWrap" class="game-wrap">
-      <canvas id="screen" width="320" height="240" tabindex="0" aria-label="Game screen"></canvas>
-      <div id="gameOverlay" class="overlay hidden"></div>
-      <div id="padChooser" class="pad-chooser" hidden></div>
-      <div id="linkWait" class="link-wait" hidden></div>
+    <div id="playBar" class="play-bar play-only">
+      <div class="seg" role="group" aria-label="How many Bits">
+        <button id="playOne" class="active" title="One Bit">1 Bit</button>
+        <button id="playTwo" title="Two linked Bits next to each other, one player each, like two PocketBits">2 Bits side by side</button>
+      </div>
+      <button id="playRestart" title="Start the game from the beginning (Ctrl+Enter)">⟲ Restart</button>
+      <button id="playHome" title="Go to the Bit's home screen to pick another game (same as holding Start + Select)">⌂ Home screen</button>
+      <span class="grow"></span>
+      <span class="dim small" id="playHint"></span>
+    </div>
+    <div id="stage" class="stage">
+      <div class="bit-col" id="bitCol1">
+        <div class="screen-label"><span class="sl-dot"></span><span id="screenLabel">Test screen</span></div>
+        <div id="gameWrap" class="game-wrap">
+          <canvas id="screen" width="320" height="240" tabindex="0" aria-label="Game screen"></canvas>
+          <div id="gameOverlay" class="overlay hidden"></div>
+          <div id="padChooser" class="pad-chooser" hidden></div>
+          <div id="linkWait" class="link-wait" hidden></div>
+        </div>
+        <div class="input-row">
+          <select id="inputPick" class="pad-pick" title="What plays on this screen: the keyboard, a controller, or both"></select>
+          <span id="padHint" class="pad-hint"></span>
+        </div>
+        <div id="keys1" class="keys"></div>
+      </div>
+      <div class="bit-col" id="bitCol2" hidden>
+        <div class="screen-label"><span class="sl-dot"></span><span id="screenLabel2">Bit 2</span></div>
+        <div id="gameWrap2" class="game-wrap"><div id="bit2Note" class="bit2-note">Starting Bit 2…</div></div>
+        <div class="input-row">
+          <select id="inputPick2" class="pad-pick" title="What plays as player 2"></select>
+        </div>
+        <div id="keys2" class="keys"></div>
+      </div>
     </div>
     <div class="game-bar">
-      <select id="inputPick" class="pad-pick" title="Input for this tab: pick a controller or the keyboard, so two studio windows can each have their own"></select>
-      <select id="inputPick2" class="pad-pick" title="Player 2's input" hidden></select>
-      <span class="grow"></span>
       <span id="fps" class="dim">&nbsp;</span>
-      <select id="players" title="Players on this screen. To play on several Bits, add a Bit below: linked Bits play one player each">
+      <span class="grow"></span>
+      <select id="players" title="Play together: two players on this screen, or more Bits in their own windows">
         <option value="1">1 player</option>
-        <option value="2">2 players</option>
+        <option value="2">2 players on this screen</option>
+        <option value="win">＋ Bit in a new window…</option>
       </select>
-      <button id="btnBit" title="Turn on the emulated PocketBit: a home screen with the games on its memory card">⏻ Bit</button>
-      <button id="btnMute" title="Mute">Sound on</button>
+      <button id="btnMute" title="Sound on or off">Sound on</button>
       <button id="btnFull" title="Fullscreen">Fullscreen</button>
     </div>
-    <div id="linkBar" class="link-bar">
+    <div id="linkBar" class="link-bar" hidden>
       <span id="linkStatus">Not linked</span>
       <span class="grow"></span>
       <button id="linkPad" class="tiny" title="Choose the controller (or keyboard) for this Bit">🎮 Controller</button>
       <button id="linkOpen" class="tiny" title="Open another Bit in a new window. Linked Bits play together like PocketBits over ESP-NOW">＋ Add a Bit</button>
     </div>
-    <div class="console-head">Console <button id="btnClear" class="tiny">clear</button></div>
+    <div class="console-head" id="consoleHead" title="Messages from the studio and from print() in your code. Click to open or close">
+      <span id="consoleArrow">▸</span> Console <span id="consoleBadge" class="console-badge" hidden></span>
+      <span id="consoleLast" class="console-last"></span>
+      <button id="btnClear" class="tiny">clear</button>
+    </div>
     <pre id="console" class="console"></pre>
   </section>
-
   <section class="right">
     <nav class="tabs" role="tablist">
       <button data-tab="code" class="active">Code</button>
       <button data-tab="sprites">Sprites</button>
       <button data-tab="map">Map</button>
-      <button data-tab="track" id="tabTrackBtn" hidden title="Edit race tracks">Track</button>
+      <button data-tab="track" title="Edit race tracks">Track</button>
       <button data-tab="entities">Entities</button>
       <button data-tab="cutscenes">Cutscenes</button>
       <button data-tab="input">Controller</button>
       <button data-tab="help">Help</button>
+      <span class="tabs-more-wrap"><button id="tabMore" class="tab-more" hidden title="Editors this game does not use yet">More ▾</button><div id="tabMoreMenu" class="menu" hidden></div></span>
+      <span class="grow"></span>
+      <button id="undoBtn" class="tab-tool" title="Undo the last change on this tab (Ctrl+Z)">↶ Undo</button>
+      <button id="redoBtn" class="tab-tool" title="Redo (Ctrl+Shift+Z)">↷ Redo</button>
     </nav>
-
     <div id="tab-code" class="tab active">
       <div id="codeHost" class="code-host"></div>
     </div>
@@ -455,6 +488,7 @@
       </div>
     </div>
 
+    <div id="tab-game" class="tab"><div class="game-page" id="gameBody"></div></div>
     <div id="tab-help" class="tab"><div class="help" id="helpBody"></div></div>
   </section>
 </main>
