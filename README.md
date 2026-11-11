@@ -57,10 +57,10 @@ The game runtime and browser studio for **PocketBit**, a DIY ESP32-S3 handheld.
 ## 🚀 Quick start
 
 1. Open **[dvrkstvr.github.io/bitkit](https://dvrkstvr.github.io/bitkit/)** in Chrome, Edge or Firefox.
-2. Plug in a controller and press any button on it.
-3. The studio starts on the Bit's home screen with every demo (Sprout Hop, Beacon Keeper, Sweep Storm, Kart Lab, Crossgate). Pick one with ← → and press A (Z on the keyboard). Hold Start+Select to come back.
-4. Press **Run** (or Ctrl+Enter) to play the cart that is open in the studio.
-5. Change something and press Run again.
+2. Press **▶ Run** (or Ctrl+Enter) to play the game that is open, Sprout Hop at first. Click the game screen and use the arrow keys with Z and X, or plug in a controller and press any button on it.
+3. **Games** at the top has every demo (Sprout Hop, Beacon Keeper, Sweep Storm, Kart Lab, Crossgate) and your own games. Each one keeps its own changes.
+4. Change something and press Run again. The **Game** tab has sliders for how the game feels, the other tabs are the editors.
+5. **Play** at the top shows the game on a Bit, the emulated PocketBit, with its home screen. Pick **2 Bits side by side** to try playing together. Hold Start+Select to go back to the home screen.
 
 Want it offline? [`dist/bitkit-studio.html`](dist/bitkit-studio.html) is one self-contained file.
 
@@ -86,11 +86,11 @@ function _init()
 end
 ```
 
-The studio's **Rules** button checks your cart. Read the details in **[GAME_RULES.md](GAME_RULES.md)**.
+The studio's **Checklist** button checks your game. Read the details in **[GAME_RULES.md](GAME_RULES.md)**.
 
 ## 🌱 The demos
 
-Press **Demo** in the studio to pick one.
+Open **Games** in the studio to pick one.
 
 ### Sprout Hop
 
@@ -178,7 +178,8 @@ A kart racer drawn SNES-style: the map becomes a floor seen in perspective, with
 |---|---|
 | Callbacks | `_init` `_update` `_draw` |
 | Game shell | `game{}` `checkpoint` `game_win` `setting` `mus` `game_play` `GAME.state` (title screen, pause menu, settings: see [GAME_RULES.md](GAME_RULES.md)) |
-| Graphics | `cls pset pget line rect rectfill circ circfill text spr map camera clip pal palt palette` |
+| Graphics | `cls pset pget line rect rectfill circ circfill text spr map camera clip pal palt palette shade` |
+| Tunables | `tune(name, default, min, max)` (a slider on the studio's Game tab, saved with the game) |
 | Map | `mget mset fget fset` |
 | 2.5D | `floor floorh hset hget depth project sspr` (perspective floor from the map, hills, world-to-screen, scaled sprites) |
 | Input | `btn btnp btnr press` |

@@ -2625,7 +2625,8 @@ LEVEL = tune("Rivals", "Normal", {"Easy", "Normal", "Hard"})   -- a list</pre>
       ['clip([x,y,w,h])', 'Only draw inside this rectangle. clip() resets.'],
       ['pal([c0,c1])', 'Draw colour c0 as c1. pal() resets.'],
       ['palt([c,on])', 'Make colour c transparent for sprites and maps. palt() resets (only 0 is transparent).'],
-      ['palette(i,[r,g,b])', 'Read or change palette colour i (0-255 each).']]],
+      ['palette(i,[r,g,b])', 'Read or change palette colour i (0-255 each).'],
+      ['shade([amount])', 'Darken everything drawn so far: 0 changes nothing, 1 is black (default 0.5). Good behind a menu or for night. Only inside clip().']]],
     ['2.5D (perspective floor)', [
       ['floor(x,y,angle,height,horizon,[focal],[outside],[step])', 'Draw the map as a floor seen in perspective, like a classic kart racer. x,y = camera position in world pixels, angle in radians (0 looks toward +x, turning toward +y), height = camera height in pixels, horizon = screen row of the horizon. focal (default 160) is the zoom. outside = colour past the map edge and far away (-1 leaves those pixels alone, so draw the sky first). step 2 draws every other column (faster on the device). Fills the rows below the horizon inside clip().'],
       ['project(x,y,[z])', 'Where world point x,y (z = height above the floor) lands on screen with the last floor() or floorh() camera. Returns sx, sy, scale (screen pixels per world pixel) and dist (how far away it is), or nil if it is behind the camera. Draw far things first.'],

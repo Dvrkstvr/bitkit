@@ -208,9 +208,8 @@ do
     if #line > 0 then lines[#lines + 1] = line end
     return lines
   end
-  local function dim(dense)      -- darken the game behind a menu: an even mesh of dark pixels (finer on the title screen)
-    for d = -240, 318, 2 do line(d, 0, d + 239, 239, 1) end                -- every other pixel, like a checkerboard
-    if dense then for y = 0, 239, 2 do rectfill(0, y, 320, 1, 1) end end   -- 3 of 4 pixels
+  local function dim(dense)      -- darken the game behind a menu (more on the title screen)
+    shade(dense and 0.72 or 0.5)
   end
   local function panel(x, y, w, h)
     rectfill(x, y, w, h, 1)

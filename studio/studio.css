@@ -45,7 +45,7 @@ select { background: var(--panel2); border: 1px solid var(--line); border-radius
 .cartname:hover, .cartname:focus { border-color: var(--line); outline: none; }
 .actions { display: flex; gap: 6px; align-items: center; margin-left: auto; flex-wrap: wrap; }
 
-.layout { flex: 1; display: grid; grid-template-columns: minmax(340px, 660px) 1fr; min-height: 0; }
+.layout { flex: 1; display: grid; grid-template-columns: clamp(340px, 46vw, 660px) minmax(0, 1fr); min-height: 0; }
 .left { display: flex; flex-direction: column; padding: 10px; gap: 6px; border-right: 1px solid var(--line); min-height: 0; }
 .right { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 
@@ -169,8 +169,7 @@ canvas.pix { image-rendering: pixelated; }
   .left { border-right: 0; border-bottom: 1px solid var(--line); }
   .game-wrap { max-width: 640px; margin: 0 auto; }
   .console { max-height: 140px; }
-  .right { min-height: 70vh; }
-  .tab.active { overflow: visible; }
+  .right { height: calc(100vh - 16px); min-height: 460px; }   /* the editors scroll inside their own panel */
   .spr-left { width: 100%; }
   .cartname { width: 120px; }
 }
@@ -374,7 +373,7 @@ body:not(.mode-play) .play-only { display: none !important; }
 .sl-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--line); flex: none; }
 .bit-col.live .sl-dot, #bitCol2 .sl-dot { background: var(--accent); }
 .input-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-height: 26px; }
-.pad-pick { font-size: 12px; max-width: 250px; }
+.pad-pick { font-size: 12px; max-width: min(250px, 100%); min-width: 0; }
 .pad-hint { font-size: 12px; color: var(--dim); }
 .pad-hint.on { color: var(--accent); }
 .pad-hint.wait b { color: var(--text); font-weight: 600; }
