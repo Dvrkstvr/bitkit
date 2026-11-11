@@ -162,6 +162,19 @@ const runtime = require('../studio/runtime.js');
     const r = scenario('puffball: crabs rally', { players: 1, setup: 'start(1) P[1].pl = 0 most = 0', every: 'most = math.max(most, hits)', check: 'most, score[1] + score[2]', at: 3000 });
     if (!(+r[0] >= 4)) fail('puffball: two crabs should manage a rally of 4 touches, got ' + r.join(' '));
   }
+  // the setup screen: each player picks a colour (never one another player has), the net and the puffer can be
+  // changed, A starts the game with them, and New match starts over with the same setup
+  expect('puffball: setup screen', { players: 2, setup: 'go_setup(1)', check: 'state, col[1], col[2], NET_TOP, opt.float, R0, BALL_G < BALL_G0, target', at: 200,
+    input: f => {
+      const p1 = [30, 'right'], seq = { 30: 'right', 40: 'down', 50: 'right', 60: 'down', 70: 'left', 80: 'down', 90: 'right', 100: 'down', 110: 'left', 112: 0, 120: 'a' };
+      const k = seq[f];
+      return [k ? bit(k) : 0, f === 34 ? bit('left') : 0];
+    }, shot: [115, 'puffball-setup'] }, 'play 3 1 134 1 11 true 6');
+  expect('puffball: setup 4 players', { players: 4, setup: 'go_setup(2)', check: 'state', at: 40, shot: [38, 'puffball-setup-4'] }, 'setup');
+  expect('puffball: setup back', { players: 1, setup: 'go_setup(2)', check: 'state, #setup_rows()', at: 60, input: f => [f === 40 ? bit('b') : 0] }, 'pick 4');
+  expect('puffball: new match', { players: 2, setup: 'opt.net = 1 start(1) score = {4, 5}',
+    check: 'score[1], score[2], state, NET_TOP, GAME.state', at: 80,
+    input: f => [f === 30 ? bit('start') : f === 45 ? bit('down') : f === 55 ? bit('a') : 0, 0] }, '0 0 play 164 play');
   mash('puffball: 1 player match', 'start(1)', 1, 3000);
   mash('puffball: 4 players match', 'start(1)', 4, 3000, [400, 'puffball-4-players']);
   mash('puffball: 4 players rally', 'start(2)', 4, 3000);
