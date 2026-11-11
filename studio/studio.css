@@ -279,3 +279,7 @@ button.danger:hover { border-color: var(--err); color: var(--err); }
 body.bit-only .right, body.bit-only .topbar .actions, body.bit-only .console-head, body.bit-only .console, body.bit-only #players, body.bit-only #btnBit, body.bit-only #linkOpen { display: none !important; }
 body.bit-only .layout { grid-template-columns: 1fr; }
 body.bit-only .left { border-right: 0; max-width: 820px; margin: 0 auto; width: 100%; }
+
+/* behavior editor: adding steps should be easy to find */
+.bt-ctl .bt-add { opacity: 1; }
+.bt-head > .bt-ctl:has(.bt-add) { opacity: 1; }
