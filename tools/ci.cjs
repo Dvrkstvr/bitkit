@@ -180,5 +180,21 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
     if (errors.length) { errors.forEach(e => fail('Kart Lab: ' + e)); errors = []; }
   }
 
+  // Kart Lab, race end with your own input: start on the last lap, drive over the line, the autopilot
+  // takes over your kart while the rivals finish, then A goes back to the garage
+  {
+    logs = [];
+    const kd = window.BK_DEMOS.find(d => d.name === 'Kart Lab');
+    const fin = '\nlocal _sr = start_race\nfunction start_race() _sr() player.lap = LAPS end\nlocal _u = _update\nfunction _update() local m = mode _u() if m ~= mode then print("mode", mode) end end';
+    if (M._bkw_load(s(kd.code + fin)) !== 0) fail('Kart Lab (finish) did not load');
+    for (let f = 0; f < 1500; f++) {
+      const mask = f === 10 ? 1 << 4 : (f > 200 && f < 1000 ? 1 << 9 : 0) | (f === 1400 ? 1 << 4 : 0);
+      if (M._bkw_frame(mask, 0)) { fail('Kart Lab (finish) stopped at frame ' + f); break; }
+    }
+    const modes = logs.filter(x => x.startsWith('mode')).map(x => x.split(/\s+/)[1]).join(',');
+    if (modes !== 'count,race,results,garage') fail('Kart Lab race end: modes ' + modes + ' (expected count,race,results,garage)');
+    if (errors.length) { errors.forEach(e => fail('Kart Lab finish: ' + e)); errors = []; }
+  }
+
   if (!process.exitCode) console.log('ok: runtime checks, home screen, 3000 demo frames, level switching, cutscenes, save data, multiplayer, 2.5D floor and Kart Lab passed');
 });

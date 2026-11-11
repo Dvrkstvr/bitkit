@@ -12717,7 +12717,8 @@ function new_kart(b, e, ty, p, ai)
   local k = {body=b, eng=e, tyre=ty, paint=p, ai=ai, st=s,
     name=PAINTS[p].name .. " " .. BODIES[b].name,
     x=0, y=0, a=0, vx=0, vy=0, fwd=0, drift=0, charge=0, boost=0, steer_vis=0,
-    lap=0, wp=1, half=true, done=false, time=0, best=nil, lapt=0, bump=0, terr=1}
+    lap=0, wp=1, half=true, done=false, time=0, best=nil, lapt=0, bump=0, terr=1,
+    skill=0.95, lane=0, lane_want=0}   -- the autopilot fields are used by rivals, and by your kart after the finish
   k.top    = 2.35 + s.speed * 0.105
   k.acc    = 0.018 + s.accel * 0.007
   k.grip   = 0.07 + s.grip * 0.03
