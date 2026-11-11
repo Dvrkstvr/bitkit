@@ -634,6 +634,10 @@ body.bit-only .right, body.bit-only .topbar .actions, body.bit-only .console-hea
 body.bit-only .layout { grid-template-columns: 1fr; }
 body.bit-only .left { border-right: 0; max-width: 820px; margin: 0 auto; width: 100%; }
 
+/* behavior editor: adding steps should be easy to find */
+.bt-ctl .bt-add { opacity: 1; }
+.bt-head > .bt-ctl:has(.bt-add) { opacity: 1; }
+
 </style>
 </head>
 <body>
@@ -12592,6 +12596,7 @@ window.BKEntities = (function () {
       node('anim', { name: 'idle' })]),
     'Cutscene trigger (invisible zone)': () => node('sequence', {}, [node('touching', { what: 'player' }), node('cutscene', { once: true })]),
     'Exit (go to next level)': () => node('sequence', {}, [node('touching', { what: 'player' }), node('sound', { note: 'C6', wave: 4 }), node('level', { n: 2 })]),
+    'Disappear after a while': () => node('sequence', {}, [node('wait', { frames: 90 }), node('remove')]),
     'Projectile (no behavior)': () => null,
   };
 
@@ -13000,11 +13005,13 @@ window.BKEntities = (function () {
       head.innerHTML = `<span class="bt-tag">${{ Flow: '◆', Check: '?', Sense: '◎', Do: '▶' }[meta.g]}</span>
         <span class="bt-params"><select class="bt-type" title="${escapeHtml(meta.help || '')}">${typeOptions(n.t)}</select>
         ${(meta.p || []).map(pp => paramInput(n, pp, t)).join('')}</span>
-        <span class="bt-ctl">${meta.kids ? '<button class="tiny bt-add" title="Add a step inside">+ step</button>' : ''}${parent ? '<button class="tiny bt-up" title="Move up">↑</button><button class="tiny bt-down" title="Move down">↓</button><button class="tiny bt-del" title="Delete step">✕</button>' : ''}</span>`;
+        <span class="bt-ctl">${meta.kids ? '<button class="tiny bt-add" title="Add a step inside">+ step</button>' : ''}${parent ? '<button class="tiny bt-after" title="Add a step below this one">+ below</button><button class="tiny bt-up" title="Move up">↑</button><button class="tiny bt-down" title="Move down">↓</button><button class="tiny bt-del" title="Delete step">✕</button>' : ''}</span>`;
       el.appendChild(head);
       head.querySelector('.bt-type').onchange = e => {
-        const nn = node(e.target.value);
+        let nn = node(e.target.value);
         if (nn.c && n.c) nn.c = NODES[nn.t].kids === 'one' ? n.c.slice(0, 1) : n.c;
+        // the top of a behavior always holds steps: picking a single step there puts it inside "Do in order"
+        if (!parent && !nn.c) { nn = node('sequence', {}, [nn].concat(n.c || [])); toast('Put it inside "Do in order". Use + step to add more.'); }
         if (parent) parent.c[idx] = nn; else t.tree = nn;
         changed(); renderTree();
       };
@@ -13021,6 +13028,10 @@ window.BKEntities = (function () {
         n.c.push(node(n.c.length ? 'patrol' : 'near')); changed(); renderTree();
       };
       if (parent) {
+        head.querySelector('.bt-after').onclick = () => {
+          if (NODES[parent.t].kids === 'one') return toast('"Not" holds one step');
+          parent.c.splice(idx + 1, 0, node(meta.g === 'Do' ? 'wait' : 'patrol')); changed(); renderTree();
+        };
         head.querySelector('.bt-up').onclick = () => { if (idx > 0) { [parent.c[idx - 1], parent.c[idx]] = [parent.c[idx], parent.c[idx - 1]]; changed(); renderTree(); } };
         head.querySelector('.bt-down').onclick = () => { if (idx < parent.c.length - 1) { [parent.c[idx + 1], parent.c[idx]] = [parent.c[idx], parent.c[idx + 1]]; changed(); renderTree(); } };
         head.querySelector('.bt-del').onclick = () => { parent.c.splice(idx, 1); changed(); renderTree(); };
@@ -13042,7 +13053,7 @@ window.BKEntities = (function () {
       if (!t) return;
       if (!t.tree) {
         treeEl.innerHTML = '<div class="dim small">No behavior: it only moves if something pushes it (good for projectiles). <button class="tiny" id="entTreeStart">Add behavior</button></div>';
-        $('entTreeStart').onclick = () => { t.tree = node('selector', {}, []); changed(); renderTree(); };
+        $('entTreeStart').onclick = () => { t.tree = node('sequence', {}, []); changed(); renderTree(); };
         return;
       }
       treeEl.appendChild(nodeEl(t.tree, null, 0, t));
@@ -13063,7 +13074,7 @@ window.BKEntities = (function () {
     return { render, refreshGfx() { if (ctx.isActive()) { renderList(); renderAnims && cur() && renderAnims(); drawSheet(); } } };
   }
 
-  return { init, toLua, newType, newEffect, node, NODES };
+  return { init, toLua, newType, newEffect, node, NODES, PRESETS };
 })();
 
 </script>

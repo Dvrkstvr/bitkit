@@ -88,6 +88,19 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
   // playing level 2 from the start
   for (let f = 0; f < 1500; f++) if (frame((1 << 1) | ((f % 30) < 12 ? 1 << 4 : 0))) { fail('level 2 stopped at frame ' + f); break; }
 
+  // a behavior with several steps: a pebble that waits, then removes itself
+  {
+    logs = [];
+    const ents = JSON.parse(JSON.stringify(cart.entities));
+    ents.types.find(t => t.name === 'pebble').tree = window.BKEntities.PRESETS['Disappear after a while']();
+    ents.types.find(t => t.name === 'pebble').tree.c[0].p.frames = 6;
+    M.HEAPU16.set(levels[0].map, M._bkw_map() >> 1);
+    M._bkw_load_ex(s(window.BKEntities.toLua(ents, meta, 0)), s(window.BK_DEMO.code + '\nlocal _u = _update\nfunction _update() _u() if t() == 15 then print("peb", #ents_all("pebble")) end if t() == 22 then print("peb", #ents_all("pebble")) end end'));
+    for (let f = 0; f < 24; f++) frame(f === 3 ? 1 << 10 : f >= 8 && f <= 10 ? 1 << 0 : f === 12 ? 1 << 5 : 0);   // skip intro, face left (away from the sage), throw
+    const pb = logs.filter(l => l.startsWith('peb')).map(l => +l.split(/\s+/)[1]);
+    if (pb[0] !== 1 || pb[1] !== 0) fail('pebble with Wait + Remove self: ' + pb.join(',') + ' (expected 1 then 0)');
+  }
+
   // two players sharing one screen: player 2 gets its own sprout, driven by its own pad
   {
     logs = [];
