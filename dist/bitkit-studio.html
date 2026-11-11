@@ -13952,6 +13952,8 @@ end
 --   L / R: pick seeds     X: your bag     Y: look at what is in front of you     Start: pause
 -- South of the fields lies the pasture. Mend the hen house and the goat shed with wood, fibre and stone, buy
 -- hens and goats from Marrow, fill the trough from your bag, pet them, gather eggs and milk the goats by hand.
+-- The old mine in the woods opens with a pickaxe. Its floors are new every day: break rocks for stone and ore,
+-- find the ladder down. From floor 4 things live in the dark. The mill's stone lies at the very bottom.
 -- The farm is kept with save(). clock() tells how long the Bit was off: the farm lives on while you are
 -- away (a few days at most), and anything you watered keeps growing.
 
@@ -13984,6 +13986,11 @@ FOUND = {
   { key = "bigegg", name = "Big egg", sell = 42, spr = 164 },
   { key = "milk", name = "Goat milk", sell = 34, spr = 166 },
   { key = "cream", name = "Creamy milk", sell = 70, spr = 168 },
+  { key = "copper", name = "Copper ore", sell = 16, spr = 266 },
+  { key = "iron", name = "Iron ore", sell = 38, spr = 268 },
+  { key = "glow", name = "Glowstone", sell = 110, spr = 270 },
+  { key = "dust", name = "Gloom dust", sell = 14, spr = 288 },
+  { key = "millstone", name = "Millstone", spr = 290, mat = true },
   { key = "wood", name = "Wood", spr = 104, mat = true },
   { key = "stone", name = "Stone", spr = 106, mat = true },
   { key = "fibre", name = "Fibre", spr = 108, mat = true },
@@ -13999,7 +14006,7 @@ BAG = { 16, 40, 100 }
 MILL = {
   { name = "Raise the frame", coins = 250, need = { wood = 16, stone = 12 }, crops = 0 },
   { name = "Sew the sails", coins = 1200, need = { fibre = 40 }, crops = 40 },
-  { name = "Set the millstone", coins = 4000, need = { stone = 30 }, crops = 120 },
+  { name = "Set the millstone", coins = 4000, need = { stone = 30, millstone = 1 }, crops = 120 },
 }
 
 -- what you can mend in the pasture, and who lives there
@@ -14067,13 +14074,21 @@ WOODS = {
   "T..............:.T.......T",
   "TTTTTTTTTTTTTTTSTTTTTTTTTT",
 }
-AREAS = { { name = "Windrow", map = FARM }, { name = "Bramble Woods", map = WOODS } }
+AREAS = { { name = "Windrow", map = FARM }, { name = "Bramble Woods", map = WOODS }, { name = "The Old Mine", w = 20, h = 15, free = {} } }
+MINE_FLOORS = 10
+-- rocks in the mine: hits to break, what falls out, and from which floor on they turn up
+ROCKS = {
+  R = { hits = 2, spr = 228 },
+  C = { hits = 3, spr = 230, drop = "copper", from = 1 },
+  I = { hits = 4, spr = 232, drop = "iron", from = 4 },
+  Q = { hits = 5, spr = 234, drop = "glow", from = 7 },
+}
 PLOTS = {
   { x = 3, y = 8, w = 10, h = 6, name = "Home plot" },
   { x = 17, y = 8, w = 10, h = 6, name = "East meadow", cost = 350 },
   { x = 4, y = 15, w = 22, h = 5, name = "Long acre", cost = 1200 },
 }
-SOLID = "TB~hcWNmXMoStFkgr"
+SOLID = "TB~hcWNmXMoStFkgr#RCIQ<>H"
 
 function hash(x, y, s)
   local n = (x * 374761393 + y * 668265263 + s * 982451653) & 0x7fffffff
@@ -14085,6 +14100,7 @@ function fl(v) return math.floor(v) end
 
 function build_world()
   for ai, A in ipairs(AREAS) do
+    if not A.map then break end
     A.h, A.w = #A.map, #A.map[1]
     A.free = {}
     for y = 0, A.h - 1 do
@@ -14096,6 +14112,7 @@ function build_world()
   end
 end
 function tile(a, x, y)
+  if a == 3 then return MINE and MINE[y] and MINE[y][x] or "#" end
   local A = AREAS[a]
   if y < 0 or y >= A.h then return "B" end
   x = clamp(x, 0, A.w - 1)                      -- the road runs off the edge of the map
@@ -14206,6 +14223,159 @@ function new_day()
   grow_forage()
   animals_night()
   return grew
+end
+
+-- ---------------------------------------------------------------- the mine
+-- A floor is 20 x 15 and new every day. Pillars (#) only stand on even cells, so they never wall anything in;
+-- everything else in the way can be broken. The ladder down hides under one of the rocks.
+function mine_floor(n)
+  MINE, MOBS, mine_n = {}, {}, n
+  local seed = n * 31 + G.day * 7
+  local far, fx, fy = -1, 10, 7
+  for y = 0, 14 do
+    MINE[y] = {}
+    for x = 0, 19 do
+      local r, ch = hash(x, y, seed), "."
+      if x == 0 or y == 0 or x == 19 or y == 14 then ch = "#"
+      elseif x % 2 == 0 and y % 2 == 0 and r < 260 then ch = "#"
+      elseif x + y <= 4 then ch = "."
+      elseif r < 420 then ch = "R"
+      elseif r < 420 + 70 then ch = "C"
+      elseif r < 490 + 45 and n >= ROCKS.I.from then ch = "I"
+      elseif r < 535 + 25 and n >= ROCKS.Q.from then ch = "Q" end
+      MINE[y][x] = ch
+      if ch == "R" then
+        local d = x + y + hash(x, y, seed + 1) % 9
+        if d > far then far, fx, fy = d, x, y end
+      end
+    end
+  end
+  MINE[1][1] = "<"
+  mine_down = n < MINE_FLOORS and { x = fx, y = fy } or nil
+  if n == MINE_FLOORS then MINE[7][10] = "H" end
+  -- the things that live below floor 3
+  for i = 1, math.max(0, n - 3) do
+    for try = 1, 20 do
+      local x, y = 4 + hash(i, try, seed + 2) % 15, 3 + hash(try, i, seed + 3) % 11
+      if MINE[y][x] == "." then
+        MOBS[#MOBS + 1] = { x = x * C + 8, y = y * C + 12, hp = n >= 8 and 3 or 2, bat = (i + n) % 3 == 0, hit = 0 }
+        break
+      end
+    end
+  end
+  G.deep = math.max(G.deep, n)
+  px, py, dx, dy = 2 * C + 8, 1 * C + 14, 0, 1
+end
+function enter_mine(n)
+  fade, fade_fn = 1, function()
+    G.area, mine_hp, hurt_t = 3, 3, 0
+    mine_floor(n)
+  end
+end
+function leave_mine()
+  fade, fade_fn = 1, function() G.area, px, py, dx, dy = 2, 11 * C + 8, 2 * C + 14, 0, 1 end
+end
+function mob_at(x, y)
+  local cx, cy = x * C + 8, y * C + 10
+  for i, m in ipairs(MOBS) do
+    if (m.x - cx) ^ 2 + (m.y - 4 - cy) ^ 2 < 14 * 14 then return i end
+  end
+end
+function mine_hands(x, y)
+  local i = mob_at(x, y) or mob_at(fl(px / C), fl((py - 4) / C))
+  if i then
+    local m = MOBS[i]
+    m.hp, m.hit = m.hp - 1, 12
+    if not blocked(m.x + dx * 10, m.y + dy * 10) then m.x, m.y = m.x + dx * 10, m.y + dy * 10 end
+    swing("chop")
+    sfx("A2", 3, 0.3, 5)
+    if m.hp <= 0 then
+      table.remove(MOBS, i)
+      if give("dust", 1) then float("+1 Gloom dust") end
+      sfx("C4", 2, 0.3, 10, -1, 0, -400)
+    end
+    return
+  end
+  local ch = tile(3, x, y)
+  local R = ROCKS[ch]
+  if R then
+    mine_hits = (mine_at == x + y * 20) and mine_hits + 1 or 1
+    mine_at = x + y * 20
+    swing("chop")
+    sfx(R.drop and "C4" or "A3", 3, 0.3, 5)
+    if mine_hits >= R.hits then
+      if R.drop and not give(R.drop, 1) then mine_hits = R.hits - 1 return end
+      if R.drop then float("+1 " .. FOUND_BY[R.drop].name)
+      elseif hash(x, y, G.day) < 350 then give("stone", 1) float("+1 Stone") end
+      MINE[y][x] = (mine_down and mine_down.x == x and mine_down.y == y) and ">" or "."
+      if MINE[y][x] == ">" then say("A ladder, leading down!") sfx("E5", 1, 0.3, 6) sfx("A5", 1, 0.3, 12) end
+      mine_at = nil
+    end
+  elseif ch == "<" then
+    if mine_n == 1 then leave_mine() else enter_floor(mine_n - 1) end
+  elseif ch == ">" then enter_floor(mine_n + 1)
+  elseif ch == "H" then
+    if G.gotms == 1 then say("The chest is empty. You already carried the millstone home.") return end
+    G.gotms = 1
+    give("millstone", 1)
+    give("glow", 2)
+    say("The old millstone of Windrow! And two glowstones beside it. Take it to the mill.")
+    sfx("C5", 1, 0.3, 8) sfx("E5", 1, 0.3, 14) sfx("G5", 1, 0.3, 22)
+    persist()
+  elseif ch == "#" then say("Solid rock. No pickaxe gets through this.") end
+end
+function enter_floor(n)
+  fade, fade_fn = 1, function() mine_floor(n) end
+end
+function update_mobs()
+  if hurt_t > 0 then hurt_t = hurt_t - 1 end
+  local reach = (G.lamp == 1 and 7 or 5) * C
+  for i, m in ipairs(MOBS) do
+    if m.hit > 0 then m.hit = m.hit - 1 end
+    local ex, ey = px - m.x, py - m.y
+    local d = math.sqrt(ex * ex + ey * ey)
+    if d < reach and d > 1 and m.hit == 0 then
+      local sp = (m.bat and 0.75 or 0.45) + mine_n * 0.02
+      local nx, ny = m.x + ex / d * sp, m.y + ey / d * sp
+      if m.bat then m.x, m.y = nx, ny
+      else
+        if not blocked(nx, m.y) then m.x = nx end
+        if not blocked(m.x, ny) then m.y = ny end
+      end
+    end
+    if d < 9 and hurt_t == 0 then
+      mine_hp, hurt_t = mine_hp - 1, 90
+      sfx("E3", 2, 0.4, 12, -1, 0, -200)
+      float("ouch!", 26)
+      if not blocked(px - ex / d * 8, py - ey / d * 8) and d > 0 then px, py = px - ex / d * 8, py - ey / d * 8 end
+      if mine_hp <= 0 then
+        -- you come round in your own bed, lighter by half the ore you carried
+        for _, k in ipairs({ "copper", "iron", "glow", "dust" }) do
+          if have(k) > 0 then G.inv[k] = have(k) - have(k) // 2 end
+        end
+        sleep()
+        say("Everything went dark. Marrow carried you home. Half your ore is gone.")
+        return
+      end
+    end
+  end
+end
+function mine_door()
+  if G.mine == 0 then
+    if G.pick == 0 then say("The old mine. Boarded up, and the boards are nailed fast. A pickaxe might pry them off.") return end
+    G.mine = 1
+    say("You pry the boards off with the pickaxe. Cold air blows out of the dark.")
+    sfx("E3", 3, 0.3, 8) sfx("C3", 3, 0.3, 14)
+    persist()
+    return
+  end
+  if G.deep >= 5 then ui, ui_sel = "lift", 1 else enter_mine(1) end
+end
+function lift_floors()
+  local L = { 1 }
+  if G.deep >= 5 then L[#L + 1] = 5 end
+  if G.deep >= 9 then L[#L + 1] = 9 end
+  return L
 end
 
 -- ---------------------------------------------------------------- animals
@@ -14340,12 +14510,14 @@ function fresh()
   return { v = 1, coins = 0, day = 1, clk = 0, area = 1, px = 8 * C + 8, py = 4 * C + 14, sel = 1,
     seeds = { 4, 0, 0, 0, 0, 0, 0, 0, 0 }, inv = {}, bag = 1, hoe = 1, can = 1, water = 5, pick = 0, axe = 0,
     plots = { true, false, false }, mill = 0, millc = 0, rain = false, demand = 1, tins = "00",
-    sold = 0, picked = 0, grown = 0, coop = 0, shed = 0, pail = 0, feed = 0, an = {} }
+    sold = 0, picked = 0, grown = 0, mine = 0, deep = 0, lamp = 0, gotms = 0, coop = 0, shed = 0, pail = 0, feed = 0, an = {} }
 end
 
 function persist()
   if PLAYERS > 1 then return end
   G.px, G.py = fl(px), fl(py)
+  local in_mine = G.area == 3
+  if in_mine then G.area, G.px, G.py = 2, 11 * C + 8, 2 * C + 14 end      -- a save made underground wakes at the mine door
   G.f = {}
   for p = 1, #PLOTS do G.f[p] = pack_plot(FIELD[p]) end
   local out = {}
@@ -14353,6 +14525,7 @@ function persist()
   G.forage = table.concat(out, ";")
   G.ts = clock()
   save(G)
+  if in_mine then G.area = 3 end
 end
 
 function load_farm()
@@ -14375,8 +14548,9 @@ function load_farm()
   else
     grow_forage()
   end
-  G.area = clamp(G.area, 1, #AREAS)
+  G.area = clamp(G.area, 1, 2)
   px, py = G.px, G.py
+  MINE, MOBS, mine_n, mine_hp, hurt_t, mine_hits, mine_at = nil, {}, 0, 3, 0, 0, nil
   ANIM = nil
   place_animals()
   -- while the Bit was off: the farm carries on, a few days at most
@@ -14411,6 +14585,7 @@ function _init()
       "B: water. Fill up at a pond. L / R: pick seeds. X: your bag. Y: look closer.",
       "Watered crops grow overnight. Sleep in the hut, sell at the crate, shop at the wagon.",
       "Bramble Woods lies west along the road. Bring what the mill needs to the ruin.",
+      "The mine in the woods opens with a pickaxe. Break rocks for ore, find the ladder down. A also hits.",
       "The pasture is south of the fields. Fill the trough from your bag, pet your animals every day.",
     },
     music = true,
@@ -14504,6 +14679,7 @@ function swing(kind) act, act_kind = 14, kind end
 function use_hands()
   local x, y = facing()
   local a = G.area
+  if a == 3 then mine_hands(x, y) return end
   local o, oi = forage_at(a, x, y)
   if not o then o, oi = forage_at(a, fl(px / C), fl((py - 4) / C)) end
   if o then
@@ -14534,7 +14710,7 @@ function use_hands()
   if ch == "W" or ch == "N" then ui, ui_sel, ui_scroll = "shop", 1, 0 return end
   if ch == "m" then ui, ui_sel = "mill", 1 return end
   if ch == "X" then say("The road to Tallow Bridge is washed out. Maybe one day.") return end
-  if ch == "M" then say("The old mine. Boarded up, and the boards are nailed fast.") return end
+  if ch == "M" then mine_door() return end
   if ch == "S" then say("A fallen pine blocks the path down to the shore.") return end
   if ch == "o" then say("A standing stone, older than the valley. It hums a little.") return end
   if ch == "t" then
@@ -14670,6 +14846,7 @@ function shop_items()
   once("Pack", 600, "Carry 100 things.", G.bag == 2, function() G.bag = 3 end)
   once("Pickaxe", 150, "Breaks the stones on your land.", G.pick == 0, function() G.pick = 1 end)
   once("Axe", 150, "Splits the old stumps on your land.", G.axe == 0, function() G.axe = 1 end)
+  once("Lantern", 180, "Lights more of the mine around you.", G.mine == 1 and G.lamp == 0, function() G.lamp = 1 end)
   once("Hen", 120, "Lays an egg a day when fed. Pet her for bigger eggs.", G.coop == 1 and herd("h") < 4, function() add_animal("h") end)
   once("Goat", 350, "Gives milk every day when fed. Loved goats give creamy milk.", G.shed == 1 and herd("g") < 2, function() add_animal("g") end)
   once("Milk pail", 50, "You can't milk a goat into your hat.", G.shed == 1 and G.pail == 0, function() G.pail = 1 end)
@@ -14779,6 +14956,13 @@ function _update()
   if ui == "shop" then update_shop() return end
   if ui == "mill" then update_mill() return end
   if ui == "build" then update_build() return end
+  if ui == "lift" then
+    local L = lift_floors()
+    if btnp("up") then ui_sel = (ui_sel - 2) % #L + 1 end
+    if btnp("down") then ui_sel = ui_sel % #L + 1 end
+    if btnp("a") then ui = nil; enter_mine(L[ui_sel]) elseif btnp("b") then ui = nil end
+    return
+  end
   if ui == "bag" then if btnp("b") or btnp("x") or btnp("a") then ui = nil end return end
   if ui == "report" then if btnp("a") or btnp("b") then ui = nil end return end
   if ui == "sleep" then
@@ -14794,6 +14978,10 @@ function _update()
     return
   end
   if G.area == 1 then update_animals() end
+  if G.area == 3 then
+    update_mobs()
+    if fade > 0 then return end
+  end
   save_t = save_t + 1
   if save_t >= 1200 then save_t = 0; persist() end
 
@@ -15008,7 +15196,47 @@ function season_pal(tree)
   end
 end
 
+-- the mine fits the screen. You only see what your lamp reaches.
+function draw_cave()
+  camx, camy = 0, 0
+  camera(0, 0)
+  local R = G.lamp == 1 and 7.5 or 5
+  local pcx, pcy = px / C - 0.5, (py - 6) / C - 0.5
+  local prow = fl((py - 1) / C)
+  for y = 0, 14 do
+    for x = 0, 19 do
+      local d = math.sqrt((x - pcx) ^ 2 + (y - pcy) ^ 2)
+      if d < R then
+        local ch, sx, sy = MINE[y][x], x * C, y * C
+        if d > R - 1.6 then pal(29, 28) pal(28, 30) pal(30, 31) pal(31, 1) pal(7, 6) pal(8, 7) pal(9, 7) pal(27, 9) pal(10, 8) pal(22, 20) pal(23, 21) pal(13, 28) pal(17, 15) pal(16, 14) end
+        spr(ch == "#" and 226 or 224, sx, sy, 2, 2)
+        if ROCKS[ch] then
+          local sh = (mine_at == x + y * 20 and act > 7) and 1 or 0
+          spr(ROCKS[ch].spr, sx + sh, sy, 2, 2)
+        elseif ch == "<" then spr(236, sx, sy, 2, 2)
+        elseif ch == ">" then spr(238, sx, sy, 2, 2)
+        elseif ch == "H" then spr(256, sx, sy, 2, 2) end
+        pal()
+      end
+    end
+    for _, m in ipairs(MOBS) do
+      if fl((m.y - 1) / C) == y and math.sqrt((m.x / C - 0.5 - pcx) ^ 2 + (m.y / C - 1 - pcy) ^ 2) < R then
+        local bob = m.bat and fl(math.sin(t() / 6) * 3) - 6 or (t() // 12 % 2)
+        if m.hit > 0 then pal(13) end
+        circfill(fl(m.x), fl(m.y) - 1, 4, 1)
+        spr(m.bat and (260 + t() // 8 % 2 * 2) or 258, fl(m.x) - 8, fl(m.y) - 15 + bob, 2, 2, px < m.x)
+        pal()
+      end
+    end
+    if y == prow and (hurt_t == 0 or t() % 6 < 3) then draw_farmer(fl(px), fl(py)) end
+  end
+  local fx, fy = facing()
+  if not ui and fade == 0 and ROCKS[tile(3, fx, fy)] then rect(fx * C, fy * C, 16, 16, 27) end
+  for _, f in ipairs(floats) do text(f.s, fl(f.x - #f.s * 4), fl(f.y), f.c) end
+end
+
 function draw_world()
+  if G.area == 3 then draw_cave() return end
   local a, A = G.area, AREAS[G.area]
   camx = fl(clamp(px - 160, 0, A.w * C - 320))
   camy = fl(clamp(py - 128, -12, A.h * C - 240))
@@ -15110,6 +15338,7 @@ function draw_world()
 end
 
 function draw_weather()
+  if G.area == 3 then return end
   local h = hour()
   if G.rain then
     local snow = season() == 4
@@ -15138,6 +15367,7 @@ function wrap(s, n)
 end
 
 function next_step()
+  if G.area == 3 then return nil end
   if G.day > 4 or G.grown >= 6 then return nil end
   local dug, planted, dry, ready = 0, 0, 0, 0
   for i, f in ipairs(FIELD[1]) do
@@ -15165,7 +15395,11 @@ function draw_hud()
   local h = hour()
   text(string.format("%02d:%02d", fl(h), fl(h % 1 * 6) * 10), 92, 2, h > 20 and 26 or 13)
   if G.rain then text(season() == 4 and "snow" or "rain", 144, 2, 22) end
-  if AREAS[G.area].name ~= "Windrow" then text("Woods", 190, 2, 17) end
+  if G.area == 2 then text("Woods", 190, 2, 17) end
+  if G.area == 3 then
+    text("Mine " .. mine_n, 152, 2, 29)
+    for i = 1, 3 do spr(292, 204 + i * 12, -2, 2, 2) if i > mine_hp then rectfill(208 + i * 12, 2, 8, 8, 6) rect(209 + i * 12, 3, 6, 6, 30) end end
+  end
   local cs = tostring(G.coins)
   circfill(308 - #cs * 8 - 8, 6, 3, 27) circ(308 - #cs * 8 - 8, 6, 3, 10)
   text(cs, 312 - #cs * 8, 2, 27)
@@ -15245,6 +15479,7 @@ function draw_mill_ui()
   if G.millc < M.crops and crops_in_bag() > 0 then s = "A: hand over crops   B: back"
   elseif mill_ready() then s = "A: build it!   B: back" end
   text(s, 40, 182, 11)
+  if G.mill == 2 and have("millstone") == 0 then text("The millstone is lost somewhere", 40, 146, 28) text("at the bottom of the old mine.", 40, 156, 28) end
   if G.mill == 0 then text("Wood: stumps and sticks.", 40, 146, 28) text("Stone: stones and pebbles.", 40, 156, 28) end
 end
 
@@ -15285,6 +15520,15 @@ function _draw()
   elseif ui == "bag" then draw_bag()
   elseif ui == "mill" then draw_mill_ui()
   elseif ui == "build" then draw_build()
+  elseif ui == "lift" then
+    local L = lift_floors()
+    panel(70, 70, 180, 100, "The old mine")
+    text("The winch still works.", 80, 88, 12)
+    for i, n in ipairs(L) do
+      if i == ui_sel then rectfill(76, 98 + i * 12, 168, 12, 8) end
+      text("Floor " .. n, 84, 100 + i * 12, i == ui_sel and 27 or 13)
+    end
+    text("A: go down   B: back", 80, 156, 11)
   elseif ui == "report" then draw_report()
   elseif ui == "sleep" then
     panel(60, 90, 200, 60, "The hut")
@@ -15409,6 +15653,21 @@ end
     196: ['................', '................', '...........d.d..', '..........dAAAd.', '..........A1AAA.', '.........AAAAAs.',
           '..AAAAAAAAAAA...', '.AAWWWWWWAAA....', '.AWWWWWWWWAw....', '.AWWWWWWWWA.....', '.AAWWWWWWAA.....', '..AAAAAAAA......',
           '..d..d..d..d....', '.d...d.d...d....', '.n...n.n...n....', '................'],
+    256: ['................', '................', '................', '................', '..nnnnnnnnnnnn..', '.nBBBBBBBBBBBBn.',
+          '.nBOOOOOOOOOOBn.', '.nBBBBBYYBBBBBn.', '.nnnnnnYYnnnnnn.', '.nBBBBBYYBBBBBn.', '.nBOBBBBBBBBOBn.', '.nBBBBBBBBBBBBn.',
+          '.nBBBBBBBBBBBBn.', '.nnnnnnnnnnnnnn.', '................', '................'],   // chest
+    258: ['................', '................', '................', '................', '.....pppppp.....', '....pPPPPPPp....',
+          '...pPPPPPPPPp...', '...pPWWPPWWPp...', '..pPPW1PPW1PPp..', '..pPPPPPPPPPPp..', '..pPPP1111PPPp..', '..pPPPPPPPPPPp..',
+          '..ppPPPPPPPPpp..', '..p.pp.pp.pp.p..', '................', '................'],   // gloomling
+    260: ['................', '................', '................', '.1............1.', '.11....11....11.', '.1p1..1pp1..1p1.',
+          '.1pp11pppp11pp1.', '..1ppppRpRppp1..', '...1pppppppp1...', '....11pppp11....', '......1pp1......', '.......11.......',
+          '................', '................', '................', '................'],   // bat, wings up
+    262: ['................', '................', '................', '................', '.......11.......', '......1pp1......',
+          '..1111pRpR1111..', '.1ppppppppppp1..', '.1pp11pppp11pp1.', '.1p1..1pp1..1p1.', '.11....11....11.', '.1............1.',
+          '................', '................', '................', '................'],   // bat, wings down
+    292: ['................', '................', '................', '................', '....rr..rr......', '...rRRrrRRr.....',
+          '...rRWRRRRr.....', '...rRRRRRRr.....', '....rRRRRr......', '.....rRRr.......', '......rr........', '................',
+          '................', '................', '................', '................'],   // heart
     140: ['................', '.....pppppp.....', '....pPPPPPPp....', '....pPppppPp....', '....psssssss....', '....ps1ss1ss....',
           '....pssssss.....', '.....ssmmss.....', '....RRRRRRRR....', '...sRRwRRwRRs...', '...sRRRRRRRRs...', '....RRRRRRRR....',
           '....RRRRRRRR....', '...RRRRRRRRRR...', '.....nn..nn.....', '................'],   // Marrow the trader
@@ -15435,6 +15694,36 @@ end
       put(46, x, y, ((x + (y >> 2)) % 4 === 0 && y % 4 !== 3) ? 17 : r < 250 ? 14 : 15);           // wild grass, not yours yet
       put(72, x, y, r < 70 ? 18 : r < 420 ? 17 : 16);                    // pasture
       put(70, x, y, r < 30 ? 4 : r < 200 ? 16 : ((x ^ y) & 3) === 0 ? 14 : r < 600 ? 15 : 14);     // brambles
+    }
+    // the mine: floor, wall, rocks with ore, ladders, and what you carry out
+    const blob = (n, speck, hi) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+      const d = Math.hypot(x - 7.5, (y - 8.5) * 1.15) + (rnd(x >> 1, y >> 1, n) % 3) * 0.5;
+      if (d > 7.2) continue;
+      let c = d > 6.2 ? 31 : (x + y < 13 ? 29 : y > 11 ? 30 : 28);
+      if (speck && rnd(x >> 1, y >> 1, n + 9) < 230 && d < 5.5) c = ((x + y) & 1) ? speck : hi;
+      put(n, x, y, c);
+    } };
+    for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+      const r = rnd(x, y, 21);
+      put(224, x, y, r < 60 ? 30 : r < 130 ? 6 : 31);                                              // cave floor
+      put(226, x, y, (y % 8 === 7 || (x + (y >> 3) * 4) % 8 === 7) ? 1 : r < 150 ? 30 : 28);       // wall
+      put(236, x, y, 0); { const d = Math.hypot(x - 7.5, y - 8); put(238, x, y, d < 6 ? 0 : d < 7.5 ? 29 : 0); if (d < 6) put(238, x, y, 1); }
+    }
+    blob(228); blob(230, 9, 10); blob(232, 11, 29); blob(234, 22, 23);
+    for (const n of [236, 238]) for (let y = 1; y < 15; y++) {
+      put(n, 4, y, 8); put(n, 11, y, 8); put(n, 5, y, 7); put(n, 12, y, 7);
+      if (y % 3 === 1) for (let x = 5; x < 12; x++) put(n, x, y, 9);
+    }
+    const nugget = (n, c, hi) => [[5, 9, 3], [10, 8, 3.2], [8, 11, 2.6]].forEach(([cx, cy, rr]) => {
+      for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+        const d = Math.hypot(x - cx, y - cy);
+        if (d <= rr) put(n, x, y, d > rr - 1 ? 31 : (x < cx && y < cy) ? hi : c);
+      }
+    });
+    nugget(266, 9, 10); nugget(268, 28, 29); nugget(270, 21, 23); nugget(288, 3, 5);
+    for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {                                    // the millstone
+      const d = Math.hypot(x - 7.5, y - 8);
+      if (d < 7) put(290, x, y, d > 6 ? 30 : d < 1.5 ? 1 : (Math.abs(x - 7.5) < 0.6 || Math.abs(y - 8) < 0.6) ? 28 : 29);
     }
     [[3, 4, 13], [4, 3, 27], [4, 5, 27], [5, 4, 27], [4, 4, 10], [11, 10, 13], [12, 9, 26], [12, 11, 26], [13, 10, 26], [12, 10, 27]]
       .forEach(([x, y, c]) => put(34, x, y, c));
