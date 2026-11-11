@@ -208,10 +208,9 @@ do
     if #line > 0 then lines[#lines + 1] = line end
     return lines
   end
-  local function dim(dense)      -- darken the game behind a menu (2 of 3 lines on the title screen)
-    for y = 0, 239 do
-      if y % 2 == 0 or (dense and y % 3 ~= 2) then rectfill(0, y, 320, 1, 1) end
-    end
+  local function dim(dense)      -- darken the game behind a menu: an even mesh of dark pixels (finer on the title screen)
+    for d = -240, 318, 2 do line(d, 0, d + 239, 239, 1) end                -- every other pixel, like a checkerboard
+    if dense then for y = 0, 239, 2 do rectfill(0, y, 320, 1, 1) end end   -- 3 of 4 pixels
   end
   local function panel(x, y, w, h)
     rectfill(x, y, w, h, 1)
@@ -390,4 +389,21 @@ do
     if not KIT.won then KIT.won = true; GAME.won = true; persist() end
     WIN_PENDING = true
   end
+end
+
+-- ================================================================ tunables
+-- Numbers and switches a game lets you play with. The studio's Game tab finds every tune() in the code and
+-- shows it as a slider, a switch or a list, so the feel of a game can be changed without reading its code.
+--
+--   local SPEED = tune("Kart speed", 2.4, 1, 5)        a slider from 1 to 5 (an optional 5th value is the step)
+--   local GHOSTS = tune("Ghost karts", true)            a switch
+--   local AI = tune("Rivals", "Normal", {"Easy", "Normal", "Hard"})   a list
+--
+-- Returns the value picked in the studio, or the default. The picked values travel with the cart (TUNE),
+-- so the device plays it the way it was tuned.
+TUNE = TUNE or {}
+function tune(name, default)
+  local v = TUNE[name]
+  if v == nil or type(v) ~= type(default) then return default end
+  return v
 end

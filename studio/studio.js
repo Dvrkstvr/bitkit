@@ -70,16 +70,17 @@ function _init()
     continue = function(cp) score = cp.score end,   -- Continue on the title screen
   }
   x, y, score = 152, 112, 0
+  SPEED = tune("Speed", 2, 1, 6)       -- a slider on the Game tab
   new_star()
 end
 
 function new_star() sx, sy = rnd(16, 296), rnd(32, 216) end
 
 function _update()
-  if btn("left") then x = x - 2 end
-  if btn("right") then x = x + 2 end
-  if btn("up") then y = y - 2 end
-  if btn("down") then y = y + 2 end
+  if btn("left") then x = x - SPEED end
+  if btn("right") then x = x + SPEED end
+  if btn("up") then y = y - SPEED end
+  if btn("down") then y = y + SPEED end
   if btnp("a") then sfx("C5") end
   if math.abs(x + 8 - sx) < 12 and math.abs(y + 8 - sy) < 12 then
     score = score + 1
@@ -523,7 +524,132 @@ end
     putPixels(b, n);
   };
   $('sprUndo').onclick = () => tileHist.pop();
-  function renderGameTab() { /* the Game tab is filled in by game.js */ }
+  /* ------------------------------------------------------------ Game tab: the numbers a game lets you play with */
+  // every tune("Name", default, ...) in the code becomes a control: a slider, a switch or a list
+  function parseTunes(code) {
+    const out = [], seen = {};
+    const re = /\btune\s*\(/g;
+    let m;
+    while ((m = re.exec(code))) {
+      const ls = code.lastIndexOf('\n', m.index) + 1;
+      if (code.slice(ls, m.index).includes('--')) continue;            // in a comment
+      const args = []; let cur = '', depth = 0, q = null, i = re.lastIndex, ok = false;
+      for (; i < code.length && i < re.lastIndex + 400; i++) {
+        const ch = code[i];
+        if (q) { cur += ch; if (ch === '\\') cur += code[++i] || ''; else if (ch === q) q = null; continue; }
+        if (ch === '"' || ch === "'") { q = ch; cur += ch; continue; }
+        if (ch === '{' || ch === '(') depth++;
+        if (ch === '}' || ch === ')') { if (!depth) { ok = true; break; } depth--; }
+        if (ch === ',' && !depth) { args.push(cur.trim()); cur = ''; continue; }
+        cur += ch;
+      }
+      if (!ok) continue;
+      args.push(cur.trim());
+      const str = a => { const k = /^(["'])(.*)\1$/s.exec(a || ''); return k ? k[2].replace(/\\(.)/g, '$1') : null; };
+      const name = str(args[0]);
+      if (!name || seen[name] || args.length < 2) continue;
+      const d = args[1], o = { name };
+      if (d === 'true' || d === 'false') { o.kind = 'bool'; o.def = d === 'true'; }
+      else if (str(d) !== null) {
+        o.kind = 'list'; o.def = str(d);
+        o.options = (/^\{(.*)\}$/s.exec(args[2] || '') || ['', ''])[1].split(',').map(x => str(x.trim())).filter(x => x !== null);
+        if (!o.options.includes(o.def)) o.options.unshift(o.def);
+      } else if (d !== '' && isFinite(+d)) {
+        const num = (a, f) => (a !== undefined && a !== '' && isFinite(+a) ? +a : f);
+        o.kind = 'num'; o.def = +d;
+        o.min = num(args[2], Math.min(0, o.def * 2)); o.max = num(args[3], Math.max(o.def * 2, o.min + 10));
+        if (o.max <= o.min) o.max = o.min + 1;
+        const whole = [o.def, o.min, o.max].every(Number.isInteger) && !/\./.test(d);
+        o.step = num(args[4], 0) > 0 ? +args[4] : (whole ? 1 : (o.max - o.min) > 20 ? 0.5 : (o.max - o.min) > 4 ? 0.1 : 0.01);
+      } else continue;
+      seen[name] = 1; out.push(o);
+    }
+    return out;
+  }
+  const fmtNum = v => String(Math.round(v * 1000) / 1000);
+  let tuneTimer = 0;
+  function tuneChanged() {            // a value moved: save it, and play the test game again with it
+    markDirty();
+    clearTimeout(tuneTimer);
+    tuneTimer = setTimeout(() => { if (running && playingEditor && mode === 'edit') run(playingLevel || 0); }, 350);
+  }
+  function renderGameTab() {
+    const body = $('gameBody');
+    if (!body) return;
+    const ents = cart.entities, tunes = parseTunes(getCode()), vals = ents.tune || {};
+    const cur = t => (vals[t.name] !== undefined && typeof vals[t.name] === typeof t.def ? vals[t.name] : t.def);
+    const row = (label, ctl, changed, attr) => `<div class="tune-row${changed ? ' changed' : ''}"><label>${escapeHtml(label)}</label>${ctl}` +
+      `<button class="tiny tune-reset" ${attr} title="Back to the game's own value"${changed ? '' : ' disabled'}>↺</button></div>`;
+    const rows = tunes.map((t, i) => {
+      const v = cur(t), ch = v !== t.def;
+      if (t.kind === 'bool') return row(t.name, `<span class="tune-ctl"><label class="switch"><input type="checkbox" data-tune="${i}"${v ? ' checked' : ''}><span>${v ? 'On' : 'Off'}</span></label></span>`, ch, `data-treset="${i}"`);
+      if (t.kind === 'list') return row(t.name, `<span class="tune-ctl"><select data-tune="${i}">${t.options.map(o => `<option${o === v ? ' selected' : ''}>${escapeHtml(o)}</option>`).join('')}</select></span>`, ch, `data-treset="${i}"`);
+      return row(t.name, `<span class="tune-ctl"><input type="range" data-tune="${i}" min="${t.min}" max="${t.max}" step="${t.step}" value="${v}"><input type="number" data-tune="${i}" min="${t.min}" max="${t.max}" step="${t.step}" value="${fmtNum(v)}"></span>`, ch, `data-treset="${i}"`);
+    });
+    // games made with the Entities tab: the player's hearts and stats are sliders too
+    const players = (ents.types || []).map((t, ti) => ({ t, ti })).filter(x => x.t.player);
+    const prow = players.map(({ t, ti }) => {
+      const stat = (label, key, v, min, max, step) => `<div class="tune-row"><label>${escapeHtml(label)}</label><span class="tune-ctl">` +
+        `<input type="range" data-pl="${ti}" data-key="${key}" min="${min}" max="${max}" step="${step}" value="${v}"><input type="number" data-pl="${ti}" data-key="${key}" min="${min}" max="${max}" step="${step}" value="${fmtNum(v)}"></span><span class="tune-pad"></span></div>`;
+      return `<h4>Player: ${escapeHtml(t.name)}</h4>` + stat('Hearts', 'hp', t.hp | 0, 1, 10, 1) +
+        (t.stats || []).filter(q => q.name).map((q, qi) => stat(q.name[0].toUpperCase() + q.name.slice(1), 's' + qi, +q.value || 0, 0, Math.max(3, (+q.value || 0) * 2), 0.05)).join('');
+    }).join('');
+    const rules = window.BKRules ? BKRules.check({ code: getCode() }) : [], ok = rules.filter(x => x.ok).length;
+    const any = rows.length || prow;
+    body.innerHTML = `<h2>${escapeHtml(cart.name || 'untitled')}</h2>
+      <p class="dim">Change how the game feels without touching its code. ${any ? 'Move a slider while the game runs and it starts again with the new value.' : ''}</p>
+      <div class="game-sec"><h3>Settings to play with</h3>
+        ${rows.join('')}${prow}
+        ${any ? '' : `<p>This game has no settings here yet.</p>`}
+        <details class="tune-how"${any ? '' : ' open'}><summary>How do I add a setting?</summary>
+          <p>Wrap a number in your code in <code>tune()</code> and it shows up here as a slider:</p>
+          <pre>SPEED = tune("Speed", 2, 1, 6)        -- name, starting value, lowest, highest
+GHOST = tune("Ghost mode", false)     -- a switch
+LEVEL = tune("Rivals", "Normal", {"Easy", "Normal", "Hard"})   -- a list</pre>
+          <p class="dim">The values you pick are saved with the game, so the device plays it the same way.</p></details>
+        ${rows.some((r, i) => cur(tunes[i]) !== tunes[i].def) ? '<p><button id="tuneResetAll">↺ Reset all to the game\'s own values</button></p>' : ''}
+      </div>
+      <div class="game-sec"><h3>${ok === rules.length ? '✓ Checklist: everything a BitKit game needs is here' : `Checklist: ${ok} of ${rules.length}`}</h3>
+        <ul class="rules-list">${rules.map(x => `<li class="${x.ok ? 'ok' : 'todo'}"><b>${x.ok ? '✓' : '○'} ${escapeHtml(x.name)}</b>${x.ok ? '' : `<br><span class="dim">${escapeHtml(x.about)}</span>`}</li>`).join('')}</ul>
+        <p class="dim small">This is a quick look at your code. <a href="${RULES_URL}" target="_blank" rel="noopener">Read the rules</a></p>
+      </div>`;
+    const setTune = (t, v) => {
+      if (!ents.tune) ents.tune = {};
+      if (v === t.def) delete ents.tune[t.name]; else ents.tune[t.name] = v;
+      tuneChanged();
+    };
+    body.querySelectorAll('[data-tune]').forEach(el => {
+      const t = tunes[+el.dataset.tune];
+      el.oninput = el.onchange = e => {
+        let v;
+        if (t.kind === 'bool') { v = el.checked; el.nextElementSibling.textContent = v ? 'On' : 'Off'; }
+        else if (t.kind === 'list') v = el.value;
+        else {
+          v = +el.value;
+          if (!isFinite(v) || el.value === '') return;
+          if (e.type === 'change') v = Math.max(t.min, Math.min(t.max, v));
+          el.parentNode.querySelectorAll('input').forEach(x => { if (x !== el || e.type === 'change') x.value = x.type === 'number' ? fmtNum(v) : v; });
+        }
+        setTune(t, v);
+        const rowEl = el.closest('.tune-row'), ch = v !== t.def;
+        rowEl.classList.toggle('changed', ch); rowEl.querySelector('.tune-reset').disabled = !ch;
+        if (e.type === 'change') renderGameTab.soon();
+      };
+    });
+    body.querySelectorAll('[data-treset]').forEach(b => { b.onclick = () => { setTune(tunes[+b.dataset.treset], tunes[+b.dataset.treset].def); renderGameTab(); }; });
+    if ($('tuneResetAll')) $('tuneResetAll').onclick = () => { ents.tune = {}; tuneChanged(); renderGameTab(); };
+    body.querySelectorAll('[data-pl]').forEach(el => {
+      el.oninput = el.onchange = e => {
+        const t = ents.types[+el.dataset.pl], key = el.dataset.key, v = +el.value;
+        if (!t || !isFinite(v) || el.value === '') return;
+        if (key === 'hp') t.hp = Math.max(1, v | 0); else if (t.stats[+key.slice(1)]) t.stats[+key.slice(1)].value = v;
+        el.parentNode.querySelectorAll('input').forEach(x => { if (x !== el) x.value = x.type === 'number' ? fmtNum(v) : v; });
+        tuneChanged();
+      };
+    });
+  }
+  // the Reset all button comes and goes: redraw once the pointer is up (never while a slider is being dragged)
+  renderGameTab.soon = () => setTimeout(() => { if (activeTab === 'game' && !$('gameBody').contains(document.activeElement)) renderGameTab(); }, 50);
 
   /* ------------------------------------------------------------ map editor */
   const mv = $('mapView'), mvCtx = mv.getContext('2d');

@@ -412,3 +412,26 @@ body.bit-embed { background: #000; }
 .gc-btns { display: flex; gap: 6px; margin-top: auto; }
 #btnRules.rules-ok { color: var(--dim); }
 #btnRules.rules-todo { color: var(--warn); border-color: #6b5a1f; }
+
+/* ---------------------------------------------------------------- Game tab */
+.game-page { max-width: 760px; }
+.game-page h2 { margin: 4px 0 4px; font-size: 18px; }
+.game-page h3 { margin: 0 0 10px; font-size: 14px; color: var(--accent); }
+.game-page h4 { margin: 14px 0 6px; font-size: 12px; color: var(--dim); text-transform: uppercase; letter-spacing: .05em; }
+.game-sec { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin: 12px 0; }
+.tune-row { display: flex; align-items: center; gap: 10px; padding: 5px 0; border-bottom: 1px solid var(--line); }
+.tune-row:last-of-type { border-bottom: 0; }
+.tune-row > label { flex: 0 0 200px; }
+.tune-row.changed > label { color: var(--warn); }
+.tune-ctl { flex: 1; display: flex; align-items: center; gap: 10px; min-width: 0; }
+.tune-ctl input[type=range] { flex: 1; min-width: 60px; accent-color: var(--accent); }
+.tune-ctl input[type=number] { width: 72px; background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; }
+.tune-reset, .tune-pad { flex: 0 0 26px; }
+.tune-reset:disabled { opacity: .25; cursor: default; }
+.switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.switch input { width: 16px; height: 16px; accent-color: var(--accent); }
+.tune-how { margin-top: 10px; }
+.tune-how summary { cursor: pointer; color: var(--dim); }
+.tune-how pre { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; overflow-x: auto; font: 12px/1.5 ui-monospace, Menlo, Consolas, monospace; color: #bff0ff; }
+.game-page code { font-family: ui-monospace, Menlo, Consolas, monospace; color: #bff0ff; }
+@media (max-width: 700px) { .tune-row { flex-wrap: wrap; } .tune-row > label { flex: 1 0 100%; } }
