@@ -32,6 +32,8 @@ jobs:
         run: node tools/tinwingtest.cjs
       - name: Shaders and Deepglow
         run: node tools/shadertest.cjs
+      - name: Puffball, Hedge Hogs and Cauldron Crew
+        run: node tools/partytest.cjs
 
   linked-bits:
     runs-on: ubuntu-latest

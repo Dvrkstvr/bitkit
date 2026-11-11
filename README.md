@@ -65,7 +65,7 @@ Tabs a game does not use (Track for a platformer, Map for a racer) wait under **
 
 1. Open **[dvrkstvr.github.io/bitkit](https://dvrkstvr.github.io/bitkit/)** in Chrome, Edge or Firefox.
 2. Press **▶ Run** (or Ctrl+Enter) to play the game that is open, Sprout Hop at first. Click the game screen and use the arrow keys with Z and X, or plug in a controller and press any button on it.
-3. **Games** at the top has every demo (Sprout Hop, Beacon Keeper, Sweep Storm, Kart Lab, Crossgate, Tinwing, Deepglow) and your own games. Each one keeps its own changes.
+3. **Games** at the top has every demo (Sprout Hop, Beacon Keeper, Sweep Storm, Kart Lab, Crossgate, Tinwing, Deepglow, Puffball, Hedge Hogs, Cauldron Crew) and your own games. Each one keeps its own changes.
 4. Change something and press Run again. The **Game** tab has sliders for how the game feels, the other tabs are the editors.
 5. **Play** at the top shows the game on a Bit, the emulated PocketBit, with its home screen. Pick **2 Bits side by side** to try playing together. Hold Start+Select to go back to the home screen.
 
@@ -170,6 +170,45 @@ A story game drawn in 2.5D like Kart Lab. Perch is a town on stilts, on a planet
 <img src="docs/media/deepglow.png" width="400" alt="Deepglow: a diver carrying a glowing pearl in a dark sea cave, a jellyfish below"> <img src="docs/media/deepglow-gallery.png" width="400" alt="Deepglow's Shader gallery showing a lit sprite">
 
 Dive a dark sea cave for glowing pearls. It is a tour of BitKit's shaders: the water wobbles (`wave`), gets darker the deeper you go (`fog`), the sonar ping on **A** spreads as a shockwave (`ripple`) and shows pearls for a few seconds, jellyfish glow through a colour cycle (`remap`) and their sting scrambles the picture (`glitch`), vents shimmer and burn (`tint`), and running out of air fades you out (`pixelate`, `dither`). The diver is a shaded sprite (`sprfx`: lit from above, outlined, flashing when hurt), and pearls are lit by the diver's lamp. **Settings > Screen** picks a look for the whole game (`display`: CRT, Arcade, Old TV, Handheld, Sepia, Night, Vivid). The title screen's **Shader gallery** has every shader with a slider. **Goal:** bring 5 pearls up to the boat.
+
+### Party games: alone, together or against each other
+
+Three games for 1 to 8 players, on one screen or on linked Bits. Each one opens on a game picker: one way to play together and one to play against each other. Alone, the CPU fills in.
+
+#### Puffball
+
+<img src="docs/media/puffball.png" width="400" alt="Puffball: four round players on a beach keeping a pufferfish over the net">
+
+Beach volleyball with a pufferfish. Every touch puffs it up: it gets bigger and faster until somebody misses.
+
+- **Left / right** run, **A** jumps, **B** dives along the sand.
+- **Match** (against each other): odd players on the left, even players on the right, and crabs fill the empty spots. If the puffer lands on your sand, the other side scores. A side may touch it 3 times in a row. Alone you play a crab (Easy, Normal or Hard in Settings).
+- **Rally** (together): everyone keeps the puffer flying, and every pass over the net counts. Three drops end the run.
+- **Goal:** win a Match, or pass the puffer 30 times in a row in a Rally.
+
+#### Hedge Hogs
+
+<img src="docs/media/hedge-hogs.png" width="400" alt="Hedge Hogs: hedgehogs planting hedge lines across a garden while moles dig about">
+
+Hedgehogs that plant hedges. Walk off your land and you plant a line behind you. Walk back onto your land and everything you fenced off is yours.
+
+- **Garden** (together): fence off 75% of each of the 3 gardens. Moles dig about in the open ground. A mole that touches an unfinished line eats it and costs the team a heart, and land only fills in if there is no mole in it.
+- **Land Grab** (against each other): walk across a rival's unfinished line to send them home. Whatever you fence off is yours, even if it was theirs. Most land when the time runs out wins. CPU hogs fill the garden up to 4.
+- The ground is drawn with the map, one tile per cell, so it costs the Bit one `map()` call.
+- **Goal:** fence off all 3 gardens, or end a Land Grab with the most land. Continue takes you back to the garden you reached.
+
+#### Cauldron Crew
+
+<img src="docs/media/cauldron-crew.png" width="400" alt="Cauldron Crew: wizards carrying ingredients between crates, cauldrons and the serving window">
+
+A potion kitchen. The order cards at the top show which three ingredients each customer wants, and how patient they are.
+
+- **A** picks up, puts down or uses what you face, **B** dashes, and holding **X** at a bubbling cauldron stirs it so it brews faster.
+- Put 3 ingredients in a cauldron, wait for it to brew, and carry the potion to the window. Leave it on the fire too long and it burns. Burnt and wrong potions go in the bin. Counters hold one thing each, so you can pass things on.
+- Fast service tips more, and a streak of right orders adds a bonus. A customer who leaves costs coins.
+- **One kitchen** (alone or together): earn the shift's target, which grows with the crew.
+- **Teams** (2 players or more): two mirrored kitchens get the same orders at the same moments. Most coins wins.
+- **Goal:** earn the shift's target in coins, or out-brew the other kitchen. Continue carries on the shift with your coins and the time left.
 
 ## ✨ Shaders
 
