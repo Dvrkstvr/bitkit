@@ -15699,16 +15699,30 @@ end
     return any;
   }
   const luaStr = s => '"' + String(s).replace(/[\\"]/g, '\\$&').replace(/\n/g, ' ') + '"';
+  // the built-in demos as ready-to-play carts (built once, on first use)
+  const demoCarts = new Map();
+  function demoCart(d) {
+    if (demoCarts.has(d)) return demoCarts.get(d);
+    const c = { name: d.name, code: d.code, palette: new Uint8Array(DEFAULT_PAL), tiles: new Uint8Array(TILES * 64), flags: new Uint8Array(TILES),
+      map: new Uint16Array(MAPW * MAPH), entities: { types: [], placed: [] }, levels: null };
+    d.buildGfx(c);
+    if (!c.levels || !c.levels.length) c.levels = [{ name: 'Level 1', w: MAPW, h: MAPH, map: c.map, placed: c.entities.placed }];
+    demoCarts.set(d, c);
+    return c;
+  }
   async function bootHome() {
     const lib = await libraryGames();
-    bit.games = [{ name: cart.name, studio: true, cart: null }].concat(
-      lib.filter(g => g.file !== cartFile).map(g => ({ name: g.data.name || g.file, file: g.file, data: g.data })));
+    const libGames = lib.filter(g => g.file !== cartFile).map(g => ({ name: g.data.name || g.file, file: g.file, data: g.data }));
+    // every built-in demo is on the Bit too, unless the studio or the memory card already has a game with that name
+    const taken = new Set([cart.name].concat(libGames.map(g => g.name)));
+    const demos = DEMOS().filter(d => !taken.has(d.name)).map(d => ({ name: d.name, demo: d }));
+    bit.games = [{ name: cart.name, studio: true, cart: null }].concat(libGames, demos);
     const tiles = new Uint8Array(TILES * 64);
     const COLORS = [3, 8, 15, 20, 25, 4, 9, 16];
     const rows = bit.games.slice(0, 96).map((g, i) => {
       const slot = Math.floor(i / 8) * 32 + (i % 8) * 2 + 0;
       let c = null;
-      if (g.studio) c = cart; else { try { c = decodeCart(g.data); } catch (e) { c = null; } }
+      if (g.studio) c = cart; else if (g.demo) { try { c = demoCart(g.demo); } catch (e) { c = null; } } else { try { c = decodeCart(g.data); } catch (e) { c = null; } }
       const has = c && iconFor(c, slot, tiles);
       return `{name=${luaStr(g.name)}, file=${luaStr(g.file || '')}, studio=${g.studio ? 'true' : 'false'}, ${has ? `icon=${slot}` : `color=${COLORS[i % COLORS.length]}`}}`;
     });
@@ -15746,9 +15760,16 @@ end
     bit.sel = arg;
     if (cmd === 1) {
       if (g.studio) run();
+      else if (g.demo) { try { playCart(demoCart(g.demo), 'demo:' + g.name); } catch (e) { log(`Could not start ${g.name}: ${e.message}`, 'err'); } }
       else { try { playCart(decodeCart(g.data), g.file); } catch (e) { log(`Could not start ${g.file}: ${e.message}`, 'err'); } }
     } else if (cmd === 3) {
       if (g.studio) { toast('That is the cart in the studio'); return; }
+      if (g.demo) {
+        if (!await ask(`Open "${g.name}" in the studio?`, 'This replaces the cart in the studio. Use Save / share or save it to the Bit first if you want to keep it.', 'Open')) return;
+        setCartFile(null); loadDemo(g.demo); toast(`Opened ${g.name}`);
+        bit.sel = 1; bootHome();
+        return;
+      }
       openFromBit(g.file, g.data);
     }
   }
@@ -15761,6 +15782,7 @@ end
     bit.on = on;
     $('btnBit').classList.toggle('active', on);
     $('btnBit').textContent = on ? '⏻ Bit on' : '⏻ Bit';
+    lsSet('bitkit.bitOn', on ? '1' : '0');
     if (on) { log('Bit on: home screen. Hold Start+Select in a game to come back.', 'sys'); bootHome(); }
     else { stop(true); bit.playing = null; bootScreen(); }
   }
@@ -15982,7 +16004,12 @@ end
     document.title = `${APP} · Bit 2`;
     loadCode(`function _draw() cls(1) text("BIT 2", 120, 84, 22, 3) text("Linked to the studio window", 52, 130, 29) text("Press Run there to play together", 32, 144, 29) end`);
     RT._bkw_frame(0, ptr.press); blit(); RT._bkw_stop();
-  } else bootScreen();
+  } else if (lsGet('bitkit.bitOn') !== '0') setBitPower(true);   // start on the Bit's home screen (turn it off with the Bit button)
+  else bootScreen();
+  // browsers only start sound after a click or key press: wake the audio up on the first one
+  const wakeAudio = () => { if (actx && actx.state === 'suspended') actx.resume(); };
+  window.addEventListener('pointerdown', wakeAudio);
+  window.addEventListener('keydown', wakeAudio);
   requestAnimationFrame(frame);
 
   // expose for tests / debugging
