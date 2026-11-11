@@ -49,6 +49,8 @@
   const code = `-- Kart Lab: a 2.5D kart racing demo for BitKit
 -- It's all about the karts. Build one in the garage (body, engine, tyres, paint), pick a track,
 -- then race three rival karts for 3 laps.
+-- Multiplayer: every player (PLAYERS) races in the same match. One screen splits into views; linked Bits
+-- (ME > 0) each draw only their own kart's view. Game logic never uses rnd() in drawing, so Bits stay in step.
 --   Throttle: R (analog: squeeze harder to go faster) or A     Brake / reverse: B
 --   Steer: d-pad. Steering comes in 3 stages: a tap is gentle, holding turns harder,
 --          keep holding for the sharpest turn. It blends smoothly between them.
@@ -443,7 +445,9 @@ function drift_tier(k)
   return 0
 end
 
-function popup(s, c) pop_s, pop_c, pop_t = s, c, 50 end
+function popup(k, s, c) k.pop_s, k.pop_c, k.pop_t = s, c, 50 end
+-- a kart someone plays (and, on linked Bits, the one this Bit plays: only its sounds play here)
+function mine(k) return k.human and ((ME or 0) == 0 or k.pn == ME) end
 
 function drive(k, thr, brk, steer, drift_btn)
   if k.spin > 0 then                        -- spun out: no control for a moment
@@ -469,9 +473,9 @@ function drive(k, thr, brk, steer, drift_btn)
       local tier = drift_tier(k)
       if tier > 0 then                      -- a good drift pays out a boost
         k.boost = math.max(k.boost, ({35, 55, 80})[tier])
-        if not k.ai then
-          sfx("G5", 2, 0.35, 16, 4, 0, -900)
-          popup(({"BOOST!", "BIG BOOST!", "MEGA BOOST!"})[tier], ({13, 27, 5})[tier])
+        if k.human then
+          if mine(k) then sfx("G5", 2, 0.35, 16, 4, 0, -900) end
+          popup(k, ({"BOOST!", "BIG BOOST!", "MEGA BOOST!"})[tier], ({13, 27, 5})[tier])
         end
       end
       k.drift, k.charge = 0, 0
@@ -542,7 +546,7 @@ function drive(k, thr, brk, steer, drift_btn)
     k.z = k.z + k.vz
     if k.z <= g then
       k.air, k.z = false, g
-      if k.vz < -2 and not k.ai then sfx("C2", 3, 0.4, 6, 6); shake = 4 end
+      if k.vz < -2 and k.human then k.shake = 4; if mine(k) then sfx("C2", 3, 0.4, 6, 6) end end
       k.vz = 0
     end
   else
@@ -561,7 +565,7 @@ end
 -- staged steering: how long you've held a direction picks the stage, and the actual steering
 -- glides toward it, so a tap nudges, a hold turns, a long hold turns hard
 function player_steer(k)
-  local d = (btn("right") and 1 or 0) - (btn("left") and 1 or 0)
+  local d = (btn("right", k.pn) and 1 or 0) - (btn("left", k.pn) and 1 or 0)
   if d ~= 0 and d == k.sdir then k.shold = k.shold + 1 else k.shold = 0 end
   k.sdir = d
   local target = 0
@@ -582,7 +586,9 @@ function ai_input(k)
   local d = angdiff(math.atan(ty - k.y, tx - k.x), k.a)
   local steer = clamp(d * 3.5, -1, 1)
   local thr = k.skill
-  local gap = progress(player) - progress(k)
+  local lead = 0                     -- rubber band against the player in front
+  for _, h in ipairs(humans) do lead = math.max(lead, progress(h)) end
+  local gap = lead - progress(k)
   if gap > NWP * 0.15 then thr = thr * 1.08 elseif gap < -NWP * 0.12 then thr = thr * 0.9 end
   if math.abs(d) > 0.7 then thr = thr * 0.6 end
   k.lane = k.lane + (k.lane_want - k.lane) * 0.02
@@ -615,8 +621,8 @@ function track_kart(k)
     if k.lap > LAPS and not k.done then
       k.done, k.time = true, race_t
       finished[#finished + 1] = k
-      if k == player then sfx("C6", 4, 0.4, 40, 5) end
-    elseif k == player and k.lap > 1 then sfx("A5", 4, 0.3, 12, 5) end
+      if mine(k) then sfx("C6", 4, 0.4, 40, 5) end
+    elseif mine(k) and k.lap > 1 then sfx("A5", 4, 0.3, 12, 5) end
   end
   if bi > NWP // 2 - 6 and bi < NWP // 2 + 6 then k.half = true end
   k.wp = bi
@@ -638,13 +644,13 @@ end
 function hit(k, by)
   if k.shield > 0 then
     k.shield = 0
-    if k == player or by == player then sfx("E5", 4, 0.3, 10, 6) end
+    if mine(k) or mine(by) then sfx("E5", 4, 0.3, 10, 6) end
     return
   end
   if k.spin > 0 then return end
   k.spin, k.hop = 50, 8
-  if k == player or by == player then sfx("A2", 2, 0.5, 20, 6, 0, -200) end
-  if k == player then shake = 8 end
+  if mine(k) or mine(by) then sfx("A2", 2, 0.5, 20, 6, 0, -200) end
+  if k.human then k.shake = 8 end
 end
 
 function use_item(k, back)                             -- back: fire it behind you (hold down)
@@ -654,22 +660,23 @@ function use_item(k, back)                             -- back: fire it behind y
   local c, s = math.cos(k.a), math.sin(k.a)
   if i == 1 then                                       -- Nitro
     k.boost = math.max(k.boost, 75)
-    if k == player then sfx("G5", 2, 0.4, 20, 4, 0, -900); popup("NITRO!", 10) end
+    if mine(k) then sfx("G5", 2, 0.4, 20, 4, 0, -900) end
+    if k.human then popup(k, "NITRO!", 10) end
   elseif i == 2 then                                   -- Oil Slick, behind you
     hazards[#hazards + 1] = {kind = "oil", x = k.x - c*16, y = k.y - s*16, life = 1800, owner = k}
-    if k == player then sfx("C3", 3, 0.3, 8) end
+    if mine(k) then sfx("C3", 3, 0.3, 8) end
   elseif i == 3 then                                   -- Bolt, straight ahead (or straight back)
     local f = back and -1 or 1
     shots[#shots + 1] = {kind = "bolt", x = k.x + c*12*f, y = k.y + s*12*f, vx = c*6*f + k.vx*0.5, vy = s*6*f + k.vy*0.5, life = 110, owner = k}
-    if k == player then sfx("E5", 0, 0.3, 6, 4, 0, 800) end
+    if mine(k) then sfx("E5", 0, 0.3, 6, 4, 0, 800) end
   elseif i == 4 then                                   -- Drone, after the kart in front (or behind)
     local target, f = nil, back and -1 or 1
     for _, o in ipairs(karts) do if o.place == (k.place or 1) - f then target = o end end
     shots[#shots + 1] = {kind = "drone", x = k.x, y = k.y, vx = c*3*f, vy = s*3*f, life = 600, owner = k, target = target}
-    if k == player then sfx("B4", 5, 0.3, 14, 4, 0, 300) end
+    if mine(k) then sfx("B4", 5, 0.3, 14, 4, 0, 300) end
   elseif i == 5 then                                   -- Shield
     k.shield = 420
-    if k == player then sfx("C5", 4, 0.3, 14, 4, 0, 400) end
+    if mine(k) then sfx("C5", 4, 0.3, 14, 4, 0, 400) end
   end
 end
 
@@ -683,7 +690,7 @@ function update_items()
           cr.t = 240
           if not k.item then
             k.item, k.roll, k.item_t = roll_item(k), 40, 0
-            if k == player then sfx("C5", 5, 0.25, 4, 5) end
+            if mine(k) then sfx("C5", 5, 0.25, 4, 5) end
           end
           break
         end
@@ -693,7 +700,7 @@ function update_items()
   for _, k in ipairs(karts) do
     if k.roll > 0 then
       k.roll = k.roll - 1
-      if k == player and k.roll % 5 == 0 and k.roll > 0 then sfx("A5", 5, 0.12, 2, 5) end
+      if mine(k) and k.roll % 5 == 0 and k.roll > 0 then sfx("A5", 5, 0.12, 2, 5) end
     end
     if k.shield > 0 then k.shield = k.shield - 1 end
   end
@@ -756,7 +763,11 @@ function collide()
           local imp = -1.5 * rel / (1/ma + 1/mb)
           a.vx, a.vy = a.vx - nx * imp / ma, a.vy - ny * imp / ma
           b.vx, b.vy = b.vx + nx * imp / mb, b.vy + ny * imp / mb
-          if (a == player or b == player) and a.bump <= 0 then sfx("C2", 3, 0.4, 6, 6); shake = 6 end
+          if (a.human or b.human) and a.bump <= 0 then
+            if mine(a) or mine(b) then sfx("C2", 3, 0.4, 6, 6) end
+            if a.human then a.shake = 6 end
+            if b.human then b.shake = 6 end
+          end
           a.bump, b.bump = 10, 10
         end
       end
@@ -768,7 +779,7 @@ function collide()
         local d = math.max(math.sqrt(dx*dx + dy*dy), 0.1)
         a.x, a.y = t.x + dx / d * 11, t.y + dy / d * 11
         a.vx, a.vy = a.vx * 0.3 + dx / d * 0.8, a.vy * 0.3 + dy / d * 0.8
-        if a == player and a.bump <= 0 then sfx("A1", 3, 0.5, 10, 6); shake = 8 end
+        if a.human and a.bump <= 0 then a.shake = 8; if mine(a) then sfx("A1", 3, 0.5, 10, 6) end end
         a.bump = 10
       end
     end
@@ -783,10 +794,16 @@ function _init()
   best = {}
   if saved then
     local d = saved()
-    if d and d.sel then for k, v in pairs(d.sel) do sel[k] = v end end
+    -- with friends every Bit must start the same, so your saved kart only comes back when you play alone
+    if d and d.sel and (PLAYERS or 1) == 1 then for k, v in pairs(d.sel) do sel[k] = v end end
     if d and type(d.best) == "table" then best = d.best end
   end
   if sel.track > #TRACKS then sel.track = 1 end
+  -- everyone playing gets a kart in the same race (rivals fill the grid up to 4).
+  -- Each player builds their own kart; only player 1 picks the track.
+  NH = math.max(1, math.min(PLAYERS or 1, 4))
+  sels, rows, ready, humans = {sel}, {1}, {}, {}
+  for p = 2, NH do sels[p] = {track = 1, body = (p - 1) % #BODIES + 1, eng = 2, tyre = 1, paint = p}; rows[p] = 1 end
   row, mode, gt = 1, "garage", 0
   shake, parts, pop_t = 0, {}, 0
   TREES, CRATES, hazards, shots = {}, {}, {}, {}
@@ -820,19 +837,28 @@ end
 
 function start_race()
   karts, finished, hazards, shots, parts = {}, {}, {}, {}, {}
-  player = new_kart(sel.body, sel.eng, sel.tyre, sel.paint, false)
-  -- three rivals, each a different random build (never your paint)
+  humans, cams = {}, {}
   srand(t() + 3)
+  local used = {}
+  for p = 1, NH do
+    local s = sels[p]
+    local k = new_kart(s.body, s.eng, s.tyre, s.paint, false)
+    k.human, k.pn, k.shake, k.pop_t = true, p, 0, 0
+    if NH > 1 then k.name = "P" .. p .. " " .. k.name end
+    humans[p], used[s.paint] = k, true
+  end
+  player = humans[1]
+  -- rivals, each a different random build (never a player's paint)
   local paints = {}
-  for i = 1, #PAINTS do if i ~= sel.paint then paints[#paints + 1] = i end end
+  for i = 1, #PAINTS do if not used[i] then paints[#paints + 1] = i end end
   local grid = {{NWP - 1, -16}, {NWP - 1, 16}, {NWP - 4, -16}, {NWP - 4, 16}}
-  for i = 1, 3 do
+  for i = 1, 4 - NH do
     local p = table.remove(paints, rnd(#paints))
     local k = new_kart(rnd(#BODIES), rnd(#ENGINES), rnd(#TYRES), p, true)
     k.skill, k.lane, k.lane_want = 0.9 + i * 0.025, rnd(-14, 14), 0
     karts[#karts + 1] = k
   end
-  table.insert(karts, rnd(2, 4), player)       -- start somewhere in the pack
+  for p = 1, NH do table.insert(karts, rnd(NH == 1 and 2 or 1, #karts + 1), humans[p]) end   -- start somewhere in the pack
   for i, k in ipairs(karts) do
     local g = grid[i]
     local w = WP[g[1]]
@@ -840,7 +866,8 @@ function start_race()
     k.z = hget(k.x, k.y)
     k.place = i
   end
-  cam = {a = player.a, ta = player.a, back = false, x = player.x, y = player.y, z = player.z + CAM_H}
+  for p, k in ipairs(humans) do cams[p] = {a = k.a, ta = k.a, back = false, x = k.x, y = k.y, z = k.z + CAM_H} end
+  cam = cams[1]
   mode, gt, race_t = "count", 0, 0
 end
 
@@ -859,23 +886,48 @@ function _update()
   elseif mode == "count" or mode == "race" then race_update()
   elseif mode == "results" then
     race_update()
-    if gt > 60 and btnp("a") then mode, gt = "garage", 0 end
+    local any_a = false
+    for p = 1, NH do if btnp("a", p) then any_a = true end end
+    if gt > 60 and any_a then mode, gt = "garage", 0 end
   end
 end
 
-function garage_update()
-  local rows = {"track", "body", "eng", "tyre", "paint"}
+-- on a shared screen the players take turns in the garage; linked Bits each show their own
+function garage_turn()
+  for p = 1, NH do if not ready[p] then return p end end
+end
+
+function garage_player(p)
+  local keys = {"track", "body", "eng", "tyre", "paint"}
   local lists = {TRACKS, BODIES, ENGINES, TYRES, PAINTS}
-  if btnp("up") then row = (row - 2) % 6 + 1; sfx("E5", 0, 0.2, 3) end
-  if btnp("down") then row = row % 6 + 1; sfx("E5", 0, 0.2, 3) end
-  if row <= 5 then
-    local key, n = rows[row], #lists[row]
-    if btnp("left") then sel[key] = (sel[key] - 2) % n + 1; sfx("A5", 0, 0.2, 3) end
-    if btnp("right") then sel[key] = sel[key] % n + 1; sfx("A5", 0, 0.2, 3) end
+  local s = sels[p]
+  if ready[p] then
+    if btnp("b", p) then ready[p] = false; sfx("E4", 0, 0.2, 3) end
+    return
   end
-  if btnp("a") and gt > 10 then
-    persist()
-    sfx("C5", 4, 0.3, 10); load_track()
+  if btnp("up", p) then rows[p] = (rows[p] - 2) % 6 + 1; sfx("E5", 0, 0.2, 3) end
+  if btnp("down", p) then rows[p] = rows[p] % 6 + 1; sfx("E5", 0, 0.2, 3) end
+  local r = rows[p]
+  if r <= 5 and (r > 1 or p == 1) then        -- player 1 picks the track
+    local key, n = keys[r], #lists[r]
+    if btnp("left", p) then s[key] = (s[key] - 2) % n + 1; sfx("A5", 0, 0.2, 3) end
+    if btnp("right", p) then s[key] = s[key] % n + 1; sfx("A5", 0, 0.2, 3) end
+  end
+  if btnp("a", p) and gt > 10 then ready[p] = true; sfx("C5", 4, 0.3, 10)
+  elseif btnp("b", p) and p > 1 and (ME or 0) == 0 then ready[p - 1] = false end   -- back to the previous player
+end
+
+function garage_update()
+  if NH == 1 or (ME or 0) == 0 then
+    local p = garage_turn()
+    if p then garage_player(p) end
+  else
+    for p = 1, NH do garage_player(p) end
+  end
+  for p = 2, NH do sels[p].track = sels[1].track end
+  if not garage_turn() then
+    ready = {}
+    persist(); load_track()
   end
 end
 
@@ -895,39 +947,52 @@ function race_update()
       else thr, brk, steer, drift = 0, false, 0, false end
     elseif k.ai then thr, brk, steer, drift = ai_input(k)
     else
-      thr = math.max(press("r") / 255, btn("a") and 1 or 0)
-      local bdrift = btn("b") and thr > 0.5           -- B while on the throttle drifts instead of braking
-      brk = btn("b") and not bdrift
+      local pn = k.pn or 1
+      thr = math.max(press("r", pn) / 255, btn("a", pn) and 1 or 0)
+      local bdrift = btn("b", pn) and thr > 0.5           -- B while on the throttle drifts instead of braking
+      brk = btn("b", pn) and not bdrift
       steer = player_steer(k)
-      drift = btn("l") or press("l") > 100 or bdrift
-      if btnp("x") then use_item(k, btn("down")) end
+      drift = btn("l", pn) or press("l", pn) > 100 or bdrift
+      if btnp("x", pn) then use_item(k, btn("down", pn)) end
     end
     drive(k, thr, brk, steer, drift)
     track_kart(k)
   end
   collide()
   if racing then update_items() end
-  if racing and player.done and mode ~= "results" then
+  -- the race ends once every player has crossed the line (finished players' karts drive themselves)
+  local all_done = true
+  for _, h in ipairs(humans) do if not h.done then all_done = false end end
+  if racing and all_done and mode ~= "results" then
     mode, gt = "results", 0
     local key = TRACKS[sel.track].name
-    if not best[key] or player.time < best[key] then best[key] = player.time; new_best = true else new_best = false end
+    new_best = false
+    for _, h in ipairs(humans) do
+      if not best[key] or h.time < best[key] then best[key] = h.time; new_best = true end
+    end
     persist()
   end
   track(player.x, player.y)        -- the Map tab shows your racing line
-  -- camera swings behind the kart, lagging a little in turns and more in drifts.
+  -- each player's camera swings behind their kart, lagging a little in turns and more in drifts.
   -- Holding down looks back: the camera jumps in front of the kart, facing backwards.
-  local lag = player.drift ~= 0 and 0.07 or 0.13
-  cam.ta = (cam.ta + angdiff(player.a, cam.ta) * lag) % TAU
-  cam.back = mode == "race" and not player.done and btn("down")
-  cam.a = cam.back and (cam.ta + math.pi) % TAU or cam.ta
-  local d = cam.back and CAM_D or CAM_D + player.fwd * 2
-  cam.x, cam.y = player.x - math.cos(cam.a) * d, player.y - math.sin(cam.a) * d
-  local cz = math.max(player.z, hget(cam.x, cam.y) + 4) + CAM_H
-  cam.z = cam.z + (cz - cam.z) * 0.2
+  for p, k in ipairs(humans) do
+    local c = cams[p]
+    local lag = k.drift ~= 0 and 0.07 or 0.13
+    c.ta = (c.ta + angdiff(k.a, c.ta) * lag) % TAU
+    c.back = mode == "race" and not k.done and btn("down", p)
+    c.a = c.back and (c.ta + math.pi) % TAU or c.ta
+    local d = c.back and CAM_D or CAM_D + k.fwd * 2
+    c.x, c.y = k.x - math.cos(c.a) * d, k.y - math.sin(c.a) * d
+    local cz = math.max(k.z, hget(c.x, c.y) + 4) + CAM_H
+    c.z = c.z + (cz - c.z) * 0.2
+    if k.shake > 0 then k.shake = k.shake - 1 end
+    if k.pop_t > 0 then k.pop_t = k.pop_t - 1 end
+  end
   -- engine note follows your speed
   if gt % 4 == 0 then
-    local e = ENGINES[player.eng]
-    tone((55 + math.abs(player.fwd) * 38) * e.pitch, 2, 0.10, 6, 0)
+    local ek = humans[ME or 0] or humans[1]
+    local e = ENGINES[ek.eng]
+    tone((55 + math.abs(ek.fwd) * 38) * e.pitch, 2, 0.10, 6, 0)
   end
   -- drift sparks and boost flames
   for _, k in ipairs(karts) do
@@ -946,33 +1011,52 @@ function race_update()
     p.x, p.y, p.z, p.vz, p.life = p.x + p.vx, p.y + p.vy, p.z + p.vz, p.vz - 0.08, p.life - 1
     if p.life <= 0 then table.remove(parts, i) end
   end
-  if shake > 0 then shake = shake - 1 end
-  if pop_t > 0 then pop_t = pop_t - 1 end
 end
 
 -- ------------------------------------------------------------------ drawing
+-- The screen area a player's view is drawn in: the whole screen, or a half or quarter of it when
+-- several players share one screen. VHOR is the horizon row and VFOC the zoom for that view.
+function set_view(v)
+  VX, VY, VW, VH = v.x, v.y, v.w, v.h
+  if VH >= 200 then VHOR, VFOC = VY + HORIZON, FOCAL
+  else VHOR, VFOC = VY + math.floor(HORIZON * VH / 240), FOCAL * VH / 240 end   -- the full view, scaled down
+end
+set_view({x = 0, y = 0, w = 320, h = 240})
+
+function views()
+  local n = #humans
+  if (ME or 0) > 0 and humans[ME] then n = 1 end                     -- linked Bits: just your own view
+  local me = ((ME or 0) > 0 and humans[ME]) and ME or 1
+  if n <= 1 then return {{x = 0, y = 0, w = 320, h = 240, p = me}} end
+  if n == 2 then return {{x = 0, y = 0, w = 320, h = 120, p = 1}, {x = 0, y = 120, w = 320, h = 120, p = 2}} end
+  local v = {}
+  for p = 1, n do v[p] = {x = ((p - 1) % 2) * 160, y = ((p - 1) // 2) * 120, w = 160, h = 120, p = p} end
+  return v
+end
+
 local function mountains(off, amp, base, col, seed)
-  -- one silhouette layer; 360 degrees of turning = TAU * FOCAL pixels, so it lines up with the floor
-  local per = TAU * FOCAL
-  for x = 0, 319, 2 do
-    local u = (x + off) % per / per * TAU
+  -- one silhouette layer; 360 degrees of turning = TAU * VFOC pixels, so it lines up with the floor
+  local per = TAU * VFOC
+  for x = VX, VX + VW - 1, 2 do
+    local u = (x - VX + off) % per / per * TAU
     local h = math.sin(u * 3 + seed) * 0.5 + math.sin(u * 7 + seed * 2) * 0.3 + math.sin(u * 13 + seed) * 0.2
-    local top = math.floor(HORIZON - base - h * amp)
-    rectfill(x, top, 2, HORIZON - top + 1, col)
+    local top = math.floor(VHOR - base - h * amp)
+    rectfill(x, top, 2, VHOR - top + 1, col)
   end
 end
 
 function draw_sky(a)
   local bands = {21, 21, 22, 22, 23}
-  for i = 0, 4 do rectfill(0, i * HORIZON // 5, 320, HORIZON // 5 + 1, bands[i + 1]) end
-  local off = a * FOCAL
+  local hh = VHOR - VY
+  for i = 0, 4 do rectfill(VX, VY + i * hh // 5, VW, hh // 5 + 1, bands[i + 1]) end
+  local off, sc = a * VFOC, VFOC / FOCAL
   for i = 0, 5 do        -- clouds drift slowly
-    local cx = (i * 211 - off * 0.5 + gt * 0.05) % 640 - 120
-    local cy = 14 + (i * 37) % 30
-    circfill(cx, cy, 9, 13); circfill(cx + 10, cy + 2, 7, 13); circfill(cx - 10, cy + 3, 6, 13)
+    local cx = VX + ((i * 211 - off * 0.5 + gt * 0.05) % 640 - 120) * sc
+    local cy = VY + (14 + (i * 37) % 30) * hh / HORIZON
+    circfill(cx, cy, 9 * sc, 13); circfill(cx + 10 * sc, cy + 2 * sc, 7 * sc, 13); circfill(cx - 10 * sc, cy + 3 * sc, 6 * sc, 13)
   end
-  mountains(off * 0.6, 14, 18, 20, 1)
-  mountains(off, 8, 6, 14, 4)
+  mountains(off * 0.6, 14 * sc, 18 * sc, 20, 1)
+  mountains(off, 8 * sc, 6 * sc, 14, 4)
 end
 
 -- kart sprite for a kart seen from the camera: 16 directions, 9 drawn + 7 mirrored
@@ -1003,15 +1087,15 @@ local function ellipse(x, y, w, c)
 end
 
 function draw_world()
-  local sx = shake > 0 and rnd(-2, 2) or 0
+  local sx = (player.shake or 0) > 0 and (gt * 7) % 5 - 2 or 0   -- not rnd(): drawing must not change the game
   draw_sky(cam.a)
   -- the track with its hills: one call draws the whole floor
-  floorh(cam.x, cam.y, cam.a, cam.z, HORIZON, FOCAL, 15, STEP)
+  floorh(cam.x, cam.y, cam.a, cam.z, VHOR, VFOC, 15, STEP)
 
   local list = {}
   local function add(x, y, z, kind, obj)
     local px, py, sc, dist = project(x, y, z)
-    if px and sc > 0.03 and px > -80 and px < 400 then
+    if px and sc > 0.03 * VFOC / FOCAL and px > VX - 80 and px < VX + VW + 80 then
       list[#list + 1] = {px=px, py=py, sc=sc, dist=dist, kind=kind, o=obj}
     end
   end
@@ -1112,6 +1196,8 @@ end
 
 function draw_hud()
   local order = standings()
+  if VH < 200 then draw_hud_small(); return order end
+  camera(-VX, -VY)
   -- place
   shadow_text(place_str(player.place), 8, 8, ({27, 29, 10, 13})[player.place], 3)
   -- lap and time
@@ -1137,10 +1223,11 @@ function draw_hud()
     rectfill(8, 212, 84, 6, 1)
     rectfill(9, 213, math.min(player.charge / 150, 1) * 82, 4, ({28, 13, 27, 5})[tier + 1])
   end
-  if pop_t > 0 then
-    local w = #pop_s * 16
-    shadow_text(pop_s, 160 - w // 2, 150 - (50 - pop_t) // 3, pop_c, 2)
+  if player.pop_t > 0 then
+    local w = #player.pop_s * 16
+    shadow_text(player.pop_s, 160 - w // 2, 150 - (50 - player.pop_t) // 3, player.pop_c, 2)
   end
+  if player.done and mode == "race" then shadow_text("FINISHED " .. place_str(player.place), 80, 100, 27, 2) end
   -- minimap
   rectfill(MM.x - 2, MM.y - 2, 92, 48, 1)
   for i = 1, NWP, 2 do
@@ -1152,7 +1239,38 @@ function draw_hud()
     local c = PAINTS[k.paint][1][2]
     circfill(MM.x + k.x * MM.s, MM.y + k.y * MM.s, k == player and 2 or 1, k == player and 13 or c)
   end
+  camera()
   return order
+end
+
+-- the HUD for a half or quarter of the screen (several players on one screen)
+function draw_hud_small()
+  camera(-VX, -VY)
+  local W, H = VW, VH
+  shadow_text(place_str(player.place), 4, 4, ({27, 29, 10, 13})[player.place], 2)
+  local lap = clamp(player.lap, 1, LAPS)
+  shadow_text("LAP " .. lap .. "/" .. LAPS, W - 52, 4, 13)
+  shadow_text(tstr(player.done and player.time or race_t), W - 52, 13, 12)
+  if NH > 1 and (ME or 0) == 0 then shadow_text("P" .. player.pn, W - 18, H - 12, 13) end
+  rectfill(W // 2 - 11, 3, 22, 22, 1); rect(W // 2 - 11, 3, 22, 22, player.item and 13 or 30)
+  if player.item then
+    local icon = player.roll > 0 and ITEMS[(gt // 4) % #ITEMS + 1].icon or ITEMS[player.item].icon
+    sspr(icon, W // 2 - 8, 6, 2, 2, 1)
+  end
+  if cam.back then shadow_text("REAR VIEW", W // 2 - 18, 28, 13) end
+  local spd = clamp(player.fwd / (player.top * 1.32), 0, 1)
+  rectfill(4, H - 10, 52, 6, 1)
+  rectfill(5, H - 9, 50 * spd, 4, player.boost > 0 and 10 or 21)
+  for i = 1, 3 do rectfill(4 + (i - 1) * 7, H - 16, 5, 3, i <= player.stage and ({17, 27, 25})[i] or 30) end
+  if player.drift ~= 0 then
+    rectfill(4, H - 22, 52, 4, 1)
+    rectfill(5, H - 21, math.min(player.charge / 150, 1) * 50, 2, ({28, 13, 27, 5})[drift_tier(player) + 1])
+  end
+  if player.pop_t > 0 then
+    shadow_text(player.pop_s, W // 2 - #player.pop_s * 4, H // 2 + 10 - (50 - player.pop_t) // 4, player.pop_c)
+  end
+  if player.done and mode == "race" then shadow_text("FINISHED " .. place_str(player.place), W // 2 - 40, H // 2 - 10, 27) end
+  camera()
 end
 
 function _draw()
@@ -1170,23 +1288,39 @@ function _draw()
     rectfill(60, 124, 200 * load_p, 6, 17)
     return
   end
-  draw_world()
-  local order = draw_hud()
-  if mode == "count" then
-    local n = 3 - gt // 60
-    local s = n > 0 and tostring(n) or "GO!"
-    local w = #s * 32
-    shadow_text(s, 160 - w // 2, 80, n > 0 and 27 or 17, 4)
-    text("drift: hold L (or B) and steer", 40, 124, 13)
-    text("X: item (hold down: fire back)", 40, 138, 13)
-  elseif mode == "race" and gt < 40 then
-    shadow_text("GO!", 112, 80, 17, 4)
-  elseif mode == "results" then
+  -- one view per player on this screen, each with its own camera and HUD
+  local order
+  local vs = views()
+  for _, v in ipairs(vs) do
+    set_view(v)
+    player, cam = humans[v.p], cams[v.p]
+    clip(VX, VY, VW, VH)
+    draw_world()
+    order = draw_hud()
+    local big = VH >= 200
+    if mode == "count" then
+      local n = 3 - gt // 60
+      local s = n > 0 and tostring(n) or "GO!"
+      local sc = big and 4 or 2
+      shadow_text(s, VX + VW // 2 - #s * 4 * sc, VY + (big and 80 or 34), n > 0 and 27 or 17, sc)
+      if big then
+        text("drift: hold L (or B) and steer", 40, 124, 13)
+        text("X: item (hold down: fire back)", 40, 138, 13)
+      end
+    elseif mode == "race" and gt < 40 then
+      shadow_text("GO!", VX + VW // 2 - (big and 48 or 24), VY + (big and 80 or 34), 17, big and 4 or 2)
+    end
+    clip()
+  end
+  player, cam = humans[1], cams[1]
+  set_view({x = 0, y = 0, w = 320, h = 240})
+  if #vs == 2 then rectfill(0, 119, 320, 2, 1) elseif #vs > 2 then rectfill(0, 119, 320, 2, 1); rectfill(159, 0, 2, 240, 1) end
+  if mode == "results" then
     rectfill(56, 60, 208, 112, 1); rect(56, 60, 208, 112, 13)
     text("FINISH!", 104, 66, 27, 2)
     for i, k in ipairs(order) do
       local y = 86 + i * 14
-      local c = k == player and 27 or 13
+      local c = k.human and 27 or 13
       text(place_str(i), 64, y, c)
       text(k.name, 96, y, c)
       text(k.done and tstr(k.time) or "--", 200, y, c)
@@ -1194,15 +1328,28 @@ function _draw()
     local b = best[TRACKS[sel.track].name] or 0
     text(new_best and "New best time!" or ("Best " .. tstr(b)), 64, 154, new_best and 17 or 29)
     if gt > 60 then text("A: back to garage", 104, 164, 29) end
+    if #humans > 1 then
+      local p = humans[(ME or 0) > 0 and ME or 1]
+      if (ME or 0) > 0 and p then text("You: " .. place_str(p.place), 200, 154, 27) end
+    end
   end
 end
 
 -- ------------------------------------------------------------------ garage
 function draw_garage()
+  -- linked Bits show their own player's garage; a shared screen shows whose turn it is
+  local v = ((ME or 0) > 0 and sels[ME]) and ME or (garage_turn() or 1)
+  local keep_sel, keep_row = sel, row
+  sel, row = sels[v], rows[v]
+  draw_garage_for(v)
+  sel, row = keep_sel, keep_row
+end
+
+function draw_garage_for(v)
   cls(1)
   for y = 0, 7 do rectfill(0, 150 + y * 12, 320, 1, 2) end
   text("KART LAB", 12, 10, 27, 2)
-  text("build your kart", 12, 28, 29)
+  text(NH > 1 and ("P" .. v .. ": build your kart") or "build your kart", 12, 28, NH > 1 and ({27, 22, 17, 10})[v] or 29)
   -- turntable
   local k = {body = sel.body, eng = sel.eng, tyre = sel.tyre, paint = sel.paint}
   ellipse(80, 150, 52, 31)
@@ -1221,13 +1368,15 @@ function draw_garage()
     local on = row == i
     if on then rectfill(158, y - 2, 156, 18, 2) end
     text(it[1], 164, y, on and 27 or 29)
-    text((on and "< " or "") .. it[2].name .. (on and " >" or ""), 164, y + 8, 13)
+    local arrows = on and not (i == 1 and v > 1)
+    text((arrows and "< " or "") .. it[2].name .. (arrows and " >" or ""), 164, y + 8, 13)
   end
   local on = row == 6
   rectfill(158, 136, 156, 14, on and 25 or 2)
   text("RACE!", 214, 139, on and 27 or 13)
   local b = best[TRACKS[sel.track].name]
-  local about = row == 1 and (b and ("Best time " .. tstr(b)) or "No time set yet.")
+  local about = row == 1 and v > 1 and "Player 1 picks the track."
+    or row == 1 and (b and ("Best time " .. tstr(b)) or "No time set yet.")
     or row == 2 and BODIES[sel.body].about or row == 3 and ENGINES[sel.eng].about
     or row == 4 and TYRES[sel.tyre].about or row == 5 and "Looks only. Rivals never copy it." or "3 laps. Crates hold items (X)."
   text(about, 12, 196, 29)
@@ -1238,7 +1387,13 @@ function draw_garage()
     rectfill(x + 60, y + 1, 36, 5, 31)
     rectfill(x + 60, y + 1, math.min(s[key], 10) * 3.6, 5, ({21, 17, 22, 9, 16, 5})[i])
   end
-  text("A: race", 260, 10, 29)
+  text(NH > 1 and "A: ready" or "A: race", 312 - (NH > 1 and 8 or 7) * 8, 10, 29)
+  if ready[v] then
+    rectfill(158, 136, 156, 14, 17)
+    local wait = 0
+    for p = 1, NH do if not ready[p] then wait = p; break end end
+    text(wait > 0 and ("waiting for player " .. wait) or "READY!", 172, 139, 1)
+  end
 end
 `.replace('__TRACKS__', luaTracks);
 

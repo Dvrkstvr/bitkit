@@ -229,5 +229,48 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
     if (errors.length) { errors.forEach(e => fail('Kart Lab Track tab: ' + e)); errors = []; }
   }
 
+  // Kart Lab with two players: both karts race in the same race. Linked Bits (each sees its own player)
+  // must stay identical; on one screen the players take turns in the garage and the screen is split.
+  {
+    const kd = window.BK_DEMOS.find(d => d.name === 'Kart Lab');
+    const probe = '\nlocal _u = _update\nfunction _update() _u() if mode == "race" and gt % 120 == 0 then local h = 0 for i, k in ipairs(karts) do h = h + math.floor(k.x) * i + math.floor(k.y) * 3 * i end print("ksync", gt, h, rnd(1000)) end if mode == "race" and gt == 600 then print("k2p", #humans, #karts, humans[1].lap, humans[2].lap, humans[1].fwd > 1, humans[2].fwd > 1, humans[2].ai, #views()) end end';
+    const M2 = await runtime({ onLog: (m, e) => { if (e) errors.push('bit 2: ' + m); else logs.push('B2 ' + m); } });
+    M2._bkw_init();
+    const kg = { tiles: new Uint8Array(32768), flags: new Uint8Array(512), map: new Uint16Array(32768) };
+    kd.buildGfx(kg);
+    const boot = (R, me) => {
+      R._bkw_players(2, me);
+      R.HEAPU8.set(kg.tiles, R._bkw_tiles()); R.HEAPU8.set(kg.flags, R._bkw_flags()); R.HEAPU16.set(kg.map, R._bkw_map() >> 1);
+      R.HEAP32[(R._bkw_save() >> 2)] = -1;              // no save data: every Bit starts the same
+      return R._bkw_load(R.stringToNewUTF8(kd.code + probe));
+    };
+    const inputs = f => [f === 10 ? 1 << 4 : (f > 200 ? 1 << 9 : 0), f === 12 || f === 14 ? 1 << 4 : (f > 200 ? 1 << 4 : 0)];
+    logs = [];
+    if (boot(M, 1) || boot(M2, 2)) fail('Kart Lab linked did not load');
+    for (let f = 0; f < 1100; f++) {
+      const [m1, m2] = inputs(f);
+      M._bkw_input(2, m2, 0); M2._bkw_input(2, m2, 0);
+      if (M._bkw_frame(m1, 0) || M2._bkw_frame(m1, 0)) { fail('Kart Lab linked stopped at frame ' + f); break; }
+    }
+    const a = logs.filter(l => l.startsWith('ksync')).map(l => l.split(/\s+/).slice(1).join(' '));
+    const b = logs.filter(l => l.startsWith('B2 ksync')).map(l => l.split(/\s+/).slice(2).join(' '));
+    if (a.length < 4 || a.join('|') !== b.join('|')) fail('Kart Lab linked Bits drifted apart:\n  bit 1: ' + a.join(' | ') + '\n  bit 2: ' + b.join(' | '));
+    const k2 = (logs.find(l => l.startsWith('k2p')) || '').split(/\s+/).slice(1).join(' ');
+    if (k2 !== '2 4 1 1 true true false 1') fail('Kart Lab linked race: ' + k2 + ' (expected 2 players + 2 rivals racing, both driving, one view per Bit)');
+    // one screen: player 1 picks, then player 2, then the race runs split-screen
+    logs = [];
+    M._bkw_players(2, 0);
+    if (boot(M, 0)) fail('Kart Lab 2 players did not load');
+    for (let f = 0; f < 1100; f++) {
+      const [m1, m2] = inputs(f);
+      M._bkw_input(2, f === 12 ? 0 : m2, 0);
+      if (M._bkw_frame(m1, 0)) { fail('Kart Lab 2 players stopped at frame ' + f); break; }
+    }
+    const k3 = (logs.find(l => l.startsWith('k2p')) || '').split(/\s+/).slice(1).join(' ');
+    if (k3 !== '2 4 1 1 true true false 2') fail('Kart Lab split screen: ' + k3 + ' (expected 2 players racing in 2 views)');
+    M._bkw_players(1, 0);
+    if (errors.length) { errors.forEach(e => fail('Kart Lab 2 players: ' + e)); errors = []; }
+  }
+
   if (!process.exitCode) console.log('ok: runtime checks, home screen, 3000 demo frames, level switching, cutscenes, save data, multiplayer, 2.5D floor and Kart Lab passed');
 });
