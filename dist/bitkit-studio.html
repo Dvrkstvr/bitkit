@@ -14021,6 +14021,9 @@ end
 -- find the ladder down. From floor 4 things live in the dark. The mill's stone lies at the very bottom.
 -- Mid game: the rusted tractor by the Long acre. Mend it with iron and copper from the mine, climb on with A,
 -- hold A to work three cells at once with the implement you picked (L), and hop off with Y.
+-- Very late game, once the mill turns: build the silo, buy the clockwork driver, and teach the tractor a
+-- route by driving it once (Y at the parked tractor). It then drives the route by itself, every morning if you
+-- like, working as you did, unloading at the silo and filling its tank at the pond as it passes them.
 -- The farm is kept with save(). clock() tells how long the Bit was off: the farm lives on while you are
 -- away (a few days at most), and anything you watered keeps growing.
 
@@ -14078,6 +14081,7 @@ MILL = {
 
 -- what you can mend in the pasture, and who lives there
 BUILD = {
+  silo = { name = "Silo", coins = 1500, need = { wood = 30, stone = 30, iron = 10 }, about = "Holds 600 crops. A tractor on a route unloads here as it passes." },
   trac = { name = "Tractor", coins = 800, need = { iron = 12, copper = 10, wood = 6 }, about = "Rusted solid, but all there. Iron and copper come from the mine." },
   coop = { name = "Hen house", coins = 60, need = { wood = 10, fibre = 6 }, about = "Room for 4 hens. Fed hens lay an egg a day." },
   shed = { name = "Goat shed", coins = 200, need = { wood = 20, stone = 10 }, about = "Room for 2 goats. Milk them by hand." },
@@ -14091,6 +14095,8 @@ IMPL = {
 }
 TRAC_SPEED = tune("Tractor speed", 2, 1, 4, 0.1)
 TANK = 90
+ROUTE_MAX, SILO_MAX, HOPPER_MAX = 400, 600, 200
+SILO_AT = { x = 13, y = 20 }
 HEN_NAMES = { "Pip", "Dot", "Clover", "Bean" }
 GOAT_NAMES = { "Thistle", "Burr" }
 PASTURE = { x = 4, y = 22, w = 14, h = 4 }
@@ -14098,7 +14104,7 @@ PASTURE = { x = 4, y = 22, w = 14, h = 4 }
 -- ---------------------------------------------------------------- the world
 -- . grass  : path  ~ water  T tree  B brambles  1-3 plots  h hut  c crate  W wagon  N Marrow  m mill
 -- X washed-out road  t tin box  M old mine  o standing stone  S fallen pine
--- V the rusted tractor
+-- V the rusted tractor  Z the silo
 -- p pasture  k hen house  g goat shed  r feeding trough
 FARM = {
   "BBBBBBBBBBBBBBXXBBBBBBBBBBBBBB",
@@ -14121,7 +14127,7 @@ FARM = {
   "B...3333333333333333333333...B",
   "B...3333333333333333333333...B",
   "B...3333333333333333333333...B",
-  "B.T.......................t..B",
+  "B.T..........Z............t..B",
   "B............................B",
   "B...pppppppppppppp.kk.gg.....B",
   "B...pppppppppppppp.kk.gg.....B",
@@ -14166,7 +14172,7 @@ PLOTS = {
   { x = 17, y = 8, w = 10, h = 6, name = "East meadow", cost = 350 },
   { x = 4, y = 15, w = 22, h = 5, name = "Long acre", cost = 1200 },
 }
-SOLID = "TB~hcWNmXMoStFkgr#RCIQ<>H"
+SOLID = "TB~hcWNmXMoStFkgr#RCIQ<>HZ"
 
 function hash(x, y, s)
   local n = (x * 374761393 + y * 668265263 + s * 982451653) & 0x7fffffff
@@ -14280,8 +14286,9 @@ function grow_forage()
 end
 
 -- a night passes. Watered crops (or everything, after rain) grow a day.
-function new_day()
+function new_day(away)
   local grew = 0
+  route_finish()
   each_cell(function(f)
     if f.c > 0 and f.wet and in_season(f.c) and not ripe(f) then f.age = f.age + 1; grew = grew + 1 end
     f.wet = false
@@ -14300,6 +14307,10 @@ function new_day()
   end)
   grow_forage()
   animals_night()
+  -- the clockwork driver's morning round. While the Bit is off it happens in one go.
+  if G.daily == 1 and G.auto == 1 and route_len() > 0 and not riding then
+    if away then route_all() else route_start() end
+  end
   return grew
 end
 
@@ -14464,12 +14475,19 @@ function near_tractor()
   return (G.tx - cx) ^ 2 + (G.ty - 4 - cy) ^ 2 < 18 * 18 or (G.tx - px) ^ 2 + (G.ty - py) ^ 2 < 14 * 14
 end
 function mount()
+  auto_i = nil
   riding, px, py, work_t = true, G.tx, G.ty, 0
   sfx("C2", 2, 0.3, 20, -1, 0, 60)
   if G.impsel == 0 then say("The engine coughs and catches. Y hops off. Marrow sells implements for it.") end
 end
 function dismount()
   riding, G.tx, G.ty = false, fl(px), fl(py)
+  if teaching then
+    teaching = false
+    say(route_len() > 1 and ("The tractor remembers the route: " .. route_len() .. " cells. Press Y beside it to send it round.") or "Too short to be a route.")
+    if route_len() <= 1 then G.route = "" end
+    persist()
+  end
   -- step off to a free side
   for _, d in ipairs({ { 0, 14 }, { 14, 0 }, { -14, 0 }, { 0, -14 } }) do
     if not blocked(px + d[1], py + d[2]) then px, py = px + d[1], py + d[2] break end
@@ -14483,6 +14501,184 @@ function next_impl()
   end
   G.impsel = 0
 end
+-- One implement working the cell (cx, cy) and the one on either side of the heading (hx, hy).
+-- With a seed number it sows that seed and what it reaps goes in the tractor's own hopper (the route);
+-- without, it uses the seed you picked and your bag (you are driving).
+function work_at(cx, cy, hx, hy, ii, seed)
+  local imp, did = IMPL[ii], false
+  if not imp or G.imp[ii] ~= 1 then return false end
+  for i = -1, 1 do
+    local x, y = cx + (hx == 0 and i or 0), cy + (hy == 0 and i or 0)
+    local f, p = cell(x, y)
+    if f and G.plots[p] then
+      if imp.key == "plough" then
+        if f.k == 0 or f.k == 1 then f.k, f.hits, did = 4, 0, true end
+      elseif imp.key == "drill" then
+        if f.k == 4 and f.c == 0 then
+          local sd = seed or G.sel
+          if not seed and G.seeds[sd] <= 0 then pick_seed(1); sd = G.sel end
+          if G.seeds[sd] > 0 and in_season(sd) then
+            G.seeds[sd] = G.seeds[sd] - 1
+            f.c, f.age, did = sd, 0, true
+          end
+        end
+      elseif imp.key == "tank" then
+        if f.k == 4 and not f.wet and G.tank > 0 then G.tank, f.wet, did = G.tank - 1, true, true end
+      elseif ripe(f) then
+        local c, ok = CROPS[f.c], false
+        if seed then
+          if hopper_count() < HOPPER_MAX then G.hop[c.key] = (G.hop[c.key] or 0) + 1; ok = true end
+        else
+          ok = give(c.key, 1)
+        end
+        if ok then
+          G.grown, did = G.grown + 1, true
+          if c.regrow then f.age = c.days - c.regrow else f.c, f.age = 0, 0 end
+        end
+      end
+    end
+  end
+  return did
+end
+
+-- ---- the route: taught by driving it once, then driven by the clockwork driver
+function hopper_count() local n = 0 for _, v in pairs(G.hop) do n = n + v end return n end
+function silo_count() local n = 0 for _, v in pairs(G.silo) do n = n + v end return n end
+function route_len() return #G.route // 4 end
+function route_step(i)
+  local a, b, c, d = G.route:byte(i * 4 - 3, i * 4)
+  return a - 48, b - 48, (c - 48) % 2 == 1, (c - 48) // 2, d - 48
+end
+function teach_start()
+  mount()
+  G.route, teaching, teach_last = "", true, nil
+  say("Drive the route once, working as you go. Y hops off and the tractor remembers it.")
+end
+function teach_step()
+  local cx, cy = fl(px / C), fl((py - 4) / C)
+  if teach_last == cx + cy * 64 then
+    -- still in the same cell: remember if you started working here
+    if btn("a") and route_len() > 0 then
+      local n = #G.route
+      local c = G.route:byte(n - 1) - 48
+      if c % 2 == 0 then G.route = G.route:sub(1, n - 2) .. string.char(48 + c + 1) .. G.route:sub(n) end
+    end
+    return
+  end
+  if route_len() >= ROUTE_MAX then
+    teaching = false
+    say("That is as long a route as the clockwork can hold: " .. ROUTE_MAX .. " cells.")
+    return
+  end
+  teach_last = cx + cy * 64
+  G.route = G.route .. string.char(48 + cx, 48 + cy, 48 + (btn("a") and 1 or 0) + G.impsel * 2, 48 + G.sel)
+end
+-- what the tractor does when it reaches step i of its route
+function route_arrive(i)
+  local x, y, work, ii, sd = route_step(i)
+  local hx, hy = 1, 0
+  if i > 1 then
+    local ox, oy = route_step(i - 1)
+    if x ~= ox or y ~= oy then hx, hy = x - ox, y - oy end
+  elseif route_len() > 1 then
+    local nx, ny = route_step(2)
+    hx, hy = nx - x, ny - y
+  end
+  hx, hy = clamp(hx, -1, 1), clamp(hy, -1, 1)
+  if hx ~= 0 then hy = 0 end
+  auto_hx, auto_hy, auto_imp = hx, hy, ii
+  if work and work_at(x, y, hx, hy, ii, sd) then work_t = 8 end
+  -- passing the silo it unloads, passing water it fills the tank
+  if G.silo_b == 1 and math.abs(x - SILO_AT.x) <= 3 and math.abs(y - SILO_AT.y) <= 3 then
+    for k, v in pairs(G.hop) do
+      local take = math.min(v, SILO_MAX - silo_count())
+      if take > 0 then G.silo[k] = (G.silo[k] or 0) + take; G.hop[k] = v - take end
+      if G.hop[k] == 0 then G.hop[k] = nil end
+    end
+  end
+  if G.imp[3] == 1 and G.tank < TANK then
+    for oy = -2, 2 do for ox = -2, 2 do
+      if tile(1, x + ox, y + oy) == "~" then G.tank = TANK end
+    end end
+  end
+  G.tx, G.ty = x * C + 8, y * C + 12
+end
+function route_start()
+  if route_len() == 0 or G.trac == 0 or G.auto == 0 or riding then return false end
+  auto_i, auto_hx, auto_hy, auto_imp = 1, 1, 0, 0
+  local x, y = route_step(1)
+  G.tx, G.ty = x * C + 8, y * C + 12
+  route_arrive(1)
+  return true
+end
+-- the rest of the route in one go: at night, or on days that pass while the Bit is off
+function route_finish()
+  if not auto_i then return end
+  for i = auto_i + 1, route_len() do route_arrive(i) end
+  auto_i = nil
+end
+function route_all() if route_start() then route_finish() end end
+function update_route()
+  if not auto_i then return end
+  if work_t > 0 then work_t = work_t - 1 end
+  local n = auto_i + 1
+  if n > route_len() then
+    auto_i = nil
+    if G.area == 1 then say("The tractor has finished its round.") end
+    persist()
+    return
+  end
+  local x, y = route_step(n)
+  local tx, ty = x * C + 8, y * C + 12
+  local ex, ey = tx - G.tx, ty - G.ty
+  local d = math.max(math.abs(ex), math.abs(ey))
+  local sp = TRAC_SPEED * 0.75
+  if d <= sp then
+    auto_i = n
+    route_arrive(n)
+  else
+    G.tx, G.ty = G.tx + clamp(ex, -sp, sp), G.ty + clamp(ey, -sp, sp)
+    if math.abs(ex) > math.abs(ey) then auto_hx, auto_hy = ex > 0 and 1 or -1, 0 else auto_hx, auto_hy = 0, ey > 0 and 1 or -1 end
+  end
+end
+function auto_items()
+  local L = { "Teach it a route" }
+  if route_len() > 0 then
+    L[#L + 1] = auto_i and "Stop it" or "Send it round now"
+    L[#L + 1] = "Every morning: " .. (G.daily == 1 and "yes" or "no")
+    L[#L + 1] = "Forget the route"
+  end
+  return L
+end
+function update_auto()
+  local L = auto_items()
+  if btnp("up") then ui_sel = (ui_sel - 2) % #L + 1 end
+  if btnp("down") then ui_sel = ui_sel % #L + 1 end
+  ui_sel = clamp(ui_sel, 1, #L)
+  if btnp("b") then ui = nil return end
+  if not btnp("a") then return end
+  local it = L[ui_sel]
+  if it == "Teach it a route" then auto_i = nil; ui = nil; teach_start()
+  elseif it == "Send it round now" then ui = nil; route_start()
+  elseif it == "Stop it" then auto_i = nil
+  elseif it == "Forget the route" then G.route, G.daily, auto_i, ui_sel = "", 0, nil, 1
+  else G.daily = 1 - G.daily end
+  sfx("E5", 1, 0.2, 4)
+  persist()
+end
+function silo_sell()
+  local total, n = 0, 0
+  for k, v in pairs(G.silo) do total, n = total + price(k) * v, n + v end
+  if n == 0 then sfx("C3", 0, 0.2, 6) return end
+  G.silo = {}
+  G.coins, G.sold = G.coins + total, G.sold + n
+  ui = nil
+  say("Marrow's cart takes " .. n .. " crops from the silo for " .. total .. " coins.")
+  float("+" .. total, 27)
+  sfx("E5", 1, 0.3, 6) sfx("A5", 1, 0.3, 10)
+  persist()
+end
+
 -- hold A while driving: the implement works the cell under the tractor and the one on either side
 function tractor_work()
   local imp = IMPL[G.impsel]
@@ -14490,32 +14686,7 @@ function tractor_work()
     if btnp("a") then say("No implement on the hitch. Marrow sells a plough, a seed drill, a water tank and a reaper.") end
     return
   end
-  local cx, cy, did = fl(px / C), fl((py - 4) / C), false
-  for i = -1, 1 do
-    local x, y = cx + (dx == 0 and i or 0), cy + (dy == 0 and i or 0)
-    local f, p = cell(x, y)
-    if f and G.plots[p] then
-      if imp.key == "plough" then
-        if f.k == 0 or f.k == 1 then f.k, f.hits, did = 4, 0, true end
-      elseif imp.key == "drill" then
-        if f.k == 4 and f.c == 0 then
-          if G.seeds[G.sel] <= 0 then pick_seed(1) end
-          if G.seeds[G.sel] > 0 and in_season(G.sel) then
-            G.seeds[G.sel] = G.seeds[G.sel] - 1
-            f.c, f.age, did = G.sel, 0, true
-          end
-        end
-      elseif imp.key == "tank" then
-        if f.k == 4 and not f.wet and G.tank > 0 then G.tank, f.wet, did = G.tank - 1, true, true end
-      elseif ripe(f) then
-        local c = CROPS[f.c]
-        if give(c.key, 1) then
-          G.grown, did = G.grown + 1, true
-          if c.regrow then f.age = c.days - c.regrow else f.c, f.age = 0, 0 end
-        end
-      end
-    end
-  end
+  local did = work_at(fl(px / C), fl((py - 4) / C), dx, dy, G.impsel, nil)
   if did then
     work_t = 8
     sfx(imp.key == "tank" and "G4" or "C3", 3, 0.2, 4)
@@ -14526,6 +14697,7 @@ function tractor_work()
 end
 function update_riding()
   if work_t > 0 then work_t = work_t - 1 end
+  if teaching then teach_step() end
   if btn("a") then tractor_work() end
   if btnp("y") then dismount()
   elseif btnp("l") then next_impl() sfx("E4", 1, 0.15, 3)
@@ -14556,6 +14728,16 @@ function animals_night()
   for _, o in ipairs(FORAGE) do if is_egg(o) then eggs = eggs + 1 end end
   for i, a in ipairs(G.an) do
     a.p = 0
+    if G.feed == 0 then
+      -- an empty trough is topped up from the silo, cheapest crop first
+      local best, bv = nil, 1e9
+      for k, v in pairs(G.silo) do if v > 0 and price(k) < bv then best, bv = k, price(k) end end
+      if best then
+        G.silo[best] = G.silo[best] - 1
+        if G.silo[best] == 0 then G.silo[best] = nil end
+        G.feed = 2
+      end
+    end
     if G.feed > 0 then
       G.feed = G.feed - 1
       if a.k == "g" then a.m = 1
@@ -14663,10 +14845,11 @@ function update_build()
   if not ok then sfx("C3", 0, 0.2, 6) return end
   G.coins = G.coins - Bd.coins
   for k, n in pairs(Bd.need) do G.inv[k] = have(k) - n end
-  G[ui_kind] = 1
+  if ui_kind ~= "silo" then G[ui_kind] = 1 end
   ui = nil
   sfx("C5", 1, 0.3, 8) sfx("E5", 1, 0.3, 14) sfx("G5", 1, 0.3, 22)
-  if ui_kind == "trac" then say("It runs! A climbs on, Y hops off. Marrow sells implements for it.")
+  if ui_kind == "silo" then G.silo_b = 1 say("The silo stands! Marrow now has a clockwork driver for your tractor.")
+  elseif ui_kind == "trac" then say("It runs! A climbs on, Y hops off. Marrow sells implements for it.")
   else say("The " .. Bd.name:lower() .. " stands! Marrow can bring you " .. (ui_kind == "coop" and "hens." or "goats and a pail.")) end
   persist()
 end
@@ -14677,6 +14860,7 @@ function fresh()
     seeds = { 4, 0, 0, 0, 0, 0, 0, 0, 0 }, inv = {}, bag = 1, hoe = 1, can = 1, water = 5, pick = 0, axe = 0,
     plots = { true, false, false }, mill = 0, millc = 0, rain = false, demand = 1, tins = "00",
     sold = 0, picked = 0, grown = 0, mine = 0, deep = 0, lamp = 0, gotms = 0,
+    silo_b = 0, silo = {}, hop = {}, auto = 0, route = "", daily = 0,
     trac = 0, tx = 27 * C + 8, ty = 14 * C + 14, imp = { 0, 0, 0, 0 }, impsel = 0, tank = 0, coop = 0, shed = 0, pail = 0, feed = 0, an = {} }
 end
 
@@ -14719,7 +14903,7 @@ function load_farm()
   G.area = clamp(G.area, 1, 2)
   px, py = G.px, G.py
   MINE, MOBS, mine_n, mine_hp, hurt_t, mine_hits, mine_at = nil, {}, 0, 3, 0, 0, nil
-  riding, work_t = false, 0
+  riding, work_t, teaching, teach_last, auto_i, auto_hx, auto_hy, auto_imp = false, 0, false, nil, nil, 1, 0, 0
   ANIM = nil
   place_animals()
   -- while the Bit was off: the farm carries on, a few days at most
@@ -14730,7 +14914,7 @@ function load_farm()
     if n >= 1 then
       local grew, rain = 0, 0
       for i = 1, n do
-        grew = grew + new_day()
+        grew = grew + new_day(true)
         if G.rain then rain = rain + 1 end
       end
       local ready = 0
@@ -14755,6 +14939,7 @@ function _init()
       "Watered crops grow overnight. Sleep in the hut, sell at the crate, shop at the wagon.",
       "Bramble Woods lies west along the road. Bring what the mill needs to the ruin.",
       "The mine in the woods opens with a pickaxe. Break rocks for ore, find the ladder down. A also hits.",
+      "After the mill: build the silo, buy the clockwork driver, press Y by the tractor and teach it a route.",
       "The rusted tractor by the Long acre can be mended. On it: hold A to work, L changes implement, Y hops off.",
       "The pasture is south of the fields. Fill the trough from your bag, pet your animals every day.",
     },
@@ -14836,6 +15021,7 @@ end
 
 function sleep()
   if riding then riding, G.tx, G.ty = false, fl(px), fl(py) end
+  if teaching then teaching = false; if route_len() <= 1 then G.route = "" end end
   fade, fade_fn = 1, function()
     new_day()
     G.area, px, py, dx, dy = 1, 8 * C + 8, 4 * C + 14, 0, 1
@@ -14865,6 +15051,13 @@ function use_hands()
   end
   local ch = tile(a, x, y)
   if near_tractor() then mount() return end
+  if ch == "Z" then
+    if G.silo_b == 0 then
+      if G.mill < #MILL then say("Footings for a silo. The builders will not start before the mill turns again.")
+      else ui, ui_kind = "build", "silo" end
+    else ui = "silo" end
+    return
+  end
   if ch == "V" and G.trac == 0 then ui, ui_kind = "build", "trac" return end
   if a == 1 then
     local an = animal_at(x, y) or animal_at(fl(px / C), fl((py - 4) / C))
@@ -15022,6 +15215,7 @@ function shop_items()
   for i, it in ipairs(IMPL) do
     once(it.name, it.cost, it.about, G.trac == 1 and G.imp[i] == 0, function() G.imp[i] = 1; if G.impsel == 0 then G.impsel = i end; if it.key == "tank" then G.tank = TANK end end)
   end
+  once("Clockwork driver", 2500, "Drives the tractor along a route you teach it, and unloads at the silo.", G.silo_b == 1 and G.trac == 1 and G.auto == 0, function() G.auto = 1 end)
   once("Lantern", 180, "Lights more of the mine around you.", G.mine == 1 and G.lamp == 0, function() G.lamp = 1 end)
   once("Hen", 120, "Lays an egg a day when fed. Pet her for bigger eggs.", G.coop == 1 and herd("h") < 4, function() add_animal("h") end)
   once("Goat", 350, "Gives milk every day when fed. Loved goats give creamy milk.", G.shed == 1 and herd("g") < 2, function() add_animal("g") end)
@@ -15132,6 +15326,11 @@ function _update()
   if ui == "shop" then update_shop() return end
   if ui == "mill" then update_mill() return end
   if ui == "build" then update_build() return end
+  if ui == "auto" then update_auto() return end
+  if ui == "silo" then
+    if btnp("a") then silo_sell() elseif btnp("b") then ui = nil end
+    return
+  end
   if ui == "lift" then
     local L = lift_floors()
     if btnp("up") then ui_sel = (ui_sel - 2) % #L + 1 end
@@ -15154,6 +15353,7 @@ function _update()
     return
   end
   if G.area == 1 then update_animals() end
+  update_route()
   if G.area == 3 then
     update_mobs()
     if fade > 0 then return end
@@ -15194,7 +15394,8 @@ function _update()
   local again = hold > 0 and hold % 16 == 0
   if btnp("a") or (btn("a") and again) then use_hands()
   elseif btnp("b") or (btn("b") and again) then use_water()
-  elseif btnp("y") then look()
+  elseif btnp("y") then
+    if G.auto == 1 and near_tractor() then ui, ui_sel = "auto", 1 else look() end
   elseif btnp("x") then ui = "bag"
   elseif btnp("l") then pick_seed(-1) sfx("E4", 1, 0.15, 3)
   elseif btnp("r") then pick_seed(1) sfx("E4", 1, 0.15, 3) end
@@ -15344,10 +15545,10 @@ function draw_animal(i)
 end
 
 -- the tractor, drawn from code so it can rust, puff and bounce. x, y: the middle of its rear axle on the ground
-function draw_tractor(x, y, hx, hy, on, rusty)
+function draw_tractor(x, y, hx, hy, on, rusty, alone, ii)
   local body, dark, tyre = rusty and 8 or 26, rusty and 7 or 24, rusty and 30 or 1
   local bob = (on and t() % 8 < 4) and 1 or 0
-  local imp = on and IMPL[G.impsel] or nil
+  local imp = on and IMPL[ii or G.impsel] or nil
   if hx ~= 0 then
     local s = hx
     if imp then
@@ -15374,12 +15575,30 @@ function draw_tractor(x, y, hx, hy, on, rusty)
       for i = -2, 2 do rectfill(x + i * 9 - 1, y + 1, 3, 3, imp.key == "tank" and 21 or imp.key == "reaper" and 27 or 28) end
     end
   end
-  if on then
+  if on and alone then
+    -- the clockwork driver: a brass box with a turning key
+    rectfill(x - 3, y - 21 + bob, 6, 5, 27) rect(x - 3, y - 21 + bob, 6, 5, 9)
+    if t() % 20 < 10 then line(x - 2, y - 23 + bob, x + 2, y - 23 + bob, 10) else line(x, y - 25 + bob, x, y - 22 + bob, 10) end
+  elseif on then
     local n = hy < 0 and 132 or hx ~= 0 and 136 or 128
     clip(0, 0, 320, y - 14 + bob - camy)
     spr(n, x - 8 - hx * 2, y - 27 + bob, 2, 2, hx < 0)
     clip()
   end
+end
+
+function draw_silo(x, y, built)     -- 16 wide, 40 tall when it stands
+  if not built then
+    rectfill(x + 1, y + 10, 14, 5, 28) rect(x + 1, y + 10, 14, 5, 30) rectfill(x + 4, y + 7, 2, 4, 8) rectfill(x + 10, y + 5, 2, 6, 8)
+    return
+  end
+  for i = 0, 5 do line(x + 7 - i, y - 24 + i, x + 8 + i, y - 24 + i, i % 2 == 0 and 25 or 24) end
+  rectfill(x + 1, y - 18, 14, 33, 29) rect(x + 1, y - 18, 14, 33, 30)
+  for i = 0, 3 do line(x + 2, y - 12 + i * 8, x + 13, y - 12 + i * 8, 28) end
+  rectfill(x + 3, y - 17, 2, 31, 13)
+  local n = silo_count()
+  if n > 0 then rectfill(x + 11, y + 13 - n * 28 // SILO_MAX, 2, n * 28 // SILO_MAX + 1, 27) end
+  rectfill(x + 6, y + 7, 5, 8, 6)
 end
 
 function draw_mine(x, y)
@@ -15512,6 +15731,7 @@ function draw_world()
       elseif a == 1 then
         if ch == "h" and x == 7 and y == 3 then draw_hut(sx, sy - 32)
         elseif ch == "c" then draw_crate(sx, sy)
+        elseif ch == "Z" then draw_silo(sx, sy, G.silo_b == 1)
         elseif ch == "V" and G.trac == 0 then draw_tractor(sx + 8, sy + 14, 1, 0, false, true)
         elseif ch == "k" and x == 19 and y == 23 then draw_coop(sx, sy - 16, G.coop == 1)
         elseif ch == "g" and x == 22 and y == 23 then draw_shed(sx, sy - 16, G.shed == 1)
@@ -15534,7 +15754,10 @@ function draw_world()
     end
     if rows[y] then for _, o in ipairs(rows[y]) do spr(FOUND_BY[o.k].spr, o.x * C, o.y * C, 2, 2) end end
     if arows[y] then for _, i in ipairs(arows[y]) do draw_animal(i) end end
-    if a == 1 and G.trac == 1 and not riding and fl((G.ty - 1) / C) == y then draw_tractor(G.tx, G.ty, 1, 0, false, false) end
+    if a == 1 and G.trac == 1 and not riding and fl((G.ty - 1) / C) == y then
+      if auto_i then draw_tractor(fl(G.tx), fl(G.ty), auto_hx, auto_hy, true, false, true, auto_imp)
+      else draw_tractor(fl(G.tx), fl(G.ty), 1, 0, false, false) end
+    end
     if y == prow then
       if riding then draw_tractor(fl(px), fl(py), dx, dy, true, false) else draw_farmer(fl(px), fl(py)) end
     end
@@ -15635,6 +15858,7 @@ function draw_hud()
   if riding then
     local nm = IMPL[G.impsel] and IMPL[G.impsel].name or "No implement"
     text("L:" .. nm, 2, 229, 27)
+    if teaching and t() % 40 < 28 then text("REC " .. route_len(), 140, 229, 26) end
     if G.impsel == 2 then text(c.name:sub(1, 6) .. " x" .. G.seeds[G.sel], 2 + (#nm + 3) * 8, 229, G.seeds[G.sel] > 0 and 13 or 28) end
     n, w = TANK, G.impsel == 3 and G.tank or 0
   else
@@ -15669,7 +15893,7 @@ function draw_shop()
     end
   end
   if #L > 8 then text(ui_scroll + 8 < #L and "more below" or "more above", 120, 164, 28) end
-  local it = L[ui_sel]
+  local it = L[clamp(ui_sel, 1, #L)]
   for i, l in ipairs(wrap(it.about, 33)) do text(l, 28, 168 + i * 10, 12) end
   text("A: buy   B: leave", 28, 208, 11)
 end
@@ -15752,6 +15976,30 @@ function _draw()
   elseif ui == "bag" then draw_bag()
   elseif ui == "mill" then draw_mill_ui()
   elseif ui == "build" then draw_build()
+  elseif ui == "auto" then
+    local L = auto_items()
+    panel(50, 60, 220, 120, "The clockwork driver")
+    text(route_len() > 0 and ("Route: " .. route_len() .. " cells") or "It knows no route yet.", 60, 78, 12)
+    for i, it in ipairs(L) do
+      if i == ui_sel then rectfill(56, 88 + i * 12, 208, 12, 8) end
+      text(it, 64, 90 + i * 12, i == ui_sel and 27 or 13)
+    end
+    if hopper_count() > 0 then text("In its hopper: " .. hopper_count() .. " crops", 60, 152, 12) end
+    text("A: choose   B: back", 60, 164, 11)
+  elseif ui == "silo" then
+    panel(30, 40, 260, 160, "The silo")
+    text(silo_count() .. " of " .. SILO_MAX .. " crops", 40, 58, 12)
+    local y, total = 74, 0
+    for i, c in ipairs(CROPS) do
+      local v = G.silo[c.key] or 0
+      total = total + v * price(c.key)
+      if v > 0 and y < 170 then
+        draw_icon(c.key, 40, y - 4) text(c.name, 60, y, 13) text("x" .. v, 160, y, 27) text(tostring(v * price(c.key)), 276 - #tostring(v * price(c.key)) * 8, y, 12)
+        y = y + 14
+      end
+    end
+    if total == 0 then text("Empty. A tractor on a route unloads", 40, 78, 28) text("here when it drives past.", 40, 88, 28) end
+    text(total > 0 and ("A: sell it all for " .. total .. "   B: back") or "B: back", 40, 184, 11)
   elseif ui == "lift" then
     local L = lift_floors()
     panel(70, 70, 180, 100, "The old mine")
