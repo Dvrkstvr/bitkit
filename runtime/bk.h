@@ -16,7 +16,7 @@
 #define BK_CHANNELS 8
 #define BK_SAMPLE_RATE 44100
 #define BK_FPS 60
-#define BK_SAVE_MAX 4096
+#define BK_SAVE_MAX 16384
 #define BK_MAX_PLAYERS 8      /* players in one game: linked Bits, or several on one screen */
 #define BK_NET_VALS 8         /* numbers in one network event */
 #define BK_NET_OUT 16         /* events a cart can send per frame */
@@ -40,6 +40,8 @@ typedef struct {
   int pos;         /* samples played */
   float slide;     /* Hz per sample */
   uint32_t noise;
+  int held;        /* 1 = voice(): no decay, the volume follows vol smoothly (music player); 0 = sfx() */
+  float gain;      /* held voices: the volume right now, gliding to vol */
 } bk_voice;
 
 typedef struct {
@@ -182,6 +184,7 @@ uint32_t bk_rand32(void);
 
 /* audio */
 void bk_sfx(int ch, float freq, int wave, float vol, int frames, float pan, float slide);
+void bk_voice_set(int ch, float freq, int wave, float vol, float pan);
 void bk_audio_render(float *out, int frames); /* interleaved stereo */
 
 /* lua glue */
@@ -191,4 +194,5 @@ int  bk_lua_load(const char *code);   /* 0 ok, else error (see bk_lua_error) */
 int  bk_lua_load_ex(const char *entity_data, const char *code); /* entity_data: Lua chunk from the studio, may be NULL */
 int  bk_lua_frame(void);              /* runs _update + _draw. 0 ok */
 const char *bk_lua_error(void);
+int  bk_lua_eval(const char *code);    /* run a chunk in the loaded cart's state (editors talk to their player). 0 ok */
 void bk_lua_close(void);

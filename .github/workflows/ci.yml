@@ -34,6 +34,8 @@ jobs:
         run: node tools/tinwingtest.cjs
       - name: Shaders and Deepglow
         run: node tools/shadertest.cjs
+      - name: Music player, Hexbeat and Loopbox
+        run: node tools/musictest.cjs
       - name: Puffball, Hedge Hogs and Cauldron Crew
         run: node tools/partytest.cjs
 

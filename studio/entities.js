@@ -161,6 +161,10 @@ window.BKEntities = (function () {
     return s;
   }
   function toLua(data, levels, start, extra) {
+    const songs = window.BKMusic && data ? window.BKMusic.toLua(data.songs) : '';
+    return songs + toLuaEnts(data, levels, start, extra);
+  }
+  function toLuaEnts(data, levels, start, extra) {
     const hasTracks = (levels || []).some(L => L.track);
     if (!data || (!data.types.length && !(data.effects || []).length && !(data.cutscenes || []).length && !hasTracks)) return flagsLua(data) + (extra || '');
     const defs = data.types.map(t => {

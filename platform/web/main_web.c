@@ -16,6 +16,7 @@ static void logger(const char *msg, int is_err) { js_log(msg, is_err); }
 EMSCRIPTEN_KEEPALIVE void bkw_init(void) { bk_machine_init(&machine); bk_set_logger(logger); }
 EMSCRIPTEN_KEEPALIVE int bkw_load(const char *code) { return bk_lua_load(code); }
 EMSCRIPTEN_KEEPALIVE int bkw_load_ex(const char *data, const char *code) { return bk_lua_load_ex(data, code); }
+EMSCRIPTEN_KEEPALIVE int bkw_eval(const char *code) { return bk_lua_eval(code); }
 EMSCRIPTEN_KEEPALIVE void bkw_stop(void) { bk_lua_close(); for (int c = 0; c < BK_CHANNELS; c++) machine.voice[c].len = 0; }
 /* player 1's input comes with the frame; set the others first with bkw_input */
 EMSCRIPTEN_KEEPALIVE int bkw_frame(int mask, uint8_t *press) {

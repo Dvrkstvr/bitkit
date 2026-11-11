@@ -903,6 +903,23 @@ void bk_sfx(int ch, float freq, int wave, float vol, int frames, float pan, floa
   v->len = frames * (BK_SAMPLE_RATE / BK_FPS);
   v->pos = 0;
   v->slide = slide / (float)BK_SAMPLE_RATE;
+  v->held = 0;
+  if (!v->noise) v->noise = 0x1234567u + (uint32_t)ch;
+}
+
+/* A held voice (the music player): it sounds until its volume reaches 0, with no decay of its own.
+   Calling it again on a sounding voice only moves pitch, volume and pan, so notes glide without clicks. */
+void bk_voice_set(int ch, float freq, int wave, float vol, float pan) {
+  if (ch < 0 || ch >= BK_CHANNELS) return;
+  bk_voice *v = &BK->voice[ch];
+  int sounding = v->held && v->pos < v->len;
+  if (!sounding && vol <= 0) return;
+  if (!sounding) { v->gain = 0; v->pos = 0; v->held = 1; v->len = 0x7fffffff; }
+  v->freq = freq > 1 ? freq : 1;
+  v->wave = wave;
+  v->vol = vol < 0 ? 0 : vol > 1 ? 1 : vol;
+  v->pan = pan < -1 ? -1 : pan > 1 ? 1 : pan;
+  v->slide = 0;
   if (!v->noise) v->noise = 0x1234567u + (uint32_t)ch;
 }
 
@@ -913,9 +930,17 @@ void bk_audio_render(float *out, int frames) {
     if (v->freq <= 0 || v->pos >= v->len) continue;
     float gl = v->vol * (v->pan <= 0 ? 1.f : 1.f - v->pan);
     float gr = v->vol * (v->pan >= 0 ? 1.f : 1.f + v->pan);
+    if (v->held) { gl = v->pan <= 0 ? 1.f : 1.f - v->pan; gr = v->pan >= 0 ? 1.f : 1.f + v->pan; }
     for (int i = 0; i < frames && v->pos < v->len; i++, v->pos++) {
-      float env = 1.f - (float)v->pos / (float)v->len;          /* linear decay */
-      if (v->pos < 64) env *= (float)v->pos / 64.f;             /* tiny attack, no click */
+      float env;
+      if (v->held) {                                             /* glide to the asked volume over ~3 ms */
+        v->gain += (v->vol - v->gain) * 0.008f;
+        env = v->gain;
+        if (v->vol <= 0 && v->gain < 0.0005f) { v->len = 0; v->held = 0; break; }
+      } else {
+        env = 1.f - (float)v->pos / (float)v->len;              /* linear decay */
+        if (v->pos < 64) env *= (float)v->pos / 64.f;           /* tiny attack, no click */
+      }
       float p = v->phase, s;
       switch (v->wave) {
         case 1: s = 4.f * fabsf(p - 0.5f) - 1.f; break;          /* triangle */
