@@ -177,7 +177,7 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
     if (M._bkw_load(s(kd.code + auto)) !== 0) fail('Kart Lab did not load');
     for (let f = 0; f < 2300; f++) if (M._bkw_frame(f === 10 ? 1 << 4 : (f > 400 && f < 700 ? (1 << 8) | (f % 90 < 45 ? 1 : 2) : 0), 0)) { fail('Kart Lab stopped at frame ' + f); break; }
     const kl = (logs.find(x => x.startsWith('kart')) || '').split(/\s+/);
-    if (kl[1] !== 'race' || !(+kl[2] >= 2) || kl[3] !== '4' || !(+kl[4] >= 5) || kl[5] !== 'true') fail('Kart Lab race: ' + kl.join(' ') + ' (expected racing on lap 2 with 4 karts, every item used)');
+    if (kl[1] !== 'race' || !(+kl[2] >= 2) || kl[3] !== '8' || !(+kl[4] >= 5) || kl[5] !== 'true') fail('Kart Lab race: ' + kl.join(' ') + ' (expected racing on lap 2 with 8 karts, every item used)');
     if (errors.length) { errors.forEach(e => fail('Kart Lab: ' + e)); errors = []; }
   }
 
@@ -229,6 +229,45 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
     if (errors.length) { errors.forEach(e => fail('Kart Lab Track tab: ' + e)); errors = []; }
   }
 
+  // Kart Lab: per-point road width, hill size/shape and ramps build the same road and ground in the game
+  // as on the Track tab
+  {
+    logs = [];
+    const kd = window.BK_DEMOS.find(d => d.name === 'Kart Lab'), T = window.BKTracks;
+    const kc = { tiles: new Uint8Array(32768), flags: new Uint8Array(512), map: new Uint16Array(32768) };
+    kd.buildGfx(kc);
+    const tk = kc.levels[0].track;
+    tk.pts[2] = tk.pts[2].slice(0, 2).concat([80, 12]);           // a wide stretch
+    tk.pts[8] = tk.pts[8].slice(0, 2).concat([16, 0]);            // a narrow one with no kerb
+    tk.items.push({ k: 'ramp', t: 0.4, o: 6, h: 30, r: 90, w: 30, c: [1, 0.9, 0.5, 0.2, 0] });
+    tk.items.push({ k: 'hill', t: 0.5, o: 200, h: 50, r: 240, c: 'mesa' });
+    tk.items.push({ k: 'dip', t: 0.8, o: -150, h: -20, r: 120, c: 'spike' });
+    T.paint(kc.levels[0].map, tk);
+    const meta = kc.levels.map(L => ({ name: L.name, w: L.w, h: L.h, placed: L.placed, track: L.track, height: L.height }));
+    M.HEAPU8.set(kc.tiles, M._bkw_tiles()); M.HEAPU8.set(kc.flags, M._bkw_flags()); M.HEAPU16.set(kc.levels[0].map, M._bkw_map() >> 1);
+    const probe = '\nlocal _u = _update\nfunction _update() _u() if mode == "count" and gt == 1 then ' +
+      'local m, h = {}, {} for ty = 0, 127 do for tx = 0, 255 do local v = mget(tx, ty) m[#m + 1] = v <= 170 and v or 0 end end ' +
+      'for cy = 0, 128, 2 do for cx = 0, 256, 2 do h[#h + 1] = math.floor(hget(cx * 8, cy * 8)) end end ' +
+      'print("tmap", table.concat(m, ",")) print("thgt", table.concat(h, ",")) end end';
+    const lua = window.BKEntities.toLua(kc.entities, meta, 0, 'KART_QUICK = 1\n');
+    if (M._bkw_load_ex(s(lua), s(kd.code + probe)) !== 0) fail('Kart Lab (shapes) did not load: ' + errors.join(' '));
+    for (let f = 0; f < 200; f++) if (M._bkw_frame(0, 0)) { fail('Kart Lab (shapes) stopped at frame ' + f); break; }
+    const gm = (logs.find(x => x.startsWith('tmap')) || '').split('\t')[1], gh = (logs.find(x => x.startsWith('thgt')) || '').split('\t')[1];
+    if (!gm || !gh) fail('Kart Lab shapes: no map/height report');
+    else {
+      const lm = gm.split(',').map(Number), jm = kc.levels[0].map;
+      let bad = 0; for (let i = 0; i < jm.length; i++) if ((jm[i] <= 170 ? jm[i] : 0) !== lm[i]) bad++;
+      const hf = T.heightFn(kc.levels[0]), lh = gh.split(',').map(Number);
+      let i = 0, worst = 0, top = 0;
+      for (let cy = 0; cy <= 128; cy += 2) for (let cx = 0; cx <= 256; cx += 2) { const v = hf(cx * 8, cy * 8); worst = Math.max(worst, Math.abs(Math.floor(v + 0.5) - lh[i++])); top = Math.max(top, v); }
+      const wide = jm.filter(v => v === T.TILE.ROAD).length;
+      if (bad > 20 || worst > 1) fail(`Kart Lab shapes: game and Track tab differ (${bad} tiles, height off by ${worst})`);
+      if (!(top > 85)) fail('Kart Lab shapes: the flat-top hill is missing (highest ' + top + ')');
+      if (wide < 1000) fail('Kart Lab shapes: too little road painted (' + wide + ')');
+    }
+    if (errors.length) { errors.forEach(e => fail('Kart Lab shapes: ' + e)); errors = []; }
+  }
+
   // Kart Lab with two players: both karts race in the same race. Linked Bits (each sees its own player)
   // must stay identical; on one screen the players take turns in the garage and the screen is split.
   {
@@ -256,7 +295,7 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
     const b = logs.filter(l => l.startsWith('B2 ksync')).map(l => l.split(/\s+/).slice(2).join(' '));
     if (a.length < 4 || a.join('|') !== b.join('|')) fail('Kart Lab linked Bits drifted apart:\n  bit 1: ' + a.join(' | ') + '\n  bit 2: ' + b.join(' | '));
     const k2 = (logs.find(l => l.startsWith('k2p')) || '').split(/\s+/).slice(1).join(' ');
-    if (k2 !== '2 4 1 1 true true false 1') fail('Kart Lab linked race: ' + k2 + ' (expected 2 players + 2 rivals racing, both driving, one view per Bit)');
+    if (k2 !== '2 8 1 1 true true false 1') fail('Kart Lab linked race: ' + k2 + ' (expected 2 players + 6 rivals racing, both driving, one view per Bit)');
     // one screen: player 1 picks, then player 2, then the race runs split-screen
     logs = [];
     M._bkw_players(2, 0);
@@ -267,7 +306,7 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
       if (M._bkw_frame(m1, 0)) { fail('Kart Lab 2 players stopped at frame ' + f); break; }
     }
     const k3 = (logs.find(l => l.startsWith('k2p')) || '').split(/\s+/).slice(1).join(' ');
-    if (k3 !== '2 4 1 1 true true false 2') fail('Kart Lab split screen: ' + k3 + ' (expected 2 players racing in 2 views)');
+    if (k3 !== '2 8 1 1 true true false 2') fail('Kart Lab split screen: ' + k3 + ' (expected 2 players racing in 2 views)');
     M._bkw_players(1, 0);
     if (errors.length) { errors.forEach(e => fail('Kart Lab 2 players: ' + e)); errors = []; }
   }

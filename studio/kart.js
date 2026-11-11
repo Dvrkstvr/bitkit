@@ -6,16 +6,17 @@
    The karts are tiny voxel models rendered here from 9 angles (the other 7 are mirror images). */
 (function () {
   // Built-in tracks: control points of the loop (world pixels, the map is 2048 x 1024; the first point is
-  // the start line), plus items placed by [fraction of the lap, offset to the right of the centre line].
+  // the start line; [x, y, road, kerb] gives a point its own width), plus items placed by [fraction of the lap,
+  // offset to the right of the centre line].
   const TRACK_DEFS = [
     { name: 'Pinewood Loop',
       pts: [[360, 190], [900, 150], [1400, 170], [1760, 290], [1880, 520], [1730, 730], [1430, 690],
         [1180, 540], [950, 600], [990, 820], [790, 930], [440, 880], [230, 700], [200, 420]],
       boosts: [[0.13, -18], [0.36, 16], [0.6, 0], [0.85, -16]],
       crates: [0.22, 0.52, 0.78],
-      hills: [['hill', 0.27, 0], ['dip', 0.62, 0], ['bump', 0.73, 0], ['hill', 0.93, 120]] },
+      hills: [['ramp', 0.07, 0], ['hill', 0.27, 0], ['dip', 0.62, 0], ['bump', 0.73, 0], ['hill', 0.93, 120]] },
     { name: 'Quarry Hills',
-      pts: [[260, 560], [300, 230], [700, 140], [1100, 240], [1250, 470], [1500, 330], [1800, 260],
+      pts: [[260, 560], [300, 230], [700, 140], [1100, 240], [1250, 470], [1500, 330, 30, 5], [1800, 260, 32, 5],
         [1910, 560], [1700, 870], [1220, 900], [920, 700], [620, 880], [330, 830]],
       boosts: [[0.1, 0], [0.47, -16], [0.8, 14]],
       crates: [0.18, 0.4, 0.66, 0.9],
@@ -48,7 +49,7 @@
 
   const code = `-- Kart Lab: a 2.5D kart racing demo for BitKit
 -- It's all about the karts. Build one in the garage (body, engine, tyres, paint), pick a track,
--- then race three rival karts for 3 laps.
+-- then race rival karts for 3 laps (KARTS in a race, 8 by default).
 -- Multiplayer: every player (PLAYERS) races in the same match. One screen splits into views; linked Bits
 -- (ME > 0) each draw only their own kart's view. Game logic never uses rnd() in drawing, so Bits stay in step.
 --   Throttle: R (analog: squeeze harder to go faster) or A     Brake / reverse: B
@@ -77,6 +78,7 @@ ROADW, KERBW = 44, 7          -- half width of the road, kerb width (pixels)
 CAM_H, HORIZON, FOCAL, CAM_D = 22, 84, 170, 40
 SPR_K = 0.6        -- sprite pixels per world pixel
 STEP = 1           -- floor column step: 2 is chunkier but faster (handy on the device)
+KARTS = 8          -- karts in a race: the players, then rivals fill the grid (2 to 8)
 
 -- steering stages: {how hard, frames held before this stage starts}
 STEER = {{0.35, 0}, {0.7, 10}, {1.0, 26}}
@@ -160,7 +162,7 @@ end
 -- a track from the Track tab: the points are the loop, the items are placed once the curve is built
 function spline_track(tk, height)
   local ctrl = {}
-  for i, p in ipairs(tk.pts) do ctrl[i] = {p[1], p[2]} end
+  for i, p in ipairs(tk.pts) do ctrl[i] = {p[1], p[2], p[3], p[4]} end   -- x, y and (optional) road and kerb width here
   if #ctrl < 3 then return nil end
   return {ctrl = ctrl, items = tk.items or {}, height = height, boosts = {}, crates = {}, hills = {}}
 end
@@ -180,7 +182,33 @@ function at_s(s)
   return a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f, -dy, dx
 end
 
-HILL_KINDS = {hill = {36, 180}, bump = {14, 44}, dip = {-26, 160}}   -- height, radius (same as the Track tab)
+-- hills, bumps, dips and ramps: height, size (radius, or length for a ramp), shape (the Track tab has the same)
+HILL_KINDS = {hill = {36, 360, "round"}, bump = {14, 88, "round"}, dip = {-26, 320, "round"}, ramp = {22, 72, "straight"}}
+RAMP_W = 24                        -- half width of a ramp, unless the piece sets its own
+-- a shape is 5 heights (0..1) from the top (the middle, or a ramp's lip) out to the edge
+SHAPES = {round = {1, 0.78, 0.37, 0.1, 0}, dome = {1, 0.95, 0.75, 0.4, 0}, cone = {1, 0.75, 0.5, 0.25, 0},
+  mesa = {1, 1, 0.95, 0.4, 0}, spike = {1, 0.35, 0.12, 0.03, 0}, straight = {1, 0.75, 0.5, 0.25, 0}, kicker = {1, 0.55, 0.25, 0.07, 0}}
+function shape_at(c, u)            -- smooth curve through the 5 heights, u from 0 (top) to 1 (edge)
+  if u >= 1 then return c[5] end
+  local f = u * 4
+  local i = math.floor(f)
+  local t = f - i
+  local p0, p1, p2, p3 = c[math.max(i, 1)], c[i + 1], c[i + 2], c[math.min(i + 3, 5)]
+  return 0.5 * (2*p1 + (p2 - p0)*t + (2*p0 - 5*p1 + 4*p2 - p3)*t*t + (3*p1 - p0 - 3*p2 + p3)*t*t*t)
+end
+function hill_h(hl, x, y)          -- what one piece adds to the ground at (x, y)
+  local ex, ey = x - hl.x, y - hl.y
+  if hl.ramp then
+    local a, c = ex * hl.dx + ey * hl.dy, math.abs(ex * hl.nx + ey * hl.ny)
+    if a < -hl.r or a > 8 or c > hl.w + 12 then return 0 end
+    local side = c <= hl.w and 1 or 1 - (c - hl.w) / 12
+    local v = a <= 0 and shape_at(hl.c, -a / hl.r) or hl.c[1] * (1 - a / 8)   -- up to the lip, then a sharp drop
+    return hl.h * v * side * side * (3 - 2 * side)
+  end
+  local d2 = (ex * ex + ey * ey) / (hl.r * hl.r)
+  if d2 >= 1 then return 0 end
+  return hl.h * shape_at(hl.c, math.sqrt(d2))
+end
 function place_items(T)
   for _, it in ipairs(T.items or {}) do
     local x, y, nx, ny = at_s((it.t or 0) * LEN)
@@ -189,8 +217,10 @@ function place_items(T)
     elseif it.k == "crate" then
       for _, d in ipairs({-22, 0, 22}) do T.crates[#T.crates + 1] = {x = x + nx * (o + d), y = y + ny * (o + d), t = 0} end
     elseif HILL_KINDS[it.k] then
-      local h = HILL_KINDS[it.k]
-      T.hills[#T.hills + 1] = {x + nx * o, y + ny * o, h[1], h[2]}
+      local d = HILL_KINDS[it.k]
+      local c = type(it.c) == "table" and #it.c == 5 and it.c or SHAPES[it.c or d[3]] or SHAPES.round
+      T.hills[#T.hills + 1] = {x = x + nx * o, y = y + ny * o, h = it.h or d[1], r = math.max(it.r or d[2], 8), c = c,
+        ramp = it.k == "ramp", dx = ny, dy = -nx, nx = nx, ny = ny, w = it.w or RAMP_W}
     end
   end
 end
@@ -205,9 +235,9 @@ function read_track(placed)
     elseif k == "node" then nodes[#nodes + 1] = {x, y}
     elseif k == "boost" then T.boosts[#T.boosts + 1] = {x, y}
     elseif k == "crate" then T.crates[#T.crates + 1] = {x = x, y = y, t = 0}
-    elseif k == "hill" then T.hills[#T.hills + 1] = {x, y, 36, 180}
-    elseif k == "bump" then T.hills[#T.hills + 1] = {x, y, 14, 44}
-    elseif k == "dip" then T.hills[#T.hills + 1] = {x, y, -26, 160} end
+    elseif k == "hill" then T.hills[#T.hills + 1] = {x = x, y = y, h = 36, r = 360, c = SHAPES.round}
+    elseif k == "bump" then T.hills[#T.hills + 1] = {x = x, y = y, h = 14, r = 88, c = SHAPES.round}
+    elseif k == "dip" then T.hills[#T.hills + 1] = {x = x, y = y, h = -26, r = 320, c = SHAPES.round} end
   end
   if not start or #nodes < 3 then return nil end
   local ctrl, cur = {start}, start
@@ -243,9 +273,20 @@ function build_track(ctrl)
     RAWS[i + 1] = RAWS[i] + math.sqrt((b[1]-a[1])^2 + (b[2]-a[2])^2)
   end
   LEN = RAWS[#RAW + 1]
+  -- road and kerb width at every sample: each point can set its own, blended smoothly to the next
+  RW, KW = {}, {}
+  for i = 1, n do
+    local a, b = ctrl[i], ctrl[i % n + 1]
+    local ra, rb, ka, kb = a[3] or ROADW, b[3] or ROADW, a[4] or KERBW, b[4] or KERBW
+    for j = 0, 7 do
+      local u = j / 8
+      u = u * u * (3 - 2 * u)
+      RW[#RW + 1], KW[#KW + 1] = ra + (rb - ra) * u, ka + (kb - ka) * u
+    end
+  end
   WP = {}
   local acc, SP = 0, 24
-  WP[1] = {x=RAW[1][1], y=RAW[1][2]}
+  WP[1] = {x=RAW[1][1], y=RAW[1][2], w=RW[1]}
   for i = 1, #RAW do
     local a, b = RAW[i], RAW[i % #RAW + 1]
     local d = RAWS[i + 1] - RAWS[i]
@@ -253,7 +294,7 @@ function build_track(ctrl)
     while d > 0 and acc + (d - u) >= SP do
       u = u + (SP - acc); acc = 0
       local f = u / d
-      WP[#WP + 1] = {x=a[1] + (b[1]-a[1])*f, y=a[2] + (b[2]-a[2])*f}
+      WP[#WP + 1] = {x=a[1] + (b[1]-a[1])*f, y=a[2] + (b[2]-a[2])*f, w=RW[i] + (RW[i % #RAW + 1] - RW[i]) * f}
     end
     acc = acc + (d - u)
   end
@@ -298,10 +339,7 @@ function build_world(T, seed)
         local u, v = (cx % 2) * 0.5, (cy % 2) * 0.5
         h = (G[gy * 129 + gx] * (1 - u) + G[gy * 129 + gx2] * u) * (1 - v) + (G[gy2 * 129 + gx] * (1 - u) + G[gy2 * 129 + gx2] * u) * v
       end
-      for _, hl in ipairs(T.hills) do
-        local d2 = ((x - hl[1])^2 + (y - hl[2])^2) / (hl[4] * hl[4])
-        if d2 < 9 then h = h + hl[3] * math.exp(-d2) end
-      end
+      for _, hl in ipairs(T.hills) do h = h + hill_h(hl, x, y) end
       hset(cx, cy, h + 0.5)
     end
     if cy % 16 == 0 then Y(0.3 * cy / 128) end
@@ -328,8 +366,8 @@ function build_world(T, seed)
   end
   local function near(x, y)
     local list = grid[(x // CS) * 1000 + (y // CS)]
-    if not list then return 1e9, 0 end
-    local best, s = 1e18, 0
+    if not list then return 1e9, 0, ROADW, KERBW end
+    local best, s, rw, kw = 1e18, 0, ROADW, KERBW
     for _, i in ipairs(list) do
       local a, b = RAW[i], RAW[i % n + 1]
       local dx, dy = b[1] - a[1], b[2] - a[2]
@@ -338,20 +376,25 @@ function build_world(T, seed)
       f = f < 0 and 0 or (f > 1 and 1 or f)
       local ex, ey = x - (a[1] + dx*f), y - (a[2] + dy*f)
       local d = ex*ex + ey*ey
-      if d < best then best, s = d, RAWS[i] + f * (RAWS[i + 1] - RAWS[i]) end
+      if d < best then
+        local j = i % n + 1
+        best, s, rw, kw = d, RAWS[i] + f * (RAWS[i + 1] - RAWS[i]), RW[i] + (RW[j] - RW[i]) * f, KW[i] + (KW[j] - KW[i]) * f
+      end
     end
-    return math.sqrt(best), s
+    return math.sqrt(best), s, rw, kw
   end
   -- classify the tile corners near the road: 0 road, 1 kerb, 2 grass
-  local CL, CSV, M = {}, {}, ROADW + KERBW + 4
+  local mw = 0
+  for i = 1, n do mw = math.max(mw, RW[i] + KW[i]) end
+  local CL, CSV, M = {}, {}, mw + 4
   for i = 1, n do
     local a, b = RAW[i], RAW[i % n + 1]
     for cy = math.max(0, (math.min(a[2], b[2]) - M) // 8), math.min(128, (math.max(a[2], b[2]) + M) // 8 + 1) do
       for cx = math.max(0, (math.min(a[1], b[1]) - M) // 8), math.min(256, (math.max(a[1], b[1]) + M) // 8 + 1) do
         local k = cy * 257 + cx
         if not CL[k] then
-          local d, s = near(cx * 8, cy * 8)
-          CL[k] = d < ROADW and 0 or (d < ROADW + KERBW and 1 or 2)
+          local d, s, rw, kw = near(cx * 8, cy * 8)
+          CL[k] = d < rw and 0 or (d < rw + kw and 1 or 2)
           CSV[k] = s
         end
       end
@@ -582,7 +625,8 @@ end
 function ai_input(k)
   local look = k.wp + 3 + math.floor(k.fwd * 1.4)
   local p = WP[(look - 1) % NWP + 1]
-  local tx, ty = p.x + p.nx * k.lane, p.y + p.ny * k.lane
+  local ln = k.lane * (p.w or ROADW) / 44             -- lanes spread with the road width
+  local tx, ty = p.x + p.nx * ln, p.y + p.ny * ln
   local d = angdiff(math.atan(ty - k.y, tx - k.x), k.a)
   local steer = clamp(d * 3.5, -1, 1)
   local thr = k.skill
@@ -630,7 +674,7 @@ end
 
 -- ------------------------------------------------------------------ items
 function roll_item(k)
-  local place = math.min(k.place or 4, 4)
+  local place = math.min(4, math.ceil((k.place or #karts) * 4 / math.max(#karts, 1)))   -- 1st .. last as 4 bands
   local total = 0
   for _, it in ipairs(ITEMS) do total = total + it.odds[place] end
   local r = rnd(total)
@@ -799,7 +843,7 @@ function _init()
     if d and type(d.best) == "table" then best = d.best end
   end
   if sel.track > #TRACKS then sel.track = 1 end
-  -- everyone playing gets a kart in the same race (rivals fill the grid up to 4).
+  -- everyone playing gets a kart in the same race (rivals fill the grid up to KARTS).
   -- Each player builds their own kart; only player 1 picks the track.
   NH = math.max(1, math.min(PLAYERS or 1, 4))
   sels, rows, ready, humans = {sel}, {1}, {}, {}
@@ -851,18 +895,22 @@ function start_race()
   -- rivals, each a different random build (never a player's paint)
   local paints = {}
   for i = 1, #PAINTS do if not used[i] then paints[#paints + 1] = i end end
-  local grid = {{NWP - 1, -16}, {NWP - 1, 16}, {NWP - 4, -16}, {NWP - 4, 16}}
-  for i = 1, 4 - NH do
+  local field = math.max(NH, math.min(KARTS, #PAINTS))
+  local grid = {}
+  for i = 1, field do grid[i] = {NWP - 1 - ((i - 1) // 2) * 3, (i % 2 == 1) and -16 or 16} end   -- two by two
+  local nr = field - NH
+  for i = 1, nr do
     local p = table.remove(paints, rnd(#paints))
     local k = new_kart(rnd(#BODIES), rnd(#ENGINES), rnd(#TYRES), p, true)
-    k.skill, k.lane, k.lane_want = 0.9 + i * 0.025, rnd(-14, 14), 0
+    k.skill, k.lane, k.lane_want = 0.9 + 0.075 * i / nr, rnd(-14, 14), 0
     karts[#karts + 1] = k
   end
   for p = 1, NH do table.insert(karts, rnd(NH == 1 and 2 or 1, #karts + 1), humans[p]) end   -- start somewhere in the pack
   for i, k in ipairs(karts) do
     local g = grid[i]
     local w = WP[g[1]]
-    k.x, k.y, k.a, k.wp = w.x + w.nx * g[2], w.y + w.ny * g[2], w.a, g[1]
+    local o = g[2] * math.min(1, (w.w or ROADW) / 30)
+    k.x, k.y, k.a, k.wp = w.x + w.nx * o, w.y + w.ny * o, w.a, g[1]
     k.z = hget(k.x, k.y)
     k.place = i
   end
@@ -1107,7 +1155,8 @@ function draw_world()
   for _, p in ipairs(shots) do add(p.x, p.y, hget(p.x, p.y) + (p.kind == "drone" and 10 or 4), 8, p) end
   -- start gantry posts
   local w = WP[1]
-  local gx1, gy1, gx2, gy2 = w.x + w.nx * (ROADW + 6), w.y + w.ny * (ROADW + 6), w.x - w.nx * (ROADW + 6), w.y - w.ny * (ROADW + 6)
+  local gw = (w.w or ROADW) + 6
+  local gx1, gy1, gx2, gy2 = w.x + w.nx * gw, w.y + w.ny * gw, w.x - w.nx * gw, w.y - w.ny * gw
   add(gx1, gy1, hget(gx1, gy1), 6)
   add(gx2, gy2, hget(gx2, gy2), 6)
   table.sort(list, function(a, b) return a.sc < b.sc end)   -- far first
@@ -1199,7 +1248,7 @@ function draw_hud()
   if VH < 200 then draw_hud_small(); return order end
   camera(-VX, -VY)
   -- place
-  shadow_text(place_str(player.place), 8, 8, ({27, 29, 10, 13})[player.place], 3)
+  shadow_text(place_str(player.place), 8, 8, ({27, 29, 10})[player.place] or 13, 3)
   -- lap and time
   local lap = clamp(player.lap, 1, LAPS)
   shadow_text("LAP " .. lap .. "/" .. LAPS, 240, 8, 13)
@@ -1247,7 +1296,7 @@ end
 function draw_hud_small()
   camera(-VX, -VY)
   local W, H = VW, VH
-  shadow_text(place_str(player.place), 4, 4, ({27, 29, 10, 13})[player.place], 2)
+  shadow_text(place_str(player.place), 4, 4, ({27, 29, 10})[player.place] or 13, 2)
   local lap = clamp(player.lap, 1, LAPS)
   shadow_text("LAP " .. lap .. "/" .. LAPS, W - 52, 4, 13)
   shadow_text(tstr(player.done and player.time or race_t), W - 52, 13, 12)
@@ -1316,21 +1365,24 @@ function _draw()
   set_view({x = 0, y = 0, w = 320, h = 240})
   if #vs == 2 then rectfill(0, 119, 320, 2, 1) elseif #vs > 2 then rectfill(0, 119, 320, 2, 1); rectfill(159, 0, 2, 240, 1) end
   if mode == "results" then
-    rectfill(56, 60, 208, 112, 1); rect(56, 60, 208, 112, 13)
-    text("FINISH!", 104, 66, 27, 2)
+    local n = #order
+    local top = 112 - n * 6
+    local ph = n * 12 + 56
+    rectfill(56, top, 208, ph, 1); rect(56, top, 208, ph, 13)
+    text("FINISH!", 104, top + 6, 27, 2)
     for i, k in ipairs(order) do
-      local y = 86 + i * 14
+      local y = top + 14 + i * 12
       local c = k.human and 27 or 13
       text(place_str(i), 64, y, c)
       text(k.name, 96, y, c)
       text(k.done and tstr(k.time) or "--", 200, y, c)
     end
     local b = best[TRACKS[sel.track].name] or 0
-    text(new_best and "New best time!" or ("Best " .. tstr(b)), 64, 154, new_best and 17 or 29)
-    if gt > 60 then text("A: back to garage", 104, 164, 29) end
+    text(new_best and "New best time!" or ("Best " .. tstr(b)), 64, top + ph - 18, new_best and 17 or 29)
+    if gt > 60 then text("A: back to garage", 104, top + ph - 8, 29) end
     if #humans > 1 then
       local p = humans[(ME or 0) > 0 and ME or 1]
-      if (ME or 0) > 0 and p then text("You: " .. place_str(p.place), 200, 154, 27) end
+      if (ME or 0) > 0 and p then text("You: " .. place_str(p.place), 200, top + ph - 18, 27) end
     end
   end
 end
