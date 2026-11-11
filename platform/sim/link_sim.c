@@ -41,6 +41,7 @@ static int lk_until(int (*cond)(void), uint16_t (*mask_fn)(void), double secs) {
 static uint16_t lk_none(void) { return 0; }
 static uint16_t lk_combo(void) { return START | SELECT; }
 static int lk_two(void) { return bk_host_linked() == 2; }
+static int lk_ready(void) { return bk_host_link_ready() == 2 && !strcmp(bk_host_playing(), "home"); }   /* the other Bit is home too */
 static int lk_in_game(void) { return bk_host_link_players() == 2; }
 static int lk_at_home(void) { return !strcmp(bk_host_playing(), "home") && !bk_host_link_players(); }
 static uint32_t lk_target;
@@ -62,7 +63,7 @@ static int link_bit(int is_a, const char *flash, const char *data, const char *r
   /* 1. they find each other; then A starts Crossgate for both */
   if (!lk_until(lk_two, lk_none, 6)) FAIL("%s: never saw the other Bit", me);
   lk_until(lk_at_home, lk_none, 3);
-  if (is_a) { const double t = now_us() + 0.6e6; while (now_us() < t) lk_tick(0); bk_host_launch(cross); }
+  if (is_a) { if (!lk_until(lk_ready, lk_none, 6)) FAIL("Bit A: Bit B is not on its home screen"); bk_host_launch(cross); }
   if (!lk_until(lk_in_game, lk_none, 6)) FAIL("%s: the linked game did not start", me);
   /* 2. play in lockstep; A pauses with Start+Select after frame 600 */
   lk_target = 600;
@@ -72,8 +73,7 @@ static int link_bit(int is_a, const char *flash, const char *data, const char *r
   h1 = bk_host_link_sync(&f1);
   if (bk_host_paused_count() < 1) FAIL("%s: the linked game was not kept paused", me);
   /* 3. A picks it again: both carry on; B leaves this time */
-  { const double t = now_us() + 1.5e6; while (now_us() < t) lk_tick(0); }
-  if (is_a) bk_host_launch(cross);
+  if (is_a) { if (!lk_until(lk_ready, lk_none, 6)) FAIL("Bit A: Bit B did not come home"); bk_host_launch(cross); }
   if (!lk_until(lk_in_game, lk_none, 6)) FAIL("%s: the paused linked game did not carry on", me);
   if (!logged("carrying on with \"Crossgate\" on 2 Bits")) FAIL("%s: carried on, but not from the paused copy (%s)", me, lastlog);
   lk_target = 300;
@@ -89,9 +89,8 @@ static int link_bit(int is_a, const char *flash, const char *data, const char *r
   { const double t = now_us() + 3.0e6; while (now_us() < t) lk_tick(lk_rand_mask() & (uint16_t)~START); }
   if (bk_host_net_heard() < 1) FAIL("%s: heard no net_send events from the other Bit", me);
   bk_host_go_home();
-  { const double t = now_us() + 1.5e6; while (now_us() < t) lk_tick(0); }
   /* 5. a linked game again; B switches off after a moment and A has to notice */
-  if (is_a) bk_host_launch(cross);
+  if (is_a) { if (!lk_until(lk_ready, lk_none, 6)) FAIL("Bit A: Bit B did not leave Sweep Storm"); bk_host_launch(cross); }
   if (!lk_until(lk_in_game, lk_none, 6)) FAIL("%s: the third linked game did not start", me);
   if (!is_a) { const double t = now_us() + 1.0e6; while (now_us() < t) lk_tick(lk_rand_mask()); }
   else {
@@ -120,10 +119,10 @@ static int link_test(int argc, char **argv) {
   fflush(NULL);
   const pid_t pid = fork();
   if (pid == 0) {
-    close(sv[0]); lk_fd = sv[1]; lk_rs = 0x9E3779B97F4A7C15ull;
+    close(sv[0]); lk_fd = sv[1]; lk_rs = 0x9E3779B97F4A7C15ull ^ (uint64_t)time(NULL) * 2654435761u;
     _exit(link_bit(0, flash, db, rb) ? 1 : 0);
   }
-  close(sv[1]); lk_fd = sv[0]; lk_rs = 0xD1B54A32D192ED03ull;
+  close(sv[1]); lk_fd = sv[0]; lk_rs = 0xD1B54A32D192ED03ull ^ (uint64_t)time(NULL);   /* a different loss pattern every run */
   int ra_fail = link_bit(1, flash, da, ra);
   int st = 0;
   waitpid(pid, &st, 0);

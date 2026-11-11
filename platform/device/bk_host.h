@@ -64,6 +64,7 @@ void bk_host_restart(int how);
    player's buttons, sent a few frames ahead). Games that use net_send() run on their own and talk with events. */
 void bk_host_radio_recv(const void *pkt, int len);   /* a packet from another Bit: call between frames, on the loop's thread */
 int  bk_host_linked(void);                           /* Bits in reach, this one too (1 = alone) */
+int  bk_host_link_ready(void);                       /* players a game started now would have (this Bit + Bits on their home screens) */
 int  bk_host_link_players(void);                     /* players in the linked game running now, 0 = none */
 uint32_t bk_host_link_sync(uint32_t *frame);         /* lockstep frames run and a hash of their buttons and rnd() state */
 int  bk_host_net_heard(void);                        /* net_send() events from other Bits so far */                       /* the game shell's _restart(): 1 title, 2 new game, 3 play */

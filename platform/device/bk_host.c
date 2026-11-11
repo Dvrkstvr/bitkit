@@ -576,6 +576,7 @@ typedef struct { uint32_t f1; uint16_t m; uint8_t p[LK_PRESS]; } lk_in;   /* f1 
 
 static struct {
   uint32_t id, ticks, last_hi, sids;
+  int last_st, hi_rep;                 /* what the last hello said; hellos still to repeat after a change */
   int npeers, home_n;
   lk_peer peer[LK_PEERS];
   /* the session: a linked game running now */
@@ -584,9 +585,11 @@ static struct {
   uint32_t ids[BK_MAX_PLAYERS];
   uint8_t combo[BK_MAX_PLAYERS];
   char names[400];
+  uint8_t heard_seat[BK_MAX_PLAYERS];  /* buttons came from this seat (it has the game running) */
   lk_in in[BK_MAX_PLAYERS][LK_RING];
   uint8_t under[BK_W * 12];            /* the game's pixels under the "waiting" bar */
   int heard;
+  struct { uint8_t b[250]; int n; } start_pkt;   /* the START this Bit sent, again until every seat answers */
 } BK_BIG_BSS LK;                        /* PSRAM on the device */
 
 static uint32_t lk_now(void) { return C.millis ? C.millis() : LK.ticks * 1000u / BK_FPS; }
@@ -700,11 +703,12 @@ static void send_start(uint32_t sid, int np, const uint32_t *ids, uint32_t fp, u
     wstr(&w, ids[k] == LK.id ? bs.name : p ? p->name : "", 10);
   }
   wsend(&w);
+  memcpy(LK.start_pkt.b, w.b, (size_t)w.n); LK.start_pkt.n = w.n;
 }
 static void link_end(int why) {   /* 0 left, 1 doesn't have the game, 2 no paused copy, 3 the game stopped */
   if (!LK.sid) return;
   lk_w w; whead(&w, LK_END); w32(&w, LK.sid); w8(&w, (uint32_t)why);
-  wsend(&w);
+  for (int i = 0; i < 3; i++) wsend(&w);   /* nothing answers an END: three times against a lost packet */
 }
 
 static void enter(uint32_t from, uint32_t sid, int np, const uint32_t *ids, const uint8_t *cols, char names[][11], uint32_t fp, uint32_t resume, const char *game);
@@ -765,7 +769,9 @@ static void enter(uint32_t from, uint32_t sid, int np, const uint32_t *ids, cons
     if (mode != MODE_HOME) boot_home();
     return;
   }
-  memset(LK.in, 0, sizeof(LK.in)); memset(LK.combo, 0, sizeof(LK.combo));
+  memset(LK.in, 0, sizeof(LK.in)); memset(LK.combo, 0, sizeof(LK.combo)); memset(LK.heard_seat, 0, sizeof(LK.heard_seat));
+  if (from != LK.id) LK.start_pkt.n = 0;
+  LK.heard_seat[me - 1] = 1;
   LK.on = 1; LK.sid = sid; LK.host = from; LK.np = np; LK.slot = me; LK.game = n; LK.resume = resume;
   LK.at = lk_now(); LK.f = LK.sent = 0; LK.waiting = LK.banner = LK.rep = 0; LK.hash = 2166136261u; LK.hold = 0;
   memcpy(LK.ids, ids, sizeof(uint32_t) * (size_t)np);
@@ -799,8 +805,11 @@ static void enter(uint32_t from, uint32_t sid, int np, const uint32_t *ids, cons
 }
 
 /* everyone goes home together; pause = each Bit keeps its copy of the game, to carry on together later */
+static void send_in(void);
 static void link_leave(int pause) {
   if (!LK.on) return;
+  /* the others may still need this Bit's last buttons to reach the same frame: send them a few more times */
+  if (pause) for (int i = 0; i < 3; i++) send_in();
   LK.on = 0;
   if (cur && cur != home_slot && mode == MODE_GAME) {
     if (pause) {
@@ -902,7 +911,20 @@ static void link_frame(uint16_t mask, const uint8_t *press) {
   for (int k = 0; k < LK.np; k++) ready &= LK.in[k][LK.f % LK_RING].f1 == LK.f + 1;
   if (ready) return;
   LK.waiting++;
+  /* the host sends its START again until every seat's buttons have come: a lost START would leave a Bit out */
+  if (LK.host == LK.id && LK.start_pkt.n && LK.waiting % 10 == 1) {
+    int all = 1;
+    for (int k = 0; k < LK.np; k++) all &= LK.heard_seat[k];
+    if (!all && C.radio_send) C.radio_send(LK.start_pkt.b, LK.start_pkt.n);
+  }
   if (LK.waiting > BK_FPS) banner_on();
+  /* the Bit this one waits for says it is on its home screen: it left the game (and its END got lost) */
+  if (LK.waiting > BK_FPS / 2)
+    for (int k = 0; k < LK.np; k++)
+      if (LK.heard_seat[k] && LK.in[k][LK.f % LK_RING].f1 != LK.f + 1) {
+        const lk_peer *q = find_peer(LK.ids[k]);
+        if (q && q->st == 1) { say("a player's Bit left the game, so the linked game ended", 1); link_leave(0); return; }
+      }
   /* stuck: Start+Select on this Bit leaves the game for everyone */
   if (LK.waiting > BK_FPS && (mask & (START | SELECT)) == (START | SELECT) && !combo_held) {
     say("left the linked game", 0);
@@ -980,7 +1002,8 @@ void bk_host_radio_recv(const void *pkt, int len) {
     if (!r.bad) enter(from, sid, np, ids, cols, names, fp, resume, game);
   } else if (type == LK_IN) {
     const uint32_t sid = r32(&r); const int seat = (int)r8(&r); const uint32_t first = r32(&r); const int cnt = (int)r8(&r);
-    if (!LK.on || sid != LK.sid || seat == LK.slot) return;
+    if (!LK.on || sid != LK.sid || seat == LK.slot || seat < 1 || seat > LK.np) return;
+    LK.heard_seat[seat - 1] = 1;
     for (int i = 0; i < cnt && !r.bad; i++) {
       uint16_t m = (uint16_t)r16(&r); uint8_t pr[LK_PRESS];
       for (int k = 0; k < LK_PRESS; k++) pr[k] = (uint8_t)r8(&r);
@@ -1000,7 +1023,11 @@ static void link_tick(void) {
   LK.ticks++;
   if (!C.radio_send) return;
   const uint32_t now = lk_now();
-  if (now - LK.last_hi >= 1000) send_hi();
+  /* a change (home, in a game) is said straight away and twice more, so one lost packet doesn't leave the
+     others with the wrong idea of who would join a game */
+  if (my_state() != LK.last_st) { LK.last_st = my_state(); LK.hi_rep = 3; LK.last_hi = now - 1000; }
+  if (LK.hi_rep && now - LK.last_hi >= 100) { LK.hi_rep--; send_hi(); }
+  else if (now - LK.last_hi >= 1000) send_hi();
   for (int i = 0; i < LK.npeers; i++)
     if (now - LK.peer[i].seen > LK_GONE_MS) {
       char m[48]; snprintf(m, sizeof(m), "lost Bit %d", LK.peer[i].num); say(m, 0);
@@ -1015,6 +1042,7 @@ static void link_tick(void) {
 }
 
 int bk_host_linked(void) { return 1 + LK.npeers; }
+int bk_host_link_ready(void) { return link_roster_n(); }
 int bk_host_link_players(void) { return LK.on ? LK.np : 0; }
 uint32_t bk_host_link_sync(uint32_t *frame) { if (frame) *frame = LK.f; return LK.hash; }
 int bk_host_net_heard(void) { return LK.heard; }
