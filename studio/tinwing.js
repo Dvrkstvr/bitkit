@@ -121,7 +121,7 @@ function _init()
     help = {
       "Hangar: pick a corner with the D-pad, A grabs it, move it, A drops it. L / R or X: next page.",
       "Make the body big enough for your motor and battery. More wing glides, short wings turn quick.",
-      "Flying: left / right turn, up / down climb and dive. Hold A or squeeze R for the motor.",
+      "Flying: left / right turn, up / down climb and dive (Settings: Invert up/down). Hold A or squeeze R for the motor.",
       "Let go of the motor to glide for free. Fly low over the yellow pad at Perch to land.",
     },
     continue = function(cp)
@@ -131,7 +131,7 @@ function _init()
     end,
     pause = {{"Back to the hangar", function() if MODE == "fly" then hangar_enter("menu") end end},
       {"Reset the blueprint", function() if MODE == "hangar" then S.shape = default_shape(); H.hold = nil end end}},
-    settings = {{key = "pitch", name = "Up arrow", values = {"Climbs", "Dives"}, value = 1}},
+    settings = {{key = "pitch", name = "Invert up/down", values = {"Off", "On"}, value = 1}},
   }
   S = new_state()
   INTRO = true

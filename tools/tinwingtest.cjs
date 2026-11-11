@@ -113,6 +113,16 @@ const runtime = require('../studio/runtime.js');
   run(120);
   if (+st()[6] !== bat) fail('gliding should not use battery: ' + st().join(' '));
 
+  // 4b. the "Invert up/down" setting: Up climbs normally, and dives when it is on
+  for (const [inv, climbs] of [[1, true], [2, false]]) {
+    load(PROBE + init('INTRO = false fly_start()') + fly(`P.launch = 0 P.x, P.y, P.z, P.h, P.pitch, P.pv = 800, 500, 90, 0, 0, 0 local _s = setting setting = function(k) if k == "pitch" then return ${inv} end return _s(k) end`));
+    run(31, () => A);
+    const z0 = +st()[5];
+    run(60, () => A | bit('up'));
+    const up = +st()[5] > z0;
+    if (up !== climbs) fail(`with Invert up/down ${inv === 2 ? 'on' : 'off'} Up should ${climbs ? 'climb' : 'dive'}: z ${z0} -> ${st()[5]}`);
+  }
+
   // 5. flying through the Twin Cell on the Belltower picks it up
   load(PROBE + init('INTRO = false fly_start()') + fly('local c = ents_get("coil") local x, y = ground(c) P.x, P.y, P.z, P.launch, P.h = x - 30, y, pick_z(c) + 9, 0, 0'));
   run(45, () => A);
