@@ -24,7 +24,7 @@ function _update()
     if scene == "match" then
       local alive, items = 0, 0
       for _, p in ipairs(slots) do if not p.out then alive = alive + 1 end end
-      print("st", match.seed, S, #slots, me.k, opsum(), match.over and 1 or 0, me.score, match.mt, match.nh, match.nb, alive, SR, rank_of(me), GAME.won and 1 or 0)
+      print("st", match.seed, S, #slots, me.k, opsum(), match.over and 1 or 0, me.score, match.mt, match.nh, match.nb, alive, SR, rank_of(me), GAME.won and 1 or 0, tricks_seen or 0)
     else print("st", "lobby", #lobby_ids(), bots) end
   end
 end
@@ -119,6 +119,9 @@ function state(bits) {
   });
   if (mid && !(+mid[0][11] < +mid[0][1] / 2)) fail('the storm did not close in: ' + mid[0]);
   if (st[0] && +st[0][6] < 20) fail('player 1 dug almost nothing: ' + st[0][6]);
+  // Confuse and Paint thrown by anyone reach every Bit
+  const tr = st.map(v => v && +v[14]);
+  if (!(tr[0] > 0) || tr.some(n => n !== tr[0])) fail('Bits saw different numbers of Confuse/Paint throws: ' + tr);
   const total = bits.reduce((n, b) => n + b.sent, 0);
   console.log('events sent:', bits.map(b => b.sent).join(', '), '(bots run on Bit 1)');
   if (total > 60 * 4 * 60 * 2) fail('too many network events for ESP-NOW: ' + total);

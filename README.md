@@ -133,7 +133,7 @@ A minesweeper battle royale for up to 20 Bits, with bots filling the empty spots
 
 - One big round island, made from a seed the Bits share, so every match is a new map. Everyone digs at the same time.
 - The shore is easy and worth 1 point a cell. The middle ring has more mines and is worth 2; the core is packed with mines and worth 4.
-- Power-ups hide under the cells and get stronger towards the middle: Shield and Scan on the shore, Heart and Sonar in the middle, Blast and Freeze (stuns every other digger) in the core.
+- Power-ups hide under the cells and get stronger towards the middle: Shield and Scan on the shore, Heart and Sonar in the middle, Blast in the core. Confuse and Paint are tricks you throw at the nearest rival: for a while, everyone but you sees scrambled numbers (Confuse) or no numbers at all (Paint) in that patch.
 - Walk over dug ground with the D-pad, **A** digs, **B** flags, **X** uses your power-up and holding **Y** shows the whole island.
 - A mine costs one of your 3 hearts and stuns you. After 40 seconds a storm closes in from the shore and standing in it costs hearts too.
 - **Goal:** have the most points when the storm closes or the time runs out (the last digger standing gets a bonus).

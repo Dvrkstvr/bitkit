@@ -12,7 +12,7 @@
 
 T0, TS = 64, 96                      -- tile bases: normal cells, cells in the storm
 K_HID, K_FLAG, K_OPEN, K_BLOWN, K_WATER = 0, 3, 6, 15, 16
-EV_HELLO, EV_START, EV_ROSTER, EV_OPEN, EV_STATE, EV_FREEZE = 1, 2, 3, 4, 5, 6
+EV_HELLO, EV_START, EV_ROSTER, EV_OPEN, EV_STATE, EV_TRICK = 1, 2, 3, 4, 5, 7
 MAXP = 20
 PCOL = { 27, 22, 26, 18, 5, 10, 23, 13, 25, 16, 4, 11, 21, 17, 9, 12, 3, 29, 20, 8 }
 DENS = { 16, 20, 25 }                -- mines per 100 cells: shore, middle ring, core
@@ -25,9 +25,14 @@ ITEMS = {                            -- spr = tile number
   { name = "Heart",  spr = 130, info = "+1 heart" },
   { name = "Sonar",  spr = 131, info = "flags mines in a wide circle" },
   { name = "Blast",  spr = 132, info = "digs every safe cell around you" },
-  { name = "Freeze", spr = 133, info = "stuns every other digger" },
+  { name = "Confuse", spr = 133, info = "throw it: rivals there see wrong numbers" },
+  { name = "Paint",   spr = 134, info = "throw it: hides the numbers there" },
 }
-POOL = { { 1, 1, 2, 3 }, { 1, 2, 3, 4, 4 }, { 4, 5, 5, 6, 6, 1 } }   -- power-ups found in each zone
+POOL = { { 1, 1, 2, 3 }, { 1, 2, 3, 4, 4, 7 }, { 4, 5, 5, 6, 6, 7, 1 } }   -- power-ups found in each zone
+-- Confuse and Paint are thrown at the nearest rival (or dropped where you stand) and leave a patch
+-- on the island. Everyone but the thrower sees scrambled or hidden numbers there for a while.
+TRICK = { [6] = { r = 4, len = 60 * 10 }, [7] = { r = 4, len = 60 * 18 } }
+THROW = 12                           -- how far (cells) a trick flies to find a rival
 MATCH_LEN = 60 * 60 * tune("Match length (minutes)", 4, 2, 10)   -- frames. tune(): a slider on the Game tab
 STORM_AT, STORM_END = MATCH_LEN // 6, MATCH_LEN * 11 // 12   -- 0:40 and 3:40 of a four minute match
 STORM_HIT = 150                      -- frames in the storm per lost heart
@@ -43,6 +48,7 @@ function _init()
       "D-pad: walk over dug ground and aim at the next cell. A: dig. B: flag a mine.",
       "Numbers tell how many mines touch that cell. A mine costs a heart and stuns you.",
       "X: use your power-up. Hold Y: island map.",
+      "Confuse and Paint fly at the nearest rival: for a while they see wrong numbers or none there.",
       "Shore cells are worth 1, the middle ring 2, the core 4. Power-ups get stronger towards the middle.",
       "The storm shrinks the island. Standing in it costs hearts.",
       "Up to 20 Bits nearby can join the same match. Bots fill the empty spots.",
@@ -246,7 +252,7 @@ function start_match(seed, ids, nb, host)
     if (human and ids[k] == NET_ID) or (NET_ID == 0 and k == 1) then me = slots[k] end
   end
   match = { seed = seed, nh = nh, nb = nb, host = host, hosting = host == NET_ID, n = n, mt = 0, over = false }
-  outq, feed = {}, {}
+  outq, feed, tricks, splats = {}, {}, {}, {}
   cam_x, cam_y = me.x * 8 - 156, me.y * 8 - 108
   scene = "match"
   say("The storm comes in " .. STORM_AT // 60 .. "s. Dig towards the middle!", 13)
@@ -281,7 +287,7 @@ function got_item(p, it)
   if it == 3 then p.hearts = math.min(5, p.hearts + 1)
   elseif it == 1 then p.shield = true
   else
-    if p.bot and it == 6 then use_item(p, 6) else p.item = it end
+    if p.bot and TRICK[it] then use_item(p, it) else p.item = it end
   end
   if p == me then
     say("Found " .. def.name .. ": " .. def.info, 27)
@@ -360,20 +366,37 @@ function use_item(p, it)
       end
     end end
     if p == me then sfx("C3", 3, 0.5, 20, nil, 0, 200); shake = 6 end
-  elseif it == 6 then
-    queue(EV_FREEZE, p.k)
-    freeze_others(p)
+  elseif TRICK[it] then
+    local tx, ty, best = p.x, p.y, THROW + 1
+    for _, q in ipairs(slots) do
+      local d = math.max(math.abs(q.x - p.x), math.abs(q.y - p.y))
+      if q ~= p and not q.out and d < best then best, tx, ty = d, q.x, q.y end
+    end
+    queue(EV_TRICK, p.k, it, tx, ty)
+    add_trick(p, it, tx, ty)
   end
   if p == me then sfx("G5", 5, 0.3, 8) end
   send_state(p)
 end
 
-function freeze_others(by)
-  say(by == me and "Freeze! Everyone else is stunned" or (by.name .. " used Freeze!"), 22)
-  for _, q in ipairs(slots) do
-    if q ~= by and not q.out and mine_slot(q) then q.stun = math.max(q.stun, 150); send_state(q) end
+-- a Confuse or Paint patch: everyone but its thrower sees wrong (or no) numbers inside it until it wears off
+function add_trick(by, it, x, y)
+  local t = TRICK[it]
+  tricks_seen = (tricks_seen or 0) + 1
+  tricks[#tricks + 1] = { by = by, kind = it, x = x, y = y, r = t.r, left = t.len, len = t.len }
+  splats[#splats + 1] = { fx = by.x * 8 + 4, fy = by.y * 8 + 4, x = x * 8 + 4, y = y * 8 + 4, t = 20, kind = it }
+  local near = math.max(math.abs(me.x - x), math.abs(me.y - y)) <= t.r + 2
+  if by == me then say(ITEMS[it].name .. " thrown!", 22)
+  elseif near then say(by.name .. " hit you with " .. ITEMS[it].name .. "!", it == 7 and 5 or 22); sfx("F3", 2, 0.4, 14, nil, 0, -80)
+  else say(by.name .. " threw " .. ITEMS[it].name, 28) end
+end
+
+-- the trick (if any) that hides cell x, y from player p: "confuse" or "paint"
+function trick_at(p, x, y)
+  for _, z in ipairs(tricks) do
+    if z.by ~= p and (x - z.x) ^ 2 + (y - z.y) ^ 2 <= z.r * z.r + z.r then return z.kind end
   end
-  if by ~= me then frozen = 30 end
+  return nil
 end
 
 function match_event(from, ev, a, b, c, d, e, f, g)
@@ -388,8 +411,8 @@ function match_event(from, ev, a, b, c, d, e, f, g)
     p.out, p.stun, p.shield, p.item = f % 2 == 1, (f // 2) % 2 == 1 and 30 or 0, (f // 4) % 2 == 1, f // 8
     if p.out and not was_out then say(p.name .. " is out", 28) end
     if g and g > match.mt and g < match.mt + 600 then match.mt = g end   -- clocks follow the furthest Bit
-  elseif ev == EV_FREEZE then
-    freeze_others(p)
+  elseif ev == EV_TRICK and TRICK[b] then
+    add_trick(p, b, c, d)
   end
 end
 
@@ -414,7 +437,7 @@ function bot_think(b)
     local x, y = cx + rnd(-5, 5), cy + rnd(-5, 5)
     if onmap(x, y) then
       local i = idx(x, y)
-      if op[i] == 1 and num[i] > 0 then
+      if op[i] == 1 and num[i] > 0 and not trick_at(b, x, y) then
         local hid, fl, list = 0, 0, {}
         for k = 1, 8 do
           local nx, ny = x + DX[k], y + DY[k]
@@ -550,7 +573,11 @@ function match_update()
     elseif p.stun > 0 then p.stun = p.stun - 1 end
   end
   if not m.over then step_me() end
-  if frozen and frozen > 0 then frozen = frozen - 1 end
+  for k = #tricks, 1, -1 do
+    local z = tricks[k]
+    z.left = z.left - 1
+    if z.left <= 0 then table.remove(tricks, k) end
+  end
   -- the end: time's up, or one digger (or nobody) left
   local alive = 0
   for _, p in ipairs(slots) do if not p.out then alive = alive + 1 end end
@@ -630,6 +657,7 @@ function _update()
   end
   if scene == "lobby" then lobby_update() else match_update() end
   for k = #pops, 1, -1 do pops[k].t = pops[k].t - 1; pops[k].y = pops[k].y - 0.4; if pops[k].t <= 0 then table.remove(pops, k) end end
+  for k = #(splats or {}), 1, -1 do splats[k].t = splats[k].t - 1; if splats[k].t <= 0 then table.remove(splats, k) end end
   for k = #booms, 1, -1 do booms[k].t = booms[k].t - 1; if booms[k].t <= 0 then table.remove(booms, k) end end
   if feed then for k = #feed, 1, -1 do feed[k].t = feed[k].t - 1; if feed[k].t <= 0 then table.remove(feed, k) end end end
   if shake > 0 then shake = shake - 1 end
@@ -690,6 +718,7 @@ function draw_match()
   clip(0, 16, 320, 224)
   local mx, my = cx // 8, cy // 8
   map(mx, my, 42, 30, mx * 8, my * 8)
+  draw_tricks(mx, my)
   -- the storm's edge
   circ(C * 8 + 4, C * 8 + 4, SR * 8 + 4, 5)
   circ(C * 8 + 4, C * 8 + 4, SR * 8 + 5, 3)
@@ -717,7 +746,6 @@ function draw_match()
   for _, b in ipairs(booms) do circfill(b.x, b.y, (20 - b.t) // 2 + 2, b.t > 10 and 27 or 9) end
   for _, q in ipairs(pops) do text(q.s, q.x - #q.s * 2, q.y, 27) end
   camera() clip()
-  if frozen and frozen > 0 then rectfill(0, 16, 320, 2, 22) rectfill(0, 238, 320, 2, 22) end
   if p.stun > 0 and not p.out then ctext("STUNNED", 40, (t() // 6) % 2 == 0 and 22 or 13) end
   if instorm(p.x, p.y) and not p.out and not match.over then
     ctext("IN THE STORM: go to the middle!", 52, (t() // 10) % 2 == 0 and 5 or 13)
@@ -725,6 +753,38 @@ function draw_match()
   draw_hud()
   if btn("y") then draw_minimap() end
   if match.over then draw_results() end
+end
+
+-- what Confuse and Paint do to the numbers you see
+function draw_tricks(mx, my)
+  for _, z in ipairs(tricks) do
+    if z.by ~= me then
+      local fade = z.left < 90 and (t() // 4) % 2 == 0
+      for y = math.max(my, z.y - z.r), math.min(my + 30, z.y + z.r) do
+        for x = math.max(mx, z.x - z.r), math.min(mx + 41, z.x + z.r) do
+          if onmap(x, y) and (x - z.x) ^ 2 + (y - z.y) ^ 2 <= z.r * z.r + z.r then
+            local i = idx(x, y)
+            if op[i] == 1 and not fade then
+              local base = instorm(x, y) and TS or T0
+              if z.kind == 7 then spr(135 + (i * 7 + z.x) % 3, x * 8, y * 8)       -- paint blots
+              else                                                                -- a random number, changing
+                local n = (i * 7919 + (match.mt // 25) * 104729 + z.y) % 8 + 1
+                spr(base + K_OPEN + n, x * 8, y * 8)
+              end
+            end
+          end
+        end
+      end
+    end
+    -- the patch's edge, for everyone (the thrower sees where it landed)
+    local c = z.kind == 7 and 5 or 22
+    if z.left > 90 or (t() // 4) % 2 == 0 then circ(z.x * 8 + 4, z.y * 8 + 4, z.r * 8 + 6, c) end
+  end
+  for _, sp in ipairs(splats) do       -- the throw in flight
+    local f = 1 - sp.t / 20
+    local x, y = sp.fx + (sp.x - sp.fx) * f, sp.fy + (sp.y - sp.fy) * f - math.sin(f * math.pi) * 24
+    spr(ITEMS[sp.kind].spr, x - 4, y - 4)
+  end
 end
 
 function draw_hud()
@@ -811,7 +871,11 @@ end
     130: ['.RR..RR.', 'RwRRRRRR', 'RwRRRRRR', 'RRRRRRRR', '.RRRRRR.', '..RRRR..', '...RR...', '........'],   // heart
     131: ['...ll...', '.l....l.', 'l..ll..l', '..l..l..', '..l.wl..', '...ll...', '...BB...', '..BBBB..'],   // sonar
     132: ['.o..Y.o.', '..oYYo..', 'oYYwwYYo', '.YwwwwY.', '.YwwwwY.', 'oYYwwYYo', '..oYYo..', '.o..Y.o.'],   // blast
-    133: ['...l....', '.l.l.l..', '..lwl...', 'llwwwll.', '..lwl...', '.l.l.l..', '...l....', '........'],   // freeze
+    133: ['..pppp..', '.p....p.', '....pp..', '...pP...', '...p....', '........', '...P....', '........'],   // confuse
+    134: ['....k...', '...kRk..', '..kRRRk.', '.kRRRRRk', '.kwRRRRk', '.kRRRRRk', '..kRRRk.', '...kkk..'],   // paint
+    135: ['.PP.....', 'PPPP..P.', 'PPPPPPP.', '.PPPPPP.', '.PPPPPPP', '..PPPPP.', 'P.PPPP..', '...PP...'],   // paint blots
+    136: ['....PP..', '.PPPPPP.', 'PPPPPPP.', 'PPPPPPPP', '.PPPPPPP', 'PPPPPP..', '.PP.PPP.', '.....P..'],
+    137: ['P..PPP..', '.PPPPPP.', '.PPPPPPP', 'PPPPPPP.', 'PPPPPPP.', '.PPPPPPP', '..PPPP.P', '.P......'],
   };
   const LOGO = ['................', '......kkkk......', '....kkrrrrkk....', '...krrrrrrrrk...', '..krrwwrrrrrrk..', '..krwwrrrrrrrk..',
     '.krrwrrrrrrrrrk.', '.krrrrrrrrrrrrk.', '.krrrrrrrrrrrrk.', '.krrrrrrrrrrrrk.', '..krrrrrrrrrrk..', '..krrrrrrrrrrk..',
