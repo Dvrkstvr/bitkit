@@ -53,7 +53,7 @@ const runtime = require('../studio/runtime.js');
   const last = tag => { const l = logs.filter(x => x.startsWith(tag)).pop(); return l ? l.split(/\s+/).slice(1) : []; };
   const run = (n, input) => { for (let f = 0; f < n; f++) if (frame(input ? input(f) : 0)) return false; return true; };
   // the probe prints the state every frame
-  const PROBE = 'local _pd = _bk_overlay\nfunction _bk_overlay() _pd() print("tw", MODE, S.scrap, S.coil, S.satchel, S.done, P and math.floor(P.z) or -1, P and string.format("%.2f", P.bat) or -1, GAME.state, cutscene_playing() and "cut" or "free", #problems(), H and H.tab or 0, S.shape.nose, S.sel.m, S.sel.c, MODE == "fly" and P and string.format("%.2f", math.abs(angdiff(P.h, VIEW.a))) or -1, H and H.tab <= 2 and handles(H.tab)[H.sel[H.tab]].name:gsub(" ", "_") or "-", S.place.m, S.place.c, S.place.g, S.sel.g) end\n' +
+  const PROBE = 'local _pd = _bk_overlay\nfunction _bk_overlay() _pd() print("tw", MODE, S.mat.scrap, S.coil, S.satchel, S.done, P and math.floor(P.z) or -1, P and string.format("%.2f", P.bat) or -1, GAME.state, cutscene_playing() and "cut" or "free", #problems(), H and H.tab or 0, S.shape.nose, S.sel.m, S.sel.c, MODE == "fly" and P and string.format("%.2f", math.abs(angdiff(P.h, VIEW.a))) or -1, H and H.tab <= 2 and handles(H.tab)[H.sel[H.tab]].name:gsub(" ", "_") or "-", S.place.m, S.place.c, S.place.g, S.sel.g, S.mat.silk, S.mat.copper, LEVEL, S.storm, P and string.format("%.2f", math.abs(P.kx) + math.abs(P.ky)) or -1, P and P.inside and "in" or "-") end\n' +
     // Y (unused by the game) selects the next blueprint handle named in PICKQ, so the test needn't steer the cursor
     'local _pu = _update\nfunction _update() if btnp("y") and PICKQ and #PICKQ > 0 and H then local n = table.remove(PICKQ, 1) for i, h in ipairs(handles(H.tab)) do if h.name == n then H.sel[H.tab] = i end end end _pu() end\n';
   const st = () => last('tw');
@@ -78,12 +78,18 @@ const runtime = require('../studio/runtime.js');
   tap('r'); shot('blueprint-top');
   if (st()[10] !== '2') fail('R should switch to the top view: ' + st().join(' '));
 
-  // 3. parts: buy the Buzzer with scrap; it doesn't fit in the thin nose, so FLY refuses until it moves
-  load(PROBE + init('INTRO = false S.scrap = 6 PICKQ = {"Motor", "Motor", "Battery"}'));
+  // 3. parts: the Buzzer costs scrap and copper; with only scrap it can't be built
+  load(PROBE + init('INTRO = false S.mat.scrap = 6 PICKQ = {"Motor", "Motor", "Battery"}'));
   run(3);
   tap('r'); tap('r');                     // PARTS
-  tap('right'); tap('a');                 // Buzzer: bought and fitted
-  if (st()[1] !== '0' || st()[12] !== '2') fail('A should buy and fit the Buzzer: ' + st().join(' '));
+  tap('right'); tap('right'); tap('a');   // Buzzer: no copper
+  if (st()[1] !== '6' || st()[12] !== '1') fail('the Buzzer should need copper too: ' + st().join(' '));
+  // with the copper it is bought and fitted; it doesn't fit in the thin nose, so FLY refuses until it moves
+  load(PROBE + init('INTRO = false S.mat.scrap = 6 S.mat.copper = 1 PICKQ = {"Motor", "Motor", "Battery"}'));
+  run(3);
+  tap('r'); tap('r');
+  tap('right'); tap('right'); tap('a');
+  if (st()[1] !== '0' || st()[21] !== '0' || st()[12] !== '3') fail('A should buy and fit the Buzzer: ' + st().join(' '));
   if (st()[9] !== '1') fail('the Buzzer should not fit the stock nose: ' + st().join(' '));
   shot('parts');
   tap('r'); tap('a'); run(2);             // FLY: refused
@@ -131,28 +137,29 @@ const runtime = require('../studio/runtime.js');
   if (st()[2] !== 'true') fail('flying through the Twin Cell should pick it up: ' + st().join(' '));
   shot('coil');
   // 6. landing on the pad goes back to the hangar, and Tobin talks about the Twin Cell
-  load(PROBE + init('INTRO = false fly_start()') + fly('P.launch = 0 P.armed = true S.coil = true S.own.c2 = true P.x, P.y, P.z, P.h = PAD.x - 20, PAD.y, 12, 0'));
+  load(PROBE + init('INTRO = false fly_start()') + fly('P.launch = 0 P.armed = true S.coil = true S.own.c3 = true P.x, P.y, P.z, P.h = PAD.x - 20, PAD.y, 12, 0'));
   run(40);
   if (st()[0] !== 'hangar' || st()[8] !== 'cut') fail('landing should return to the hangar with a cutscene: ' + st().join(' '));
   skipCut();
   // the Twin Cell is too wide for the stock body
-  tap('r'); tap('r'); tap('down'); tap('right'); tap('a');
-  if (st()[13] !== '2' || st()[9] !== '1') fail('the Twin Cell should be fitted but too wide for the stock body: ' + st().join(' '));
+  tap('r'); tap('r'); tap('down'); tap('right'); tap('right'); tap('a');
+  if (st()[13] !== '3' || st()[9] !== '1') fail('the Twin Cell should be fitted but too wide for the stock body: ' + st().join(' '));
   // quick resume: Continue goes straight back to the hangar with the Twin Cell
   run(5);
   load(PROBE, 0, true); run(3);
   frame(A); run(3);
-  if (st()[7] !== 'play' || st()[0] !== 'hangar' || st()[2] !== 'true' || st()[13] !== '2') fail('Continue should carry on in the hangar with the Twin Cell: ' + st().join(' '));
+  if (st()[7] !== 'play' || st()[0] !== 'hangar' || st()[2] !== 'true' || st()[13] !== '3') fail('Continue should carry on in the hangar with the Twin Cell: ' + st().join(' '));
 
   // 7. a flat battery over the sea: splash, and Tobin brings the plane back to the hangar
   load(PROBE + init('INTRO = false fly_start()') + fly('P.launch = 0 P.bat = 0 P.x, P.y, P.z = 600, 400, 20'));
   run(400);
   if (st()[0] !== 'hangar' || st()[8] !== 'cut') fail('a flat battery should end in the water and back in the hangar: ' + st().join(' '));
 
-  // 8. the satchel brought home wins the game
-  load(PROBE + init('INTRO = false fly_start()') + fly('P.launch = 0 local c = ents_get("satchel") local x, y = ground(c) P.x, P.y, P.z, P.h = x - 30, y, pick_z(c) + 9, 0') +
-    fly('P.armed = true P.x, P.y, P.z, P.h = PAD.x - 20, PAD.y, 12, 0', 60));
-  run(70, () => A);
+  // 8. the satchel, far out on the Reef, brought home wins the game
+  load(PROBE + init('INTRO = false fly_start()') + fly('P.launch = 0 warp(2, 400, 500)') +
+    fly('local c = ents_get("satchel") local x, y = ground(c) P.x, P.y, P.z, P.h = x - 30, y, pick_z(c) + 9, 0', 40) +
+    fly('warp(1, PAD.x - 20, PAD.y)', 60) + fly('P.armed = true P.x, P.y, P.z, P.h = PAD.x - 20, PAD.y, 12, 0', 70));
+  run(85, () => A);
   if (st()[4] !== 'true' || st()[3] !== 'true') fail('bringing the satchel home should finish the story: ' + st().join(' '));
   skipCut(); run(3);
   if (st()[7] !== 'won') fail('the goal complete screen should show: ' + st().join(' '));
@@ -173,19 +180,23 @@ const runtime = require('../studio/runtime.js');
       local good = x0 < s.nose and x1 > s.tail
       if good then
         local lo, hi, wm = -99, 99, 99
-        for i = 0, 400 do local t, b, w = section(s, x1 + (x0 - x1) * i / 400) lo, hi, wm = math.max(lo, b), math.min(hi, t), math.min(wm, w) end
-        good = hi - lo >= part.h - 0.01 and wm * 2 >= part.w - 0.01
+        local xs = {}
+        for i = 0, 400 do xs[#xs + 1] = x1 + (x0 - x1) * i / 400 end
+        for _, p in ipairs(body_points(s)) do if p[1] < x0 and p[1] > x1 then xs[#xs + 1] = p[1] end end
+        for _, x in ipairs(xs) do local t, b, w = section(s, x) lo, hi, wm = math.max(lo, b), math.min(hi, t), math.min(wm, w) end
+        good = hi - lo >= part.h - 0.001 and wm * 2 >= part.w - 0.001
       end
       local geo = ok or why == "front" or why == "overlap"
-      if geo ~= good then bad = bad + 1 end
+      if geo ~= good then bad = bad + 1 print("fitbad", k, tostring(ok), tostring(why), part.name) end
       n = n + 1
     end
     print("fitprop", bad, n)`));
   run(2);
+  logs.filter(l => l.startsWith('fitbad')).forEach(l => console.log(l));
   if (last('fitprop')[0] !== '0') fail('fits() should match the blueprint for every shape, mismatches: ' + last('fitprop').join(' '));
 
   // 11. cannons: buy the Cork Popper, they go on the wings; slid off the tip they don't fit
-  load(PROBE + init('INTRO = false S.scrap = 4 PICKQ = {"Cannons"}'));
+  load(PROBE + init('INTRO = false S.mat.scrap = 4 PICKQ = {"Cannons"}'));
   run(3);
   tap('r'); tap('r'); tap('down'); tap('down'); tap('right'); tap('a');
   if (st()[19] !== '2' || st()[1] !== '0' || st()[9] !== '0') fail('A should buy the Cork Popper and it should fit: ' + st().join(' '));
@@ -203,8 +214,51 @@ const runtime = require('../studio/runtime.js');
   run(31);
   run(30, f => (f < 3 ? bit('b') : 0) | A);
   shot('cannon-pop');
-  if (st()[1] !== '1') fail('a cannon ball should pop the balloon for 1 scrap: ' + st().join(' '));
+  if (st()[20] !== '1') fail('a cannon ball should pop the balloon for 1 silk: ' + st().join(' '));
   if (errors.length) fail('errors: ' + errors.join(' '));
+
+  // 12. the world is three seas: flying off the east edge of the Shallows comes out on the west of the Reef
+  load(PROBE + init('INTRO = false fly_start()') + fly('P.launch = 0 P.x, P.y, P.z, P.h, P.pitch, P.pv = WW - 10, 500, 90, 0, 0, 0'));
+  run(60, () => A);
+  if (st()[22] !== '2') fail('flying off the east edge should reach the Reef: ' + st().join(' '));
+  run(20, () => A); shot('reef');
+  // and north into Thunderhead
+  load(PROBE + init('INTRO = false fly_start()') + fly('P.launch = 0 P.x, P.y, P.z, P.h, P.pitch, P.pv = 600, 10, 90, -math.pi / 2, 0, 0'));
+  run(60, () => A);
+  if (st()[22] !== '3') fail('flying off the north edge should reach Thunderhead: ' + st().join(' '));
+
+  // 13. a hawk diving into the plane knocks it off course
+  load(PROBE + init('INTRO = false fly_start()') + fly('P.launch = 0 warp(2, 560, 720)') +
+    fly('P.z, P.h, P.pitch, P.pv = 80, 0, 0, 0 local h = ents_all("hawk")[1].data h.x, h.y, h.z, h.vx, h.vy, h.vz, h.mode, h.t = P.x, P.y - 9, P.z, 0, 2.5, 0, "dive", 1', 40));
+  run(42, () => A);
+  if (!(+st()[24] > 0.5)) fail('a hawk strike should shove the plane: ' + st().join(' '));
+  run(4, () => A); shot('hawk');
+
+  // 14. inside a thunder cell: rough air, and a lightning strike charges the battery
+  load(PROBE + init('INTRO = false fly_start()') + fly('P.launch = 0 P.bat = 0.2 local s = ents_all("storm")[1] local x, y = ground(s) P.x, P.y, P.z, P.h = x, y, 80, 0 s.data.next = gt + 5 rnd = function(n) if n then return 1 end return 0.1 end'));
+  run(33, () => 0);
+  if (st()[25] !== 'in') fail('the plane should be inside the thunder cell: ' + st().join(' '));
+  run(12, () => 0); shot('storm');
+  if (!(+st()[6] > 0.45)) fail('a lightning strike should charge the battery: ' + st().join(' '));
+
+  // 15. old saves: scrap becomes a material, and the old three motors and cells keep their place in the longer lists
+  load(PROBE + init(`INTRO = false local s = upgrade_save({scrap = 7, own = {m1 = true, m2 = true, c1 = true, c2 = true, p1 = true}, sel = {m = 2, c = 2, p = 1}})
+    print("old", s.mat.scrap, s.sel.m, s.sel.c, tostring(s.own.m3), tostring(s.own.c3), tostring(s.own.c2))`));
+  run(2);
+  if (last('old').join(' ') !== '7 3 3 true true nil') fail('an old save should upgrade: ' + last('old').join(' '));
+
+  // 16. range: the Single Cell can't reach the Reef and back, a Deep Cell can reach the satchel
+  for (const [c, lo, hi] of [[1, 1300, 1800], [3, 2300, 3000], [5, 3500, 4500]]) {
+    load(PROBE + init(`INTRO = false S.sel.c = ${c} S.own.c${c} = true S.shape.st[2][3] = -2.4 S.shape.st[3][3] = -2.4 S.shape.st[2][4] = 2.6 S.shape.st[3][4] = 2.6 S.place.c = 1 fly_start()`) +
+      fly(`P.launch = 0 P.x, P.y, P.z, P.h, P.pitch, P.pv = 200, 500, 60, 0, 0, 0 DIST, LX = 0, P.x
+        local _f = fly_update function fly_update() _f() if P and P.bat > 0 then local d = P.x - LX if math.abs(d) < 20 then DIST = DIST + d end LX = P.x end if P then P.y, P.h = 500, 0 end end`) +
+      'local _o = _bk_overlay function _bk_overlay() _o() print("dist", DIST and math.floor(DIST) or -1) end\n');
+    run(31);
+    for (let f = 0; f < 6000 && +st()[6] > 0; f++) run(1, () => A | (+st()[5] < 60 ? bit('up') : 0) | (+st()[5] > 75 ? bit('down') : 0));
+    const d = +last('dist')[0];
+    console.log(`range with ${['', 'Single', 'Double', 'Twin', 'Brick', 'Deep'][c]} Cell: ${d}px`);
+    if (!(d >= lo && d <= hi)) fail(`${c}: full-throttle range ${d} should be ${lo}..${hi}`);
+  }
 
   // 9. the title screen
   load(PROBE, 0); run(5); shot('title');
