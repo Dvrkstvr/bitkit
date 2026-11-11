@@ -422,6 +422,7 @@ body.bit-embed { background: #000; }
 .game-page h3 { margin: 0 0 10px; font-size: 14px; color: var(--accent); }
 .game-page h4 { margin: 14px 0 6px; font-size: 12px; color: var(--dim); text-transform: uppercase; letter-spacing: .05em; }
 .game-sec { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin: 12px 0; }
+.tune-group { margin: 14px 0 2px; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--dim); }
 .tune-row { display: flex; align-items: center; gap: 10px; padding: 5px 0; border-bottom: 1px solid var(--line); }
 .tune-row:last-of-type { border-bottom: 0; }
 .tune-row > label { flex: 0 0 200px; }

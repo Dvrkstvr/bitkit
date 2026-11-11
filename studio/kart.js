@@ -57,9 +57,13 @@
 --          keep holding for the sharpest turn. It blends smoothly between them.
 --   Drift: hold L (or B while on the throttle) and steer. The sparks go white, amber,
 --          violet: let go for a boost. The longer the drift, the bigger the boost.
---   Item: X uses what you got from a crate. Hold down to look back; hold down + X fires backwards.
--- Items: Nitro (boost), Oil Slick (dropped behind you), Bolt (fired straight ahead or back),
---        Drone (homes in on the kart in front of you, or behind), Shield (blocks one hit).
+--   Item: X uses what you got from a crate. You can hold two: Y swaps them. Hold down to look back;
+--         hold down + X fires backwards.
+-- Items: Nitro (boost), Oil Slick (dropped behind you: whoever hits it slides about with oil on the
+--        camera), Bolt (fired straight ahead or back), Drone (homes in on the kart in front of you, or
+--        behind), Shield (blocks one hit), Tire (rolls along the road and homes in on karts ahead),
+--        Golden Tires (grass, kerbs and hills don't slow you for a while).
+--        Every item's chance and numbers are under Items on the Game tab.
 --
 -- Tracks are made on the Track tab: each is a level with LEVELS[n].track = {pts, road, kerb,
 -- laps, items}. The road is a smooth loop through the points (the first one is the start
@@ -117,14 +121,30 @@ PAINTS = {
 }
 STATS = {"speed","accel","grip","weight","offroad","drift"}
 
--- items from crates. odds = chance by race position (1st .. 4th): leaders get defence, the back gets speed
+-- items from crates. odds = chance by race position (front to back): leaders get defence, the back gets
+-- speed. "Items/..." settings are grouped under Items on the Game tab (times are in seconds).
 ITEMS = {
-  {name="Nitro",     icon=469, odds={0, 25, 30, 35}},
-  {name="Oil Slick", icon=471, odds={40, 20, 15, 10}},
-  {name="Bolt",      icon=473, odds={35, 30, 25, 20}},
-  {name="Drone",     icon=475, odds={0, 10, 15, 25}},
-  {name="Shield",    icon=477, odds={25, 15, 15, 10}},
+  {name="Nitro",        icon=469, odds={0, 25, 30, 35}, on=tune("Items/Nitro: how often", 1, 0, 3, 0.25)},
+  {name="Oil Slick",    icon=471, odds={40, 20, 15, 10}, on=tune("Items/Oil Slick: how often", 1, 0, 3, 0.25)},
+  {name="Bolt",         icon=473, odds={35, 30, 25, 20}, on=tune("Items/Bolt: how often", 1, 0, 3, 0.25)},
+  {name="Drone",        icon=475, odds={0, 10, 15, 25}, on=tune("Items/Drone: how often", 1, 0, 3, 0.25)},
+  {name="Shield",       icon=477, odds={25, 15, 15, 10}, on=tune("Items/Shield: how often", 1, 0, 3, 0.25)},
+  {name="Tire",         icon=422, odds={15, 25, 25, 20}, on=tune("Items/Tire: how often", 1, 0, 3, 0.25)},
+  {name="Golden Tires", icon=424, odds={0, 10, 20, 30}, on=tune("Items/Golden Tires: how often", 1, 0, 3, 0.25)},
 }
+NITRO_T  = tune("Items/Nitro: boost time", 1.25, 0.25, 4, 0.25) * 60
+OIL_T    = tune("Items/Oil Slick: slippery time", 2.5, 0.5, 6, 0.25) * 60
+OIL_GRIP = tune("Items/Oil Slick: grip left (%)", 12, 0, 100, 1) / 100
+OIL_LENS = tune("Items/Oil Slick: oil on the camera", true)
+BOLT_V   = tune("Items/Bolt: speed", 6, 2, 12, 0.5)
+DRONE_V  = tune("Items/Drone: speed", 3, 1, 8, 0.5)
+SHIELD_T = tune("Items/Shield: time", 7, 1, 20, 0.5) * 60
+TIRE_V   = tune("Items/Tire: speed", 5, 2, 10, 0.5)
+TIRE_HOME = tune("Items/Tire: homing", 0.35, 0, 1, 0.05)
+TIRE_T   = tune("Items/Tire: rolls for", 6, 1, 15, 0.5) * 60
+GOLD_T   = tune("Items/Golden Tires: time", 6, 1, 20, 0.5) * 60
+CRATE_T  = tune("Items/Crates come back after", 4, 1, 15, 0.5) * 60
+SPIN_T   = tune("Items/Spin-out time", 0.85, 0.25, 3, 0.05) * 60
 
 function build_stats(b, e, ty)
   local s = {}
@@ -461,7 +481,7 @@ function new_kart(b, e, ty, p, ai)
   local k = {body=b, eng=e, tyre=ty, paint=p, ai=ai, st=s,
     name=PAINTS[p].name .. " " .. BODIES[b].name,
     x=0, y=0, z=0, vz=0, air=false, fly=false, a=0, vx=0, vy=0, fwd=0, drift=0, charge=0, boost=0, steer_vis=0,
-    steer=0, shold=0, sdir=0, stage=0, spin=0, shield=0, item=nil, roll=0, item_t=0,
+    steer=0, shold=0, sdir=0, stage=0, spin=0, shield=0, item=nil, item2=nil, roll=0, roll2=0, item_t=0, oil=0, gold=0,
     lap=0, wp=1, half=true, done=false, time=0, best=nil, lapt=0, bump=0, terr=1,
     skill=0.95, lane=0, lane_want=0}   -- the autopilot fields are used by rivals, and by your kart after the finish
   k.top    = 2.35 + s.speed * 0.105
@@ -532,6 +552,10 @@ function drive(k, thr, brk, steer, drift_btn)
     end
   end
   if k.spin > 0 then turn = 0.25 end
+  if k.oil > 0 then                         -- oil: hardly any grip, and the back end wanders
+    grip = grip * OIL_GRIP
+    turn = turn * 1.25 + math.sin(gt * 0.11 + k.x * 0.01) * 0.012 * math.min(k.oil / 30, 1)
+  end
   if k.fly then turn, grip = turn * 0.3, 0 end
   k.a = (k.a + turn) % TAU
   if k.hop and k.hop > 0 then k.hop = k.hop - 1 end
@@ -545,7 +569,8 @@ function drive(k, thr, brk, steer, drift_btn)
   k.terr = terr
   local top = k.top
   if not k.fly then
-    if terr == 3 then top = top * k.off
+    if k.gold > 0 and (terr == 3 or terr == 2) then  -- golden tires: grass and kerbs don't slow you
+    elseif terr == 3 then top = top * k.off
     elseif terr == 2 then top = top * 0.93
     elseif terr == 4 then
       if k.boost < 40 and not k.ai then sfx("E6", 5, 0.3, 14, 4, 0, 600) end
@@ -569,7 +594,7 @@ function drive(k, thr, brk, steer, drift_btn)
     if k.boost > 0 then fwd = math.max(fwd, top * 0.95) end
     -- hills: uphill slows you, downhill speeds you up
     local slope = (hget(k.x + c*6, k.y + s*6) - hget(k.x - c*6, k.y - s*6)) / 12
-    fwd = fwd - slope * 0.06
+    if k.gold <= 0 or slope < 0 then fwd = fwd - slope * 0.06 end   -- golden tires: no slowing uphill
   end
   if k.spin > 0 then fwd = fwd * 0.95 end
 
@@ -676,11 +701,12 @@ end
 function roll_item(k)
   local place = math.min(4, math.ceil((k.place or #karts) * 4 / math.max(#karts, 1)))   -- 1st .. last as 4 bands
   local total = 0
-  for _, it in ipairs(ITEMS) do total = total + it.odds[place] end
-  local r = rnd(total)
+  for _, it in ipairs(ITEMS) do total = total + it.odds[place] * it.on end
+  if total <= 0 then return 1 end
+  local r = rnd() * total
   for i, it in ipairs(ITEMS) do
-    r = r - it.odds[place]
-    if r <= 0 then return i end
+    r = r - it.odds[place] * it.on
+    if r <= 0 and it.odds[place] * it.on > 0 then return i end
   end
   return 1
 end
@@ -692,7 +718,7 @@ function hit(k, by)
     return
   end
   if k.spin > 0 then return end
-  k.spin, k.hop = 50, 8
+  k.spin, k.hop = math.floor(SPIN_T), 8
   if mine(k) or mine(by) then sfx("A2", 2, 0.5, 20, 6, 0, -200) end
   if k.human then k.shake = 8 end
 end
@@ -700,10 +726,11 @@ end
 function use_item(k, back)                             -- back: fire it behind you (hold down)
   local i = k.item
   if not i or k.roll > 0 then return end
-  k.item, k.item_t = nil, 0
+  k.item, k.item_t = k.item2, 0                         -- the second item moves up
+  k.roll, k.item2, k.roll2 = k.roll2, nil, 0
   local c, s = math.cos(k.a), math.sin(k.a)
   if i == 1 then                                       -- Nitro
-    k.boost = math.max(k.boost, 75)
+    k.boost = math.max(k.boost, math.floor(NITRO_T))
     if mine(k) then sfx("G5", 2, 0.4, 20, 4, 0, -900) end
     if k.human then popup(k, "NITRO!", 10) end
   elseif i == 2 then                                   -- Oil Slick, behind you
@@ -711,16 +738,35 @@ function use_item(k, back)                             -- back: fire it behind y
     if mine(k) then sfx("C3", 3, 0.3, 8) end
   elseif i == 3 then                                   -- Bolt, straight ahead (or straight back)
     local f = back and -1 or 1
-    shots[#shots + 1] = {kind = "bolt", x = k.x + c*12*f, y = k.y + s*12*f, vx = c*6*f + k.vx*0.5, vy = s*6*f + k.vy*0.5, life = 110, owner = k}
+    shots[#shots + 1] = {kind = "bolt", x = k.x + c*12*f, y = k.y + s*12*f, vx = c*BOLT_V*f + k.vx*0.5, vy = s*BOLT_V*f + k.vy*0.5, life = math.floor(660 / BOLT_V), owner = k}
     if mine(k) then sfx("E5", 0, 0.3, 6, 4, 0, 800) end
   elseif i == 4 then                                   -- Drone, after the kart in front (or behind)
     local target, f = nil, back and -1 or 1
     for _, o in ipairs(karts) do if o.place == (k.place or 1) - f then target = o end end
-    shots[#shots + 1] = {kind = "drone", x = k.x, y = k.y, vx = c*3*f, vy = s*3*f, life = 600, owner = k, target = target}
+    shots[#shots + 1] = {kind = "drone", x = k.x, y = k.y, vx = c*DRONE_V*f, vy = s*DRONE_V*f, life = 600, owner = k, target = target}
     if mine(k) then sfx("B4", 5, 0.3, 14, 4, 0, 300) end
   elseif i == 5 then                                   -- Shield
-    k.shield = 420
+    k.shield = math.floor(SHIELD_T)
     if mine(k) then sfx("C5", 4, 0.3, 14, 4, 0, 400) end
+  elseif i == 6 then                                   -- Tire: rolls along the road and homes in on karts
+    local f = back and -1 or 1
+    shots[#shots + 1] = {kind = "tire", x = k.x + c*12*f, y = k.y + s*12*f, vx = c*TIRE_V*f + k.vx*0.3, vy = s*TIRE_V*f + k.vy*0.3,
+      life = math.floor(TIRE_T), owner = k, wp = k.wp, dir = f, bounce = 0}
+    if mine(k) then sfx("D3", 1, 0.35, 10, 4, 0, 200) end
+  elseif i == 7 then                                   -- Golden Tires: no slowing down off the road or uphill
+    k.gold = math.floor(GOLD_T)
+    if mine(k) then sfx("C6", 4, 0.35, 24, 4, 0, -300) end
+    if k.human then popup(k, "GOLDEN TIRES!", 27) end
+  end
+end
+
+-- splats of oil on a player's camera lens: where they are is decided in the game update (the same on
+-- every linked Bit), they are only drawn on that player's view
+function oil_lens(k)
+  k.lens = {}
+  for i = 1, 5 + rnd(3) do
+    local side = i % 2 == 0 and 0.62 or 0.04                   -- splats near the edges, the kart stays visible
+    k.lens[i] = {x = side + rnd() * 0.34, y = rnd() * 0.8 + 0.1, r = 0.018 + rnd() * 0.035, drip = rnd() * 0.12}
   end
 end
 
@@ -731,9 +777,12 @@ function update_items()
     else
       for _, k in ipairs(karts) do
         if (k.x - cr.x)^2 + (k.y - cr.y)^2 < 12*12 and not k.air then
-          cr.t = 240
+          cr.t = math.floor(CRATE_T)
           if not k.item then
             k.item, k.roll, k.item_t = roll_item(k), 40, 0
+            if mine(k) then sfx("C5", 5, 0.25, 4, 5) end
+          elseif not k.item2 then                     -- a second slot (Y swaps the two)
+            k.item2, k.roll2 = roll_item(k), 40
             if mine(k) then sfx("C5", 5, 0.25, 4, 5) end
           end
           break
@@ -746,15 +795,25 @@ function update_items()
       k.roll = k.roll - 1
       if mine(k) and k.roll % 5 == 0 and k.roll > 0 then sfx("A5", 5, 0.12, 2, 5) end
     end
+    if k.roll2 > 0 then k.roll2 = k.roll2 - 1 end
     if k.shield > 0 then k.shield = k.shield - 1 end
+    if k.oil > 0 then k.oil = k.oil - 1 end
+    if k.gold > 0 then k.gold = k.gold - 1 end
   end
-  -- oil slicks spin out whoever drives over them
+  -- oil slicks make whoever drives over them slide about (and splash the camera)
   for i = #hazards, 1, -1 do
     local h = hazards[i]
     h.life = h.life - 1
     for _, k in ipairs(karts) do
-      if (k.x - h.x)^2 + (k.y - h.y)^2 < 10*10 and not k.air and k.spin == 0 then
-        hit(k, h.owner); h.life = 0; break
+      if (k.x - h.x)^2 + (k.y - h.y)^2 < 11*11 and not k.air and k.oil == 0 then
+        if k.shield > 0 then k.shield = 0
+        else
+          k.oil = math.floor(OIL_T)
+          if k.human and OIL_LENS then oil_lens(k) end
+          if mine(k) or mine(h.owner) then sfx("F2", 3, 0.4, 14, 6, 0, -150) end
+          if k.human then k.shake = 5; popup(k, "OIL!", 30) end
+        end
+        h.life = 0; break
       end
     end
     if h.life <= 0 then table.remove(hazards, i) end
@@ -763,7 +822,28 @@ function update_items()
   for i = #shots, 1, -1 do
     local p = shots[i]
     p.life = p.life - 1
-    if p.kind == "drone" then
+    if p.kind == "tire" then                         -- follows the road, steers at the nearest kart ahead
+      local w = WP[(p.wp + (p.dir > 0 and 2 or -2) - 1) % NWP + 1]
+      local tx, ty = w.x, w.y
+      local best = 160 * 160
+      for _, o in ipairs(karts) do
+        if o ~= p.owner and not o.done then
+          local dx, dy = o.x - p.x, o.y - p.y
+          local d2 = dx*dx + dy*dy
+          if d2 < best and dx * p.vx + dy * p.vy > 0 then best, tx, ty = d2, o.x, o.y end
+        end
+      end
+      local dx, dy = tx - p.x, ty - p.y
+      local d = math.max(math.sqrt(dx*dx + dy*dy), 0.1)
+      local h = 0.15 + TIRE_HOME * 0.6
+      p.vx, p.vy = p.vx * (1 - h) + dx / d * TIRE_V * h, p.vy * (1 - h) + dy / d * TIRE_V * h
+      local bw = (p.dir > 0) and 1 or -1
+      for j = 0, 3 do                                -- keep its waypoint up to date
+        local q = WP[(p.wp + bw * j - 1) % NWP + 1]
+        if (q.x - p.x)^2 + (q.y - p.y)^2 < 30*30 then p.wp = (p.wp + bw * j - 1) % NWP + 1 end
+      end
+      p.bounce = (p.bounce + 1) % 20
+    elseif p.kind == "drone" then
       local tx, ty
       if p.target and not p.target.done then tx, ty = p.target.x, p.target.y
       else local w = WP[(p.wp or 1) % NWP + 1]; tx, ty = w.x, w.y end
@@ -778,7 +858,7 @@ function update_items()
         hit(k, p.owner); p.life = 0; break
       end
     end
-    if p.kind == "bolt" then
+    if p.kind == "bolt" or p.kind == "tire" then
       for _, t in ipairs(TREES) do
         if (t.x - p.x)^2 + (t.y - p.y)^2 < 8*8 then p.life = 0; break end
       end
@@ -1023,6 +1103,10 @@ function race_update()
       steer = player_steer(k)
       drift = btn("l", pn) or press("l", pn) > 100 or bdrift
       if btnp("x", pn) then use_item(k, btn("down", pn)) end
+      if btnp("y", pn) and k.item2 and k.roll <= 0 and k.roll2 <= 0 then   -- Y swaps the two items
+        k.item, k.item2 = k.item2, k.item
+        if mine(k) then sfx("E5", 5, 0.15, 3, 5) end
+      end
     end
     drive(k, thr, brk, steer, drift)
     track_kart(k)
@@ -1147,6 +1231,7 @@ function kart_pal(k)
   local p = PAINTS[k.paint][1]
   pal(24, p[1]); pal(25, p[2]); pal(26, p[3])
   local r = TYRES[k.tyre].rim
+  if k.gold and k.gold > 0 and (k.gold > 60 or gt % 6 < 3) then r = (gt // 3) % 2 == 0 and {9, 27, 11} or {27, 11, 13} end   -- golden tires
   pal(3, r[1]); pal(4, r[2]); pal(5, r[3])
   local e = ENGINES[k.eng].pipe
   pal(6, e[1]); pal(7, e[2]); pal(8, e[3])
@@ -1211,6 +1296,10 @@ function draw_world()
     elseif d.kind == 8 then      -- bolt or drone
       if d.o.kind == "drone" then
         sspr(495, d.px - 4 * s * 1.5, d.py - 4 * s * 1.5, 1, 1, s * 1.5)
+      elseif d.o.kind == "tire" then
+        local b = math.abs(math.sin(d.o.bounce / 20 * math.pi)) * 5
+        ellipse(d.px, d.py, 6 * s, 31)
+        sspr(422, d.px - 8 * s * 0.9, d.py - (16 + b) * s * 0.9, 2, 2, s * 0.9, (gt // 4) % 2 == 0)
       else
         circfill(d.px, d.py, math.max(1, d.sc * 2), gt % 4 < 2 and 13 or 29)
       end
@@ -1270,6 +1359,21 @@ local function shadow_text(s, x, y, c, sc)
   text(s, x + 1, y + 1, 1, sc); text(s, x, y, c, sc)
 end
 
+-- oil on the camera lens: dark blobs that run down and fade as the oil wears off
+function draw_lens(k)
+  if not k.lens or k.oil <= 0 then return end
+  local f = math.min(1, k.oil / 45)
+  shade(0.18 * f)                                               -- a grimy film over the whole lens
+  for _, b in ipairs(k.lens) do
+    local r = b.r * VW * (0.4 + 0.6 * f)
+    local x, y = VX + b.x * VW, VY + (b.y + b.drip * (1 - f)) * VH
+    circfill(x, y, r, 1)
+    circfill(x + r * 0.15, y + r * 0.6, r * 0.55, 1)
+    rectfill(x - r * 0.15, y, math.max(1, r * 0.3), r * (0.8 + b.drip * 8), 1)
+    circfill(x - r * 0.35, y - r * 0.35, math.max(1, r * 0.18), 30)
+  end
+end
+
 function draw_hud()
   local order = standings()
   if VH < 200 then draw_hud_small(); return order end
@@ -1287,6 +1391,12 @@ function draw_hud()
     local icon = player.roll > 0 and ITEMS[(gt // 4) % #ITEMS + 1].icon or ITEMS[player.item].icon
     sspr(icon, 148, 9, 2, 2, 1.5)
     if player.roll <= 0 then text("X", 172, 28, 29) end
+  end
+  rectfill(179, 10, 22, 22, 1); rect(179, 10, 22, 22, player.item2 and 29 or 30)     -- second item (Y swaps)
+  if player.item2 then
+    local icon = player.roll2 > 0 and ITEMS[(gt // 4 + 3) % #ITEMS + 1].icon or ITEMS[player.item2].icon
+    sspr(icon, 182, 13, 2, 2, 1)
+    if player.roll2 <= 0 and player.roll <= 0 then text("Y", 196, 26, 29) end
   end
   -- speed, steering stage and drift charge
   local spd = clamp(player.fwd / (player.top * 1.32), 0, 1)
@@ -1333,6 +1443,11 @@ function draw_hud_small()
     local icon = player.roll > 0 and ITEMS[(gt // 4) % #ITEMS + 1].icon or ITEMS[player.item].icon
     sspr(icon, W // 2 - 8, 6, 2, 2, 1)
   end
+  rectfill(W // 2 + 13, 5, 14, 14, 1); rect(W // 2 + 13, 5, 14, 14, player.item2 and 29 or 30)
+  if player.item2 then
+    local icon = player.roll2 > 0 and ITEMS[(gt // 4 + 3) % #ITEMS + 1].icon or ITEMS[player.item2].icon
+    sspr(icon, W // 2 + 15, 7, 2, 2, 0.6)
+  end
   if cam.back then shadow_text("REAR VIEW", W // 2 - 18, 28, 13) end
   local spd = clamp(player.fwd / (player.top * 1.32), 0, 1)
   rectfill(4, H - 10, 52, 6, 1)
@@ -1372,6 +1487,7 @@ function _draw()
     player, cam = humans[v.p], cams[v.p]
     clip(VX, VY, VW, VH)
     draw_world()
+    draw_lens(player)
     order = draw_hud()
     local big = VH >= 200
     if mode == "count" then
@@ -1673,6 +1789,22 @@ end
       if (r > 7) return 0;
       if (r > 5.5) return r > 6.4 ? 20 : 22;
       return disc(x, y, 6, 6, 1.5) ? 13 : 0;
+    });
+    // Tire and Golden Tires icons sit in the free tiles beside the last kart band (422-431)
+    const tyre = (gold) => (x, y) => {
+      const r = Math.hypot(x + 0.5 - 8, y + 0.5 - 8), a = Math.atan2(y + 0.5 - 8, x + 0.5 - 8);
+      if (r > 7.4) return 0;
+      if (r > 4.2) {                                               // the rubber, with tread notches
+        const tread = r > 6.2 && Math.floor((a + Math.PI) / (Math.PI / 6)) % 2 === 0;
+        return gold ? (tread ? 11 : (x + y < 14 ? 27 : 9)) : (tread ? 30 : (x + y < 14 ? 31 : 1));
+      }
+      if (r > 2.2) return gold ? 13 : (x + y < 15 ? 29 : 28);      // the rim
+      return gold ? 27 : 30;
+    };
+    sprite(422, 16, 16, tyre(false));                             // Tire: rolls along and homes in
+    sprite(424, 16, 16, (x, y) => {                               // Golden Tires: a gold tyre with a sparkle
+      if ((x === 13 && y >= 0 && y <= 4) || (y === 2 && x >= 11 && x <= 15)) return 13;
+      return tyre(true)(x, y);
     });
     sprite(479, 8, 8, (x, y) => {                                 // item crate: a wooden box with a bolt mark
       if (x === 0 || y === 0 || x === 7 || y === 7) return 7;
