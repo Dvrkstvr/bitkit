@@ -28875,8 +28875,12 @@ window.BKMyBit = (function () {
 (function () {
   const code = `-- Puffball: keep the puffer off your sand (1-8 players, on one screen or on linked Bits)
 --   Left / right: run. A: jump. B: dive (a quick lunge along the sand).
+--   Serve: the server carries the puffer above their head, walks to a good spot and jumps. A moment later
+--   the puffer lets go. Nobody is frozen after a point, and the side that lost the point serves.
 --   Match: two sides, the puffer lands on your sand and the other side scores. 3 touches a side at most.
 --   Rally: everyone works together and passes the puffer over the net as often as they can.
+-- Before the first serve a setup screen lets every player pick a colour and set the net and the puffer.
+-- New match (pause menu, or A after a match) starts over with the same setup.
 -- Every touch puffs the puffer up: it gets bigger and faster until somebody misses.
 -- Odd players start on the left, even players on the right; crabs (CPU) fill the empty spots.
 -- Linked Bits run in lockstep: the game only uses rnd() and the frame count, and drawing never calls rnd().
@@ -28884,12 +28888,20 @@ window.BKMyBit = (function () {
 GROUND, NETX, NET_TOP, NET_W = 204, 160, 150, 3
 GRAV, JUMP = tune("Gravity", 0.3, 0.1, 0.6, 0.01), -tune("Jump power", 5.6, 3, 8, 0.1)
 SPEED, DIVE = tune("Run speed", 2.3, 1, 4, 0.1), tune("Dive speed", 5, 3, 8, 0.5)
-BALL_G, HIT = tune("Puffer gravity", 0.14, 0.05, 0.3, 0.01), tune("Hit power", 4.7, 3, 7, 0.1)
+BALL_G0, HIT = tune("Puffer gravity", 0.12, 0.05, 0.3, 0.01), tune("Hit power", 4.7, 3, 7, 0.1)
 HEAT = tune("Speed-up per touch", 0.07, 0, 0.2, 0.01)
+SERVE_T = tune("Serve timer (frames)", 10, 0, 40)   -- after the server jumps, how long until the puffer lets go
+SERVE_WAIT = 300                            -- a server who never jumps: the puffer goes by itself after this long
+CARRY = 36                                  -- how far above the server's feet the puffer is carried
 RALLY_GOAL = 30
 PR = 12                                     -- body radius of a player
-PC = { 10, 21, 17, 5, 27, 26, 22, 13 }      -- player colours
+PC = { 10, 21, 17, 5, 27, 26, 22, 13 }      -- the colours players pick from
 PD = { 9, 20, 16, 4, 10, 25, 21, 29 }       -- and their shades
+CNAME = { "SUNNY", "OCEAN", "LIME", "GRAPE", "LEMON", "CORAL", "SKY", "SNOW" }
+-- the setup screen: each row is {name, values}; COLORS is every player's own colour
+NETS = { { "Low", 164 }, { "Normal", 150 }, { "High", 134 } }       -- the top of the net
+FLOAT = { { "Floaty", 0.7 }, { "Normal", 1 }, { "Heavy", 1.3 } }   -- times the puffer gravity
+SIZES = { { "Small", 6 }, { "Normal", 8 }, { "Big", 11 } }          -- the puffer's size before it puffs up
 MODES = { { "MATCH", "Two sides. Most points wins." }, { "RALLY", "Together: keep it flying." } }
 KEYS = { "left", "right", "up", "down", "a", "b" }
 
@@ -28900,15 +28912,22 @@ function _init()
     goal = "Win a Match before the other side does, or pass the puffer " .. RALLY_GOAL .. " times in a row in a Rally.",
     help = {
       "Left / right: run. A: jump. B: dive.",
+      "Serving: you carry the puffer. Walk to where you want to serve from and jump: it lets go a moment later.",
       "Match: if the puffer lands on your sand, the other side scores. A side may touch it 3 times in a row.",
       "Rally: everyone plays together. Every pass over the net counts; 3 drops end the run.",
       "Every touch puffs the puffer up and speeds it up.",
+      "Before a game, everyone picks a colour, and you can set the net height and how floaty and big the puffer is.",
+      "New match (in the pause menu, or A after a match) starts over with the same setup.",
       "Odd players are on the left, even players on the right. Crabs fill the empty spots.",
     },
     continue = function(cp) if cp and cp.mode then start(cp.mode, cp) end end,
     settings = {
       { key = "cpu", name = "Crabs (CPU)", values = { "Easy", "Normal", "Hard" }, value = 2 },
       { key = "points", name = "Points to win", min = 3, max = 15, value = 7 },
+    },
+    pause = {
+      { "New match", function() start(mode) end },
+      { "Change setup", function() go_setup() end },
     },
     title_draw = function(t) draw_title(t) end,   -- its own animated title screen (at the end of the code)
     look = { title = 13, shadow = 24, panel = 24, edge = 10, hi = 25, text = 12, pick = 27, goal = 12, footer = 11 },
@@ -28917,9 +28936,54 @@ function _init()
   gt, last_t, pick_t = 0, -9, 0
   pad, edge = {}, {}
   fx, best, won_rally = {}, 0, false
-  sel = 1
+  sel, row = 1, 1
+  col = {}
+  for p = 1, 8 do col[p] = p end
+  opt = { net = 2, float = 2, size = 2, points = setting("points") or 7 }
   start(1)
   state = "pick"
+end
+
+-- the setup screen's rows for the picked game (Points only in a Match)
+function setup_rows()
+  local r = { "COLORS", "NET", "PUFFER", "SIZE" }
+  if mode == 1 then r[#r + 1] = "POINTS" end
+  return r
+end
+function row_value(name)
+  if name == "NET" then return NETS[opt.net][1]
+  elseif name == "PUFFER" then return FLOAT[opt.float][1]
+  elseif name == "SIZE" then return SIZES[opt.size][1]
+  elseif name == "POINTS" then return tostring(opt.points) end
+  return ""
+end
+function change_row(name, d)
+  if name == "NET" then opt.net = mid(1, opt.net + d, #NETS)
+  elseif name == "PUFFER" then opt.float = mid(1, opt.float + d, #FLOAT)
+  elseif name == "SIZE" then opt.size = mid(1, opt.size + d, #SIZES)
+  elseif name == "POINTS" then opt.points = mid(3, opt.points + d, 15) end
+end
+-- the next colour for player p that no other player has
+function next_color(p, d)
+  local c = col[p]
+  for _ = 1, #PC do
+    c = (c - 1 + d) % #PC + 1
+    local free = true
+    for q = 1, NP do if q ~= p and col[q] == c then free = false end end
+    if free then col[p] = c; return true end
+  end
+  return false
+end
+function go_setup(m)
+  mode = m or mode
+  state, setup_t = "setup", 0
+  row = math.min(row, #setup_rows())
+end
+function apply_opt()
+  NET_TOP = NETS[opt.net][2]
+  BALL_G = BALL_G0 * FLOAT[opt.float][2]
+  R0 = SIZES[opt.size][2]
+  if ball and ball.carry then ball.r = R0 end      -- the puffer behind the setup screen shows the new size
 end
 
 -- ---------------------------------------------------------------- helpers
@@ -28954,6 +29018,8 @@ end
 -- ---------------------------------------------------------------- setting up
 function start(m, cp)
   mode = m
+  if cp and cp.opt then opt, col = cp.opt, cp.col or col end
+  apply_opt()
   local k = math.max(1, (NP + 1) // 2)            -- players on each side
   P = {}
   for side = 1, 2 do
@@ -28966,9 +29032,10 @@ function start(m, cp)
   score = { cp and cp.s1 or 0, cp and cp.s2 or 0 }
   best = cp and cp.best or best
   lives, streak, passes_total = 3, 0, 0
-  target = setting("points") or 7
+  target = opt.points
   if score[1] >= target or score[2] >= target then score = { 0, 0 } end
   state, state_t, winner = "play", 0, 0
+  serves, banner_t = { 0, 0 }, 0
   serve(1)
 end
 
@@ -28979,8 +29046,15 @@ function new_player(side, n, k, pl)
            dive_t = 0, cd = 0, hit_cd = 0, err = 0, jump_ok = true, squash = 0 }
 end
 
+-- A serve: one player of the side carries the puffer above their head and walks to where they want to
+-- serve from. Nobody is frozen. When the server jumps, a short timer runs and then the puffer lets go,
+-- carrying on up and the way the server was moving. The players of a side take turns.
 function serve(side)
-  ball = { x = side == 1 and 84 or 236, y = 84, vx = 0, vy = 0, r = 8, hold = 50, spin = 0 }
+  serves[side] = serves[side] + 1
+  local team = {}
+  for _, p in ipairs(P) do if p.side == side then team[#team + 1] = p end end
+  local s = team[(serves[side] - 1) % #team + 1]
+  ball = { x = s.x, y = s.y - CARRY, vx = 0, vy = 0, r = R0, spin = 0, carry = s, wait = 0, count = nil }
   touches, last_side, hits = 0, 0, 0
   for _, p in ipairs(P) do p.err, p.jump_ok = 0, true end
 end
@@ -28989,7 +29063,7 @@ end
 -- where the puffer comes down to height y, and in how many frames
 function predict(y)
   local x, by, vx, vy = ball.x, ball.y, ball.vx, ball.vy
-  if ball.hold > 0 then return x, 60 end
+  if ball.carry then return x, 60 end
   for n = 1, 240 do
     vy = vy + BALL_G
     x, by = x + vx, by + vy
@@ -29005,7 +29079,13 @@ function cpu(p)
   local lx, lt = predict(GROUND - 34)
   local mine = (lx < NETX) == (p.side == 1)
   local tx = p.home
-  if mine then
+  if ball.carry == p then
+    -- my serve: walk up towards the net, then jump
+    tx = (p.side == 1 and 104 or 216) + p.err
+    if p.ground and not ball.count and (math.abs(tx - p.x) <= 3 or ball.wait > 70) then I.jump = true end
+  elseif ball.carry then
+    -- somebody else's serve: back to my spot
+  elseif mine then
     -- the one closest to the landing spot goes for it
     local go = true
     for _, o in ipairs(P) do
@@ -29042,7 +29122,8 @@ function move(p, I)
     sfx("C3", 3, 0.25, 6, nil, pan(p.x))
     burst(p.x, GROUND, 11, 5, 1.2)
   end
-  if I.jump and p.ground then p.vy, p.ground = JUMP, false; sfx("C4", 1, 0.2, 5, nil, pan(p.x), 500) end
+  p.jumped = false
+  if I.jump and p.ground then p.vy, p.ground, p.jumped = JUMP, false, true; sfx("C4", 1, 0.2, 5, nil, pan(p.x), 500) end
   p.vy = p.vy + GRAV
   p.x, p.y = p.x + p.vx, p.y + p.vy
   if p.y >= GROUND then
@@ -29055,7 +29136,7 @@ end
 function touch(p)
   if last_side == p.side then touches = touches + 1 else touches, last_side = 1, p.side end
   hits = hits + 1
-  ball.r = math.min(15, 8 + hits * 0.35)
+  ball.r = math.min(R0 + 7, R0 + hits * 0.35)
   -- crabs get sloppier the longer a match rally lasts; in a Rally your crab partner is always a good one
   local sk = mode == 2 and 3 or (setting("cpu") or 2)
   local e = ({ 22, 12, 5 })[sk]
@@ -29072,7 +29153,7 @@ function fault(side, why)
   sfx("C3", 2, 0.4, 14, nil, 0, -60)
   if mode == 1 then
     score[3 - side] = score[3 - side] + 1
-    checkpoint({ mode = 1, s1 = score[1], s2 = score[2], best = best })
+    checkpoint({ mode = 1, s1 = score[1], s2 = score[2], best = best, opt = opt, col = col })
     if score[3 - side] >= target then
       winner = 3 - side
       state, state_t = "over", 0
@@ -29080,7 +29161,7 @@ function fault(side, why)
       if NP > 1 or winner == 1 then
         game_win(side_name(winner) .. " won the match " .. score[winner] .. " to " .. score[side] .. "!")
       end
-      checkpoint({ mode = 1, s1 = 0, s2 = 0, best = best })
+      checkpoint({ mode = 1, s1 = 0, s2 = 0, best = best, opt = opt, col = col })
       return
     end
   else
@@ -29088,7 +29169,8 @@ function fault(side, why)
     streak = 0
     if lives <= 0 then state, state_t = "over", 0 return end
   end
-  state, state_t, serve_to = "point", 0, side
+  banner_t = 60
+  serve(side)            -- the side that lost the point serves next, so it can't be scored on again right away
 end
 
 function side_name(s)
@@ -29101,7 +29183,19 @@ end
 
 function ball_step()
   local b = ball
-  if b.hold > 0 then b.hold = b.hold - 1
+  if b.carry then
+    local s = b.carry
+    b.x, b.y = s.x, s.y - CARRY
+    b.wait = b.wait + 1
+    if s.jumped and not b.count then b.count = SERVE_T end
+    if b.count then b.count = b.count - 1 end
+    if (b.count and b.count <= 0) or b.wait > SERVE_WAIT then
+      b.carry = nil
+      b.vx, b.vy = s.vx * 1.4, math.min(s.vy, 0) - 2.2
+      if not b.count then b.vy = -4 end
+      sfx("E5", 4, 0.35, 6, nil, pan(b.x), 300)
+    end
+    return
   else
     b.vy = b.vy + BALL_G
     local ox = b.x
@@ -29126,7 +29220,7 @@ function ball_step()
       touches, last_side = 0, 0
       if mode == 2 then
         streak, passes_total = streak + 1, passes_total + 1
-        if streak > best then best = streak; checkpoint({ mode = 2, best = best }) end
+        if streak > best then best = streak; checkpoint({ mode = 2, best = best, opt = opt, col = col }) end
         if streak == RALLY_GOAL and not won_rally then
           won_rally = true
           game_win(RALLY_GOAL .. " passes without dropping the puffer!")
@@ -29146,7 +29240,6 @@ function ball_step()
       local sp = HIT + math.min(hits, 24) * HEAT
       b.vx = nx * sp + p.vx * 0.45
       b.vy = math.min(ny * sp + p.vy * 0.3, -1.6)
-      b.hold = 0
       p.hit_cd = 10
       touch(p)
       if state ~= "play" then return end
@@ -29173,26 +29266,41 @@ function _update()
     if any_edge("right") or any_edge("down") then sel = sel % #MODES + 1; sfx("E5", 0, 0.15, 3) end
     if any_edge("a") and pick_t > 10 then
       sfx("C5", 4, 0.3, 6)
-      start(sel)
-      checkpoint({ mode = sel, s1 = 0, s2 = 0, best = best })
+      go_setup(sel)
+    end
+    return
+  end
+  if state == "setup" then
+    setup_t = setup_t + 1
+    local rows = setup_rows()
+    if any_edge("up") then row = row == 1 and #rows or row - 1; sfx("E5", 0, 0.15, 3) end
+    if any_edge("down") then row = row % #rows + 1; sfx("E5", 0, 0.15, 3) end
+    for p = 1, NP do
+      local d = (edge[p].right and 1 or 0) - (edge[p].left and 1 or 0)
+      if d ~= 0 then
+        if rows[row] == "COLORS" then if next_color(p, d) then sfx(64 + col[p], 0, 0.15, 4, nil, 0) end
+        else change_row(rows[row], d); apply_opt(); sfx("G5", 0, 0.15, 3) end
+      end
+    end
+    if setup_t > 10 then
+      if any_edge("a") then
+        sfx("C5", 4, 0.3, 6)
+        start(mode)
+        checkpoint({ mode = mode, s1 = 0, s2 = 0, best = best, opt = opt, col = col })
+      elseif any_edge("b") then state, pick_t = "pick", 0 end
     end
     return
   end
   state_t = state_t + 1
   if state == "over" then
     if state_t > 50 then
-      if any_edge("a") then start(mode) elseif any_edge("b") then state, pick_t = "pick", 0 end
+      if any_edge("a") then start(mode) elseif any_edge("b") then go_setup() end
     end
     return
   end
-  if state == "point" then
-    if state_t > 70 then state = "play"; serve(serve_to) end
-    ball.vx, ball.vy = ball.vx * 0.9, 0
-  end
-  for _, p in ipairs(P) do
-    move(p, state == "play" and (p.pl > 0 and human(p) or cpu(p)) or { mx = 0 })
-  end
-  if state == "play" then ball_step() end
+  if banner_t > 0 then banner_t = banner_t - 1 end
+  for _, p in ipairs(P) do move(p, p.pl > 0 and human(p) or cpu(p)) end
+  ball_step()
 end
 
 -- ---------------------------------------------------------------- drawing (never calls rnd)
@@ -29225,7 +29333,7 @@ end
 
 function draw_player(p, i)
   local c, d = 29, 30
-  if p.pl > 0 then c, d = PC[p.pl], PD[p.pl] end
+  if p.pl > 0 then c, d = PC[col[p.pl]], PD[col[p.pl]] end
   local sq = p.squash > 0 and 2 or 0
   local cy = p.y - PR + sq
   rectfill(p.x - 10, GROUND + 1, 20, 3, 9)                          -- shadow
@@ -29304,12 +29412,20 @@ function _draw()
     end
     ctext(MODES[sel][2], 128, 13)
     ctext(NP == 1 and "1 player, with a crab" or NP .. " players", 140, 29)
-    ctext("left / right: pick    A: play", 152, 29)
+    ctext("left / right: pick    A: next", 152, 29)
     return
   end
+  if state == "setup" then draw_setup() return end
   draw_hud()
-  if state == "point" and state_t < 60 then stext(why_text or "", 70, 27, 2) end
-  if ball.hold > 20 and state == "play" and hits == 0 then stext("READY", 60, 13, 2) end
+  if state == "play" and banner_t > 0 then stext(why_text or "", 70, 27, 2) end
+  local s = ball.carry
+  if s and state == "play" then
+    if ball.count then circ(ball.x, ball.y, ball.r + 3 + ball.count, 13)             -- the serve timer closing in
+    elseif s.pl > 0 and (gt // 20) % 2 == 0 then
+      local hint = "A: serve"
+      text(hint, mid(2, ball.x - #hint * 4, 318 - #hint * 8), ball.y - ball.r - 14, 13)
+    end
+  end
   if state == "over" then
     rectfill(40, 70, 240, 80, 1) rect(40, 70, 240, 80, 13)
     if mode == 1 then
@@ -29321,8 +29437,44 @@ function _draw()
       stext("DROPPED!", 80, 26, 2)
       ctext(passes_total .. " passes this run, best streak " .. best, 104, 13)
     end
-    if state_t > 50 then ctext("A: again    B: pick a game", 128, 29) end
+    if state_t > 50 then ctext("A: new match    B: setup", 128, 29) end
   end
+end
+
+-- the setup screen: every player's colour, then the net and the puffer
+function blob(x, y, c, d, r)
+  circfill(x, y, r, d) circfill(x, y - 1, r - 1, c)
+  for s = -1, 1, 2 do circfill(x + s * r * 0.42, y - r * 0.33, math.max(1, r // 4), 13) pset(x + s * r * 0.42, y - r * 0.33, 1) end
+end
+function draw_setup()
+  local rows = setup_rows()
+  rectfill(20, 30, 280, 186, 1) rect(20, 30, 280, 186, 13)
+  stext(mode == 1 and "SET UP THE MATCH" or "SET UP THE RALLY", 38, 27, 2)
+  local y = 62
+  for i, name in ipairs(rows) do
+    local on = i == row
+    local h = name == "COLORS" and 40 or 14
+    if on then rectfill(26, y - 2, 268, h, 20) end
+    text(name, 34, y + 2, on and 27 or 29)
+    if name == "COLORS" then
+      local w = 196 / NP
+      for p = 1, NP do
+        local x = 104 + (p - 0.5) * w
+        local r = NP > 4 and 7 or 10
+        blob(x, y + 13, PC[col[p]], PD[col[p]], r)
+        if on and (gt // 15) % 2 == 0 and NP <= 4 then text("<", x - r - 10, y + 9, 13) text(">", x + r + 3, y + 9, 13) end
+        local nm = NP == 1 and CNAME[col[p]] or player_name(p, NP > 4 and 3 or 6)
+        text(nm, x - #nm * 4, y + 27, (ME or 0) == p and 27 or 13)
+      end
+    else
+      local v = row_value(name)
+      text(v, 200 - #v * 4, y + 2, 13)
+      if on then text("<", 200 - #v * 4 - 14, y + 2, 27) text(">", 200 + #v * 4 + 6, y + 2, 27) end
+    end
+    y = y + h + 4
+  end
+  ctext(row == 1 and "left / right: your own colour" or "up/down: choose  left/right: change", 186, 29)
+  ctext("A: play    B: back", 200, 29)
 end
 
 -- the title screen (game{title_draw = ...}): two crabs keep the puffer flying over a sunset beach.
@@ -29346,8 +29498,8 @@ function draw_title(t)
     line(x, 148 + (i * 7) % 24, x + 10, 148 + (i * 7) % 24, i % 3 == 0 and 27 or 21)
   end
   rectfill(0, 172, 320, 68, 9) rectfill(0, GROUND, 320, 36, 8)        -- sand in the evening
-  rectfill(NETX - NET_W, NET_TOP, NET_W * 2, GROUND - NET_TOP, 29)
-  rectfill(NETX - NET_W, NET_TOP, NET_W * 2, 3, 13)
+  rectfill(NETX - NET_W, 150, NET_W * 2, GROUND - 150, 29)
+  rectfill(NETX - NET_W, 150, NET_W * 2, 3, 13)
   -- the puffer flies from crab to crab and back, a little bigger with every touch
   local n, f = t // 70, (t % 70) / 70
   local from, to = n % 2 == 0 and 40 or 280, n % 2 == 0 and 280 or 40

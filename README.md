@@ -16,7 +16,7 @@ The game runtime and browser studio for **PocketBit**, a DIY ESP32-S3 handheld.
 ![ESP32-S3](https://img.shields.io/badge/ESP32--S3-target-E7352C?logo=espressif&logoColor=white)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-4aa3df.svg)](CONTRIBUTING.md)
 
-### [▶ Open the studio](https://dvrkstvr.github.io/bitkit/) · [Offline version](dist/bitkit-studio.html) · [Hardware repo](https://github.com/Dvrkstvr/pocketbit)
+### [▶ Open the studio](https://dvrkstvr.github.io/bitkit/) · [🎮 Share website](https://dvrkstvr.github.io/bitkit/hub.html) · [Offline version](dist/bitkit-studio.html) · [Hardware repo](https://github.com/Dvrkstvr/pocketbit)
 
 <img src="docs/media/sprout-hop.gif" width="560" alt="Sprout Hop, the demo game, running in BitKit">
 
@@ -210,6 +210,8 @@ Three games for 1 to 8 players, on one screen or on linked Bits. Each one opens 
 Beach volleyball with a pufferfish. Every touch puffs it up: it gets bigger and faster until somebody misses.
 
 - **Left / right** run, **A** jumps, **B** dives along the sand.
+- **Serving:** nobody is frozen after a point. The side that lost it serves: the server carries the puffer above their head, walks to where they want to serve from, and jumps. A moment later the puffer lets go, flying on the way the server was moving. A server who waits 5 seconds serves by itself.
+- **Setup and New match:** after picking Match or Rally, everyone picks their own colour (left / right) and the net height (low, normal, high), the puffer (floaty, normal, heavy), its size and the points to win can be set. New match in the pause menu, or A after a match, starts over with the same setup; B after a match goes back to the setup.
 - **Match** (against each other): odd players on the left, even players on the right, and crabs fill the empty spots. If the puffer lands on your sand, the other side scores. A side may touch it 3 times in a row. Alone you play a crab (Easy, Normal or Hard in Settings).
 - **Rally** (together): everyone keeps the puffer flying, and every pass over the net counts. Three drops end the run.
 - **Goal:** win a Match, or pass the puffer 30 times in a row in a Rally.
