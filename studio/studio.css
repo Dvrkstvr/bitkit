@@ -489,3 +489,5 @@ li.CodeMirror-hint-active { background: #3a2e5c; color: #fff; }
   .map-layout { flex-direction: column; }
   .map-picker .sheet-scroll { max-height: 132px; }
 }
+
+.bit2-note { flex-direction: column; } .bit2-note a { color: var(--accent2); }

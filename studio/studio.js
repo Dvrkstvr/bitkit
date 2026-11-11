@@ -2382,7 +2382,7 @@ LEVEL = tune("Rivals", "Normal", {"Easy", "Normal", "Hard"})   -- a list</pre>
   });
   const homeReady = ms => waitFor(() => bit.on && bit.playing === 'home' && running && !bit.busy, ms || 5000);
   const childPeer = () => { try { return embed.api ? link.peers.get(embed.api.link.id) : null; } catch (e) { return null; } };
-  const childReady = ms => waitFor(() => { const p = childPeer(); return !embed.on || (p && (p.st === 'home' || p.st === 'idle')); }, ms || 8000);
+  const childReady = ms => waitFor(() => { const p = childPeer(); return !embed.on || !embed.frame || (p && (p.st === 'home' || p.st === 'idle')); }, ms || 8000);
   function setEmbed(on) {
     if (on === embed.on) return;
     if (!on && link.s) { linkSend({ t: 'end', sid: link.s.sid, why: 'went back to one Bit' }); linkLeave(false); }
@@ -2400,6 +2400,11 @@ LEVEL = tune("Rivals", "Normal", {"Easy", "Normal", "Hard"})   -- a list</pre>
       f.src = location.pathname + '?bit=' + n + '&embed=1';
       const note = $('bit2Note');
       note.hidden = false; note.textContent = `Starting Bit ${n}…`;
+      if (location.protocol === 'file:') {             // pages opened from a file cannot see each other
+        note.innerHTML = 'Two Bits side by side need the studio from a web address. Opened as a file on your computer, the Bits cannot find each other.<br><br><a href="https://dvrkstvr.github.io/bitkit/" target="_blank" rel="noopener">Open the online studio</a>';
+        embed.frame = null; embed.api = null; buildPickers(); linkUI();
+        return;
+      }
       $('gameWrap2').appendChild(f);
       embed.frame = f; embed.api = null;
       const t0 = performance.now();
@@ -2408,7 +2413,7 @@ LEVEL = tune("Rivals", "Normal", {"Easy", "Normal", "Hard"})   -- a list</pre>
         let api = null;
         try { api = f.contentWindow.bkStudio; } catch (e) { /* not reachable */ }
         if (api && api.embedReady) { embed.api = api; note.hidden = true; linkUI(); return; }
-        if (performance.now() - t0 > 12000) { note.textContent = 'A second Bit could not start here. Open the studio in its own browser tab to play on two Bits.'; return; }
+        if (performance.now() - t0 > 12000) { note.innerHTML = 'A second Bit could not start here. Open the studio in its own browser tab to play on two Bits: <a href="https://dvrkstvr.github.io/bitkit/" target="_blank" rel="noopener">dvrkstvr.github.io/bitkit</a>'; return; }
         setTimeout(wait, 100);
       })();
     } else {
