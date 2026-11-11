@@ -114,16 +114,18 @@ A small platformer that shows off most of the engine:
 ### Windrow (the farming game)
 
 <img src="docs/media/windrow.png" width="400" alt="Windrow: a farmer on a small plot of radishes and barley, with a hut, a crate and a trader's wagon"> <img src="docs/media/windrow-woods.png" width="400" alt="Windrow: foraging among the pines of Bramble Woods">
+<img src="docs/media/windrow-pasture.png" width="400" alt="Windrow: hens, a goat and an egg in the pasture, by the hen house and the goat shed">
 
-BitKit's flagship game, and it is growing. You arrive in the valley of Windrow with a digging stick, a leaky bucket and four radish seeds. This first slice is the farm, the hand work and the woods.
+BitKit's flagship game, and it is growing. You arrive in the valley of Windrow with a digging stick, a leaky bucket and four radish seeds. So far it has the farm, the hand work, the woods and the animals.
 
 - **Hand work.** Your plot is overgrown. **A** uses your hands on what is in front of you: pull weeds (fibre), dig a cell (three goes with the stick), plant the seed you picked with **L / R**, and pick what is ripe. **B** waters, and the bucket holds five splashes before you walk back to the pond. **X** opens your bag and **Y** looks closer.
 - **Days and seasons.** Watered crops grow overnight. A day lasts five minutes, a season seven days, and each of the four seasons has its own crops: radishes, barley and sweet peas in spring, tomatoes, corn and sunmelons in summer, pumpkins in autumn, snowleeks and frostcaps in winter. Rain and snow water the fields for you.
 - **Foraging.** The road west leads to Bramble Woods, where new things turn up every morning: wild garlic, brambleberries, pennybuns or pine cones to sell, and sticks, pebbles and reeds to build with. That is how you earn your first coins.
 - **Marrow's wagon** sells the season's seeds, a hoe, watering cans, a bigger basket, a pickaxe and an axe for the stones and stumps on your land, and the deeds to the East meadow and the Long acre. Every day she pays extra for one crop.
+- **Animals.** South of the fields lies the pasture. Mend the hen house and the goat shed with wood, fibre, stone and a few coins, and Marrow brings hens and goats. Fill the trough from your bag (each animal eats a helping a night), gather the eggs by hand, and milk the goats into a pail. A pat a day wins their hearts: loved hens lay big eggs and loved goats give creamy milk. Hungry animals lose heart.
 - **While the Bit is off**, the farm carries on (`save()`, `saved()` and `clock()`): up to three days pass, and what you watered keeps growing.
 - **Goal:** rebuild the old windmill in three steps, with wood, stone, fibre, coins and crops for the builders. With the sails up, grain sells for double.
-- Coming next: animals, the old mine and what is under it, tractors, and visits between linked Bits.
+- Coming next: the old mine and what is under it, tractors, and visits between linked Bits.
 
 ### Beacon Keeper
 
