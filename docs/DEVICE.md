@@ -14,7 +14,7 @@ how to build and flash it, and what has and hasn't been tried on real hardware.
 | Home screen with games, icons and the Utilities row | ✅ | ✅ same `home.js` cart | `device` CI job |
 | Built-in games (all demos) | ✅ | ✅ exported by `tools/export_device.cjs` into the internal flash | `device` CI job |
 | Your own games | memory card folder | ✅ `.bitkit` files in `/sdcard/games` (the studio's own file, as is) | `device` CI job |
-| Apps: Hexbeat, Loopbox, Game Boy, GBC, NES, Settings, Themes | ✅ | ✅ | `device` CI job |
+| Apps: Hexbeat, Loopbox, Game Boy, GBC, NES, Settings, Themes, Share | ✅ | ✅ | `device` CI job |
 | Emulator apps: Game Boy, Game Boy Color, NES | ROMs in the browser | ✅ same C cores; your ROMs in `/sdcard/roms`, battery saves and states next to them | `device` CI job (test cards) |
 | Bit themes: boot animation, themed home screen, owner's name in games (`player_name`) | ✅ | ✅ "Bit theme" save, same Lua (docs/THEMES.md) | `device` CI job |
 | Save files, Continue, Delete save | ✅ | ✅ `<card>/bitkit/saves/<game>.sav` (or the internal flash) | `device` CI job |
@@ -28,6 +28,7 @@ how to build and flash it, and what has and hasn't been tried on real hardware.
 | `clock()` for idle games (Windrow's time away) | ✅ | ✅ PCF8563 RTC, or `time <unix>` on the console | build only |
 | Analog `press()` | gamepad triggers | ✅ optional MCP3208 + Hall sensors, else 0/255 | build only |
 | Linked play (lockstep, up to 8 Bits) and `net_send` events | ✅ BroadcastChannel | ✅ ESP-NOW broadcasts, see [Linked Bits](#linked-bits) | `device` CI job: two Bits over a socket, 15% packets lost |
+| Share app: games, apps, photos and clips Bit to Bit | ✅ BroadcastChannel | ✅ ESP-NOW, see [Linked Bits](#linked-bits) | `device` CI job: `bitsim --share`, 15% packets lost |
 | Frame-time budget per game | | ⚠️ estimated, see [Frame budget](#frame-budget); a benchmark build measures it on a board | `device` CI job (host times) |
 
 ## How it fits together
@@ -69,12 +70,20 @@ screen), and the home screen shows every Bit in reach. A Bit not heard for 4 sec
 - **Pause together.** Start+Select (or the pause menu's Home) by any player pauses the game on every Bit on the
   same frame. Each Bit keeps its copy in PSRAM; picking the game again with the same Bits carries on together.
 - **Same game, same file.** The Bits check that they have the very same `.bitkit` file (a hash of it). A Bit
-  without it says so and the game doesn't start (the studio sends the cart along; over ESP-NOW that is not done yet).
+  without it says so and the game doesn't start (the studio sends the cart along). To get it over: the **Share** app below.
 - **`net_send` games** (Sweep Storm) never run in lockstep: each Bit plays its own copy, and the events go out
   as broadcasts, many to a packet, to every Bit playing a game with the same name.
 
+- **The Share app** (Utilities row) sends games, utility apps, photos and clips to a Bit in reach. Both Bits open
+  Share (it shows each Bit in reach as READY once it has Share open). OFFER (name, kind, size, hash) goes out every
+  500 ms until the other Bit says yes or no; then DATA, 200 bytes a packet, up to 32 packets ahead of the last ACK.
+  The receiver acknowledges every 8 packets, every 200 ms, and at once when one went missing, and the sender goes
+  back to what is missing. The file is checked with its hash; a game must load as a cart. Games land in `games/`
+  and on the home screen at once, photos and clips in `captures/`. Up to 4 MB.
+  `bitsim --share` plays it between two Bits with 15% of the packets lost.
+
 Packets are at most 250 bytes: `'B' 'K' 1 type from-id`, then HI, START (session, seats), IN (buttons and
-pressure per frame), END or NET fields (`platform/device/bk_host.c`, "linked Bits"). Every Bit must be on the
+pressure per frame), END, NET or SH_* (sharing) fields (`platform/device/bk_host.c`, "linked Bits"). Every Bit must be on the
 same Wi-Fi channel (menuconfig, default 1).
 
 Not handled yet: a Bit that drops out can't take its seat back (the studio can, from the host's checkpoints;

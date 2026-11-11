@@ -343,11 +343,14 @@ The full reference is in the studio's **Help** tab.
 
 ## 🌍 Share hub
 
-The **🌍 Share hub** button in the studio is where games, photos and clips are shared.
+Games, utility apps, photos and clips can be shared three ways: Bit to Bit with the **Share** app, by link or QR code, and on the **[BitKit Share website](https://dvrkstvr.github.io/bitkit/hub.html)**. The **🌍 Share hub** button in the studio does the last two.
+
+- **Bit to Bit: the Share app.** On the Utilities row (press Down on the home screen). Both Bits open Share; one picks a game, utility app, photo or clip and the other Bit, the other says yes, and it lands on its home screen (games and apps) or with its photos and clips. No internet: on the PocketBit it goes over ESP-NOW in 200-byte packets with acknowledgements and a hash check (`platform/device/bk_host.c`, "sharing"; up to 4 MB); in the studio between linked Bit windows. Lua side: `share(op, a, b)` and the `SHARE` table, see `studio/shareapp.js`.
+- **The website.** [`hub.html`](https://dvrkstvr.github.io/bitkit/hub.html), next to the studio on GitHub Pages: everything posted to the hub, with filters for games, utility apps, photos and clips, search, a page per post (`hub.html#post=12`) with a QR code, **▶ Play** (opens it in the studio) and **⬇ .bitkit** (copy it to `games/` on the PocketBit's memory card). It reads the same `hub` branch as the studio, so it needs no server either.
 
 - **Photos and clips.** 📷 (or F8) takes a photo of the screen, ⏺ (or F9) records a clip of up to 60 seconds. On the Bit (and the PocketBit): hold **Select** and press **L** for a photo or **R** for a clip. Photos are PNG, clips are GIF at 30 fps. They are made by `runtime/bk_capture.c`, plain C shared with the device, and land on the memory card in `captures/` (on the PocketBit: the SD card). Point the studio's memory card at the SD card and the Bit's photos and clips show up in the hub.
 - **Play links and QR codes, no server.** *Share this game* packs the whole game into a link (`…/bitkit/#play=1.…`, compressed): opening it plays the game. Small games fit a QR code; every hub post gets a short link (`#hub=12`) that always does.
-- **The hub.** *Post to the hub* opens a short GitHub form filled in by the studio (a free GitHub account is needed). A GitHub Action (`.github/workflows/hub.yml`, `tools/hub_publish.cjs`) checks the post and writes it to the `hub` branch, which the studio reads. No server, no keys and no cost. Posts by maintainers show at once; others show when a maintainer adds the label `hub-ok`. Close the issue or add `hub-hide` to take a post down.
+- **The hub.** *Post to the hub* opens (tick *It is a utility app* for a tool) a short GitHub form filled in by the studio (a free GitHub account is needed). A GitHub Action (`.github/workflows/hub.yml`, `tools/hub_publish.cjs`) checks the post and writes it to the `hub` branch, which the studio reads. No server, no keys and no cost. Posts by maintainers show at once; others show when a maintainer adds the label `hub-ok`. Close the issue or add `hub-hide` to take a post down.
 
 ## 🛠️ Build from source
 
@@ -389,6 +392,7 @@ docs/media/     README images
 - [ ] Local multiplayer over ESP-NOW
 - [x] Launcher and utility apps (music makers, settings, Game Boy / Game Boy Color / NES emulators with save states)
 - [x] Share hub: photos, clips, play links, QR codes and a hub on GitHub
+- [x] Share app (Bit to Bit over ESP-NOW) and the Share website for games and utility apps
 
 ## 🤝 Contributing
 

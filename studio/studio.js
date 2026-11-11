@@ -1674,6 +1674,7 @@ display()                                   -- off</pre><p class="dim">The Help 
   function frame(now) {
     requestAnimationFrame(frame);
     pollInput();
+    if (shr.open && bit.playing !== 'app:Share') shareClose();
     if (running) {
       if (gfxDirtyRT && playingEditor && !link.s) syncToRuntime(false);   // live sprite edits while the game runs
       acc += Math.min(now - last, 100);
@@ -1787,6 +1788,137 @@ display()                                   -- off</pre><p class="dim">The Help 
     capCombo = now;
   }
 
+  /* ------------------------------------------------------------ the Share app: Bit to Bit (studio/shareapp.js) */
+  // The app asks with share(op, a, b) (command 6) and reads the SHARE table this host keeps up to date. Between
+  // studio windows it goes over the BroadcastChannel; the PocketBit does the same over ESP-NOW in small packets
+  // (platform/device/bk_host.c, "sharing"). Both Bits must have Share open; the other one says yes or no.
+  const SHARE_MAX = 4 << 20;
+  const shr = { open: false, v: 0, items: [], bits: [], offer: null, xfer: null, data: null, got: null, xid: 0 };
+  const capKind = n => /\.gif$/i.test(n) ? 'clip' : 'photo';
+  async function shareItems() {
+    const items = [];
+    try { items.push({ name: cart.name || 'my game', kind: 'game', bytes: async () => new TextEncoder().encode(JSON.stringify(serialize())) }); } catch (e) { /* no cart */ }
+    for (const g of await libraryGames()) {
+      if (g.file === cartFile) continue;
+      const kind = g.data.app ? 'app' : 'game';
+      items.push({ name: g.data.name || g.file, kind, bytes: async () => new TextEncoder().encode(JSON.stringify(g.data)) });
+    }
+    let caps = [];
+    try { caps = await BKStore.captures.list(); } catch (e) { /* none */ }
+    caps.forEach(c => items.push({ name: c.name, kind: capKind(c.name), size: c.size, bytes: async () => new Uint8Array(await c.blob.arrayBuffer()) }));
+    return items;
+  }
+  function sharePeers() {
+    if (!shr.open) return;
+    shr.bits = [...link.peers].filter(([, p]) => p.st !== 'gone').sort((a, b) => a[1].num - b[1].num)
+      .map(([id, p]) => ({ id, name: p.name || 'BIT ' + p.num, num: p.num, color: p.ncol || 13, ready: p.st === 'share' }));
+    if (shr.xfer && (shr.xfer.state === 'go' || shr.xfer.state === 'ask') && !link.peers.has(shr.xfer.peerId)) shareFail('the other Bit is gone');
+    if (shr.offer && !link.peers.has(shr.offer.fromId)) shr.offer = null;
+    sharePush();
+  }
+  function sharePush() {
+    if (!shr.open || bit.playing !== 'app:Share' || !running) return;
+    const L = luaStr, x = shr.xfer, o = shr.offer;
+    const lua = `SHARE = {v = ${++shr.v}, me = {name = ${L(myName() || 'BIT ' + link.num)}, num = ${link.num}, color = ${myColor()}},
+      items = {${shr.items.map(it => `{name = ${L(it.name)}, kind = ${L(it.kind)}, size = ${it.size | 0}}`).join(',')}},
+      bits = {${shr.bits.map(b => `{name = ${L(b.name)}, num = ${b.num}, color = ${b.color}, ready = ${b.ready}}`).join(',')}},
+      offer = ${o ? `{from = ${L(o.from)}, kind = ${L(o.kind)}, name = ${L(o.name)}, size = ${o.size | 0}}` : 'nil'},
+      xfer = ${x ? `{dir = ${L(x.dir)}, name = ${L(x.name)}, kind = ${L(x.kind)}, peer = ${L(x.peer)}, size = ${x.size | 0}, done = ${x.done | 0}, state = ${L(x.state)}, why = ${L(x.why || '')}}` : 'nil'}}`;
+    const p = RT.stringToNewUTF8(lua); RT._bkw_eval(p); RT._free(p);
+  }
+  async function shareRequest(op, a, b) {
+    if (op === 0) {
+      const first = !shr.open;
+      shr.open = true;
+      if (first) { linkHi(); shr.items = await shareItems(); }
+      sharePeers();
+      return;
+    }
+    if (op === 1) {                       // send item a to Bit b
+      const it = shr.items[a - 1], to = shr.bits[b - 1];
+      if (!it || !to || shr.xfer) return;
+      let bytes;
+      try { bytes = await it.bytes(); } catch (e) { return; }
+      if (bytes.length > SHARE_MAX) { shr.xfer = { dir: 'send', name: it.name, kind: it.kind, peer: to.name, size: bytes.length, done: 0, state: 'fail', why: 'TOO BIG TO SEND' }; sharePush(); return; }
+      const xid = (Date.now() & 0x7fffffff) ^ (++shr.xid);
+      shr.data = bytes;
+      shr.xfer = { xid, dir: 'send', name: it.name, kind: it.kind, peer: to.name, peerId: to.id, size: bytes.length, done: 0, state: 'ask' };
+      linkSendTo(to.id, { t: 'sh-offer', xid, kind: it.kind, name: it.name, size: bytes.length, who: myName() || 'BIT ' + link.num });
+      log(`📤 offering ${it.kind} "${it.name}" (${(bytes.length / 1024).toFixed(0)} KB) to ${to.name}`, 'sys');
+    } else if (op === 2) {                // answer the offer
+      const o = shr.offer; if (!o) return;
+      shr.offer = null;
+      linkSendTo(o.fromId, { t: 'sh-ans', xid: o.xid, yes: !!a });
+      if (a) { shr.got = { xid: o.xid, parts: [], have: 0 }; shr.xfer = { xid: o.xid, dir: 'recv', name: o.name, kind: o.kind, peer: o.from, peerId: o.fromId, size: o.size, done: 0, state: 'go' }; }
+    } else if (op === 3) {                // stop, or close the result
+      const x = shr.xfer;
+      if (x && (x.state === 'go' || x.state === 'ask')) linkSendTo(x.peerId, { t: 'sh-end', xid: x.xid });
+      shr.xfer = null; shr.data = null; shr.got = null;
+      if (x && x.dir === 'recv' && x.state === 'ok') shr.items = await shareItems();
+    }
+    sharePush();
+  }
+  function shareFail(why) { if (shr.xfer) { shr.xfer.state = 'fail'; shr.xfer.why = why.toUpperCase(); } shr.data = null; shr.got = null; sharePush(); }
+  function shareSendChunks(x) {         // 32 KB at a time, so the bar moves like it does over the radio
+    const CH = 32768;
+    (function step() {
+      if (shr.xfer !== x || x.state !== 'go' || !shr.data) return;
+      const part = shr.data.slice(x.done, x.done + CH);
+      linkSendTo(x.peerId, { t: 'sh-data', xid: x.xid, off: x.done, bytes: part });
+      x.done += part.length;
+      if (x.done >= x.size) { linkSendTo(x.peerId, { t: 'sh-done', xid: x.xid, size: x.size }); x.state = 'ok'; x.why = 'IT IS ON ' + x.peer + "'S BIT"; shr.data = null; log(`📤 sent "${x.name}" to ${x.peer}`, 'sys'); }
+      sharePush();
+      if (x.state === 'go') setTimeout(step, 30);
+    })();
+  }
+  async function shareMsg(m) {
+    const p = link.peers.get(m.from), x = shr.xfer;
+    if (m.t === 'sh-offer') {
+      if (!shr.open || shr.offer || (x && (x.state === 'go' || x.state === 'ask'))) { linkSendTo(m.from, { t: 'sh-ans', xid: m.xid, yes: false, busy: true }); return; }
+      if (!(m.size > 0 && m.size <= SHARE_MAX) || !['game', 'app', 'photo', 'clip'].includes(m.kind)) { linkSendTo(m.from, { t: 'sh-ans', xid: m.xid, yes: false }); return; }
+      shr.offer = { xid: m.xid, fromId: m.from, from: String(m.who || (p ? 'BIT ' + p.num : 'A BIT')).slice(0, 12), kind: m.kind, name: String(m.name || '').replace(/[^\x20-\x7e]/g, '').slice(0, 40), size: m.size | 0 };
+    } else if (m.t === 'sh-ans') {
+      if (!x || x.xid !== m.xid || x.state !== 'ask') return;
+      if (m.yes) { x.state = 'go'; shareSendChunks(x); }
+      else { x.state = 'no'; x.why = m.busy ? 'THEY ARE BUSY, TRY AGAIN' : ''; shr.data = null; }
+    } else if (m.t === 'sh-data') {
+      if (!x || x.xid !== m.xid || x.dir !== 'recv' || !shr.got || m.off !== shr.got.have) return;
+      shr.got.parts.push(m.bytes); shr.got.have += m.bytes.length; x.done = shr.got.have;
+    } else if (m.t === 'sh-done') {
+      if (!x || x.xid !== m.xid || x.dir !== 'recv' || !shr.got) return;
+      if (shr.got.have !== x.size) { shareFail('parts went missing'); return; }
+      const all = new Uint8Array(x.size); let o = 0; shr.got.parts.forEach(b => { all.set(b, o); o += b.length; });
+      shr.got = null;
+      try { await shareKeep(x, all); x.state = 'ok'; log(`📥 got ${x.kind} "${x.name}" from ${x.peer}`, 'sys'); }
+      catch (e) { shareFail(e.message); return; }
+    } else if (m.t === 'sh-end') {
+      if (shr.offer && shr.offer.xid === m.xid) shr.offer = null;
+      else if (x && x.xid === m.xid && (x.state === 'go' || x.state === 'ask')) { shareFail('they stopped it'); return; }
+    }
+    sharePush();
+  }
+  // a received file onto this Bit's memory card: games and apps with the games, photos and clips with the captures
+  async function shareKeep(x, bytes) {
+    if (x.kind === 'photo' || x.kind === 'clip') {
+      const ext = x.kind === 'clip' ? 'gif' : 'png', base = x.name.replace(/\.(png|gif)$/i, '');
+      await BKStore.captures.put(await BKStore.captures.freeName(base, ext), new Blob([bytes], { type: 'image/' + ext }));
+      return;
+    }
+    const o = JSON.parse(new TextDecoder().decode(bytes));
+    decodeCart(o);                            // throws when it is not a game
+    const base = (o.name || 'game').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').toLowerCase() || 'game';
+    let file = base + '.bitkit', n = 2;
+    while (await BKStore.exists(file)) file = `${base}-${n++}.bitkit`;
+    await BKStore.save(file, o);
+  }
+  function shareClose() {
+    const x = shr.xfer;
+    if (x && (x.state === 'go' || x.state === 'ask')) linkSendTo(x.peerId, { t: 'sh-end', xid: x.xid });
+    if (shr.offer) linkSendTo(shr.offer.fromId, { t: 'sh-ans', xid: shr.offer.xid, yes: false });
+    Object.assign(shr, { open: false, items: [], bits: [], offer: null, xfer: null, data: null, got: null });
+    linkHi();
+  }
+
   /* ------------------------------------------------------------ multiplayer: linked Bits */
   // Every studio window is a Bit, and Bits find each other by themselves, like PocketBits over ESP-NOW
   // (here a BroadcastChannel). The home screen shows the linked Bits. Starting a game on one Bit starts it on
@@ -1808,7 +1940,7 @@ display()                                   -- off</pre><p class="dim">The Help 
     if (!c) { c = new BroadcastChannel('bitkit-link-' + id); link.out.set(id, c); }
     o.from = link.id; c.postMessage(o);
   }
-  function myState() { return link.s ? 'game' : (bit.playing === 'home' || bit.playing === 'boot') ? 'home' : running ? 'game' : 'idle'; }
+  function myState() { return link.s ? 'game' : bit.playing === 'app:Share' ? 'share' : (bit.playing === 'home' || bit.playing === 'boot') ? 'home' : running ? 'game' : 'idle'; }
   function linkHi(to) {
     const o = { t: 'hi', num: link.num, pick: picks[0], st: myState(), sid: link.s ? link.s.sid : null, name: myName(), ncol: myColor() };
     if (to) linkSendTo(to, o); else linkSend(o);
@@ -1858,6 +1990,7 @@ display()                                   -- off</pre><p class="dim">The Help 
     const now = performance.now();
     let p = link.peers.get(m.from);
     if (m.t === 'bye') { if (p) { link.peers.delete(m.from); log(`🔗 Bit ${p.num} left`, 'sys'); peersChanged(); } return; }
+    if (typeof m.t === 'string' && m.t.startsWith('sh-')) { if (p) p.seen = now; shareMsg(m); return; }
     if (!p && m.t === 'hi') {
       p = { num: m.num | 0, pick: null, st: 'idle', sid: null, seen: now };
       link.peers.set(m.from, p);
@@ -1872,7 +2005,7 @@ display()                                   -- off</pre><p class="dim">The Help 
       if (p.isNew !== false) { p.isNew = false; peersChanged(); }
       else {
         if (pickChanged) { buildPickers(); if (chooser.open) chooserDraw(); }
-        if (stChanged) { linkUI(); if (bit.playing === 'home') refreshHomeSoon(); }
+        if (stChanged) { linkUI(); if (bit.playing === 'home') refreshHomeSoon(); sharePeers(); }
       }
       hostCheck(m.from);
       return;
@@ -1908,6 +2041,7 @@ display()                                   -- off</pre><p class="dim">The Help 
     buildPickers(); if (chooser.open) chooserDraw();
     linkUI();
     if (bit.playing === 'home') refreshHomeSoon();
+    sharePeers();
   }
   setInterval(() => {          // heartbeat: tell the others how this Bit is doing, notice Bits that are gone
     if (!link.ch) return;
@@ -2131,7 +2265,7 @@ display()                                   -- off</pre><p class="dim">The Help 
     H16[base] = b.length; H16[base + 1] = b.findIndex(x => x[0] === link.id) + 1;
     b.slice(0, 40).forEach((x, i) => {
       const p = link.peers.get(x[0]), st = p ? p.st : 'home';
-      H16[base + 2 + i] = x[1]; H16[base + MAPW + 2 + i] = st === 'home' ? 1 : st === 'game' ? 2 : 3;
+      H16[base + 2 + i] = x[1]; H16[base + MAPW + 2 + i] = st === 'home' ? 1 : (st === 'game' || st === 'share') ? 2 : 3;
     });
   }
   let homeRefreshT = 0;
@@ -2474,6 +2608,7 @@ display()                                   -- off</pre><p class="dim">The Help 
   }
   async function bitRequest(cmd, arg, fresh) {
     if (cmd === 5) { restartGame(arg); return; }
+    if (cmd === 6) { shareRequest(arg >>> 24, (arg >> 12) & 0xFFF, arg & 0xFFF); return; }
     if (cmd === 4) {   // level(n): load that level's map before the next frame
       const L = playingLevels && playingLevels[arg - 1];
       if (L) { RT.HEAPU16.set(L.map, ptr.map >> 1); playingLevel = arg - 1; if (playingEditor) newRouteSegment(arg - 1); }
@@ -3184,7 +3319,7 @@ display()                                   -- off</pre><p class="dim">The Help 
   if (/[?&]hub\b/.test(location.search) && !IS_BIT2) BKShare.open();
 
   // expose for tests / debugging
-  window.bkStudio = { cart, run, stop, takePhoto, toggleClip, cap, serialize, input, input2, picks, link, RT, bitRequest, bootHome, ptrMap: () => ptr.map >> 1, isRunning: () => running, bit, setBitPower, showLibrary: showGames, showGames, saveToBit, BKStore,
+  window.bkStudio = { cart, run, stop, takePhoto, toggleClip, cap, serialize, shr, input, input2, picks, link, RT, bitRequest, bootHome, ptrMap: () => ptr.map >> 1, isRunning: () => running, bit, setBitPower, showLibrary: showGames, showGames, saveToBit, BKStore,
     setMode, setBits, openGame, embed, mode: () => mode, gid: () => gid, label: screenText, showTab, undoHere,
     // for the studio window, when this Bit is the one shown next to it
     embedReady: true, extInput(m, p) { ext.mask = m; ext.press.set(p); }, bye() { linkSend({ t: 'bye' }); },

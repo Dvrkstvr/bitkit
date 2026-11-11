@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <sys/stat.h>
 
 #define MAXSLOT 12
 #define MAXGAMES 96
@@ -269,6 +270,29 @@ static void upper(char *s) { for (; *s; s++) if (*s >= 'a' && *s <= 'z') *s = (c
 
 /* ------------------------------------------------------------ the library */
 static int cmp_str(const void *a, const void *b) { return strcmp(*(char *const *)a, *(char *const *)b); }
+/* one .bitkit file onto the home screen (at the end); 0 = added */
+static int add_entry(const char *path, int apps) {
+  if (nE >= MAXGAMES) return 1;
+  entry *e = &E[nE];
+  memset(e, 0, sizeof(*e));
+  snprintf(e->path, sizeof(e->path), "%s", path);
+  bk_cart c; char err[200];
+  if (bk_cart_load(&c, e->path, BK_CART_INFO, &CM, err, sizeof(err))) { say(err, 1); return 1; }
+  int dup = 0;
+  for (int k = 0; k < nE; k++) if (!strcmp(E[k].name, c.name) && E[k].is_app == c.is_app) dup = 1;
+  if (!dup) {
+    snprintf(e->name, sizeof(e->name), "%s", c.name);
+    snprintf(e->sub, sizeof(e->sub), "%s", c.sub ? c.sub : "");
+    snprintf(e->save_key, sizeof(e->save_key), "%s", c.save_key ? c.save_key : c.name);
+    e->is_app = apps || c.is_app;
+    e->has_icon = c.has_icon;
+    e->builtin = c.builtin;
+    memcpy(e->icon, c.icon, 256);
+    nE++;
+  }
+  bk_cart_free(&c, &CM);
+  return dup;
+}
 static void scan_dir(const char *dir, int apps) {
   DIR *d = opendir(dir);
   if (!d) return;
@@ -281,28 +305,8 @@ static void scan_dir(const char *dir, int apps) {
   closedir(d);
   qsort(names, (size_t)n, sizeof(char *), cmp_str);
   for (int i = 0; i < n; i++) {
-    if (nE < MAXGAMES) {
-      entry *e = &E[nE];
-      memset(e, 0, sizeof(*e));
-      snprintf(e->path, sizeof(e->path), "%s/%s", dir, names[i]);
-      bk_cart c; char err[200];
-      if (bk_cart_load(&c, e->path, BK_CART_INFO, &CM, err, sizeof(err))) { say(err, 1); }
-      else {
-        int dup = 0;
-        for (int k = 0; k < nE; k++) if (!strcmp(E[k].name, c.name) && E[k].is_app == c.is_app) dup = 1;
-        if (!dup) {
-          snprintf(e->name, sizeof(e->name), "%s", c.name);
-          snprintf(e->sub, sizeof(e->sub), "%s", c.sub ? c.sub : "");
-          snprintf(e->save_key, sizeof(e->save_key), "%s", c.save_key ? c.save_key : c.name);
-          e->is_app = apps || c.is_app;
-          e->has_icon = c.has_icon;
-          e->builtin = c.builtin;
-          memcpy(e->icon, c.icon, 256);
-          nE++;
-        }
-        bk_cart_free(&c, &CM);
-      }
-    }
+    char path[200]; snprintf(path, sizeof(path), "%s/%s", dir, names[i]);
+    add_entry(path, apps);
     free(names[i]);
   }
 }
@@ -563,7 +567,7 @@ int bk_host_recording(void) { return cap.rec; }
    - games that use net_send() don't run in lockstep: each Bit plays on its own and the events go out as NET packets.
    Packets: 'B' 'K' version type, from id (u32), then the type's fields, little endian, at most 250 bytes. */
 #define LK_VER 1
-enum { LK_HI = 1, LK_START, LK_IN, LK_END, LK_NET };
+enum { LK_HI = 1, LK_START, LK_IN, LK_END, LK_NET, LK_SH_OFFER, LK_SH_ANS, LK_SH_DATA, LK_SH_ACK, LK_SH_END };
 #define LK_PEERS 16
 #define LK_RING 32                     /* frames of buttons kept per player */
 #define LK_SEND 10                     /* frames in each IN packet */
@@ -619,8 +623,9 @@ static void rstr(lk_r *r, char *out, int cap) {
   out[j] = 0;
 }
 
-/* this Bit's state for the others: 1 on its home screen, 2 in a game, 3 neither (error screen) */
-static uint8_t my_state(void) { return mode == MODE_HOME || mode == MODE_BOOT ? 1 : mode == MODE_GAME ? 2 : 3; }
+/* this Bit's state for the others: 1 on its home screen, 2 in a game, 3 neither (error screen), 4 in the Share app */
+static int share_open(void);
+static uint8_t my_state(void) { return mode == MODE_HOME || mode == MODE_BOOT ? 1 : mode == MODE_GAME ? (share_open() ? 4 : 2) : 3; }
 static void send_hi(void) {
   lk_w w; whead(&w, LK_HI);
   w8(&w, my_num()); w8(&w, my_state()); w8(&w, (uint32_t)bs.color); wstr(&w, bs.name, 10);
@@ -649,7 +654,7 @@ static int roster(uint32_t *out) {
   const int n = bits_sorted(ids, nums, st, &mine);
   int k = 0;
   out[k++] = LK.id;
-  for (int i = 0; i < n && k < BK_MAX_PLAYERS; i++) if (ids[i] != LK.id && st[i] != 2) out[k++] = ids[i];
+  for (int i = 0; i < n && k < BK_MAX_PLAYERS; i++) if (ids[i] != LK.id && st[i] != 2 && st[i] != 4) out[k++] = ids[i];
   return k;
 }
 static int link_roster_n(void) { uint32_t r[BK_MAX_PLAYERS]; return C.radio_send ? roster(r) : 1; }
@@ -661,7 +666,7 @@ static void link_home_rows(void) {
   uint32_t ids[LK_PEERS + 1]; uint8_t nums[LK_PEERS + 1], st[LK_PEERS + 1]; int mine = 0;
   const int n = bits_sorted(ids, nums, st, &mine);
   BK->map[0] = (uint16_t)n; BK->map[1] = (uint16_t)(mine + 1);
-  for (int i = 0; i < n; i++) { BK->map[2 + i] = nums[i]; BK->map[BK_MAP_W + 2 + i] = st[i]; }
+  for (int i = 0; i < n; i++) { BK->map[2 + i] = nums[i]; BK->map[BK_MAP_W + 2 + i] = st[i] == 4 ? 2 : st[i]; }
 }
 
 /* a game's fingerprint (the file's bytes) and whether it talks with net_send(): worked out when first needed */
@@ -969,6 +974,7 @@ static void net_recv(uint32_t from, lk_r *r) {
   }
 }
 
+static void share_recv(int type, uint32_t from, lk_peer *p, lk_r *r);
 void bk_host_radio_recv(const void *pkt, int len) {
   lk_r r = { pkt, len, 0, 0 };
   if (!C.radio_send || r8(&r) != 'B' || r8(&r) != 'K' || r8(&r) != LK_VER) return;
@@ -1016,6 +1022,7 @@ void bk_host_radio_recv(const void *pkt, int len) {
     char m[96]; snprintf(m, sizeof(m), "Bit %d %s, so the linked game ended", p ? p->num : 0, W[why & 3]); say(m, 1);
     link_leave(0);
   } else if (type == LK_NET) net_recv(from, &r);
+  else if (type >= LK_SH_OFFER && type <= LK_SH_END) share_recv(type, from, p, &r);
 }
 
 /* once per frame: say hello, notice Bits that are gone, keep the home screen's list up to date */
@@ -1054,6 +1061,298 @@ static void link_init(void) {
   LK.last_hi = lk_now() - 1000;
 }
 
+/* ------------------------------------------------------------ sharing: the Share app (studio/shareapp.js) */
+/* Bit to Bit over the same radio: games, apps, photos and clips. Both Bits open Share; the app asks with
+   share(op, a, b) (command 6) and reads the SHARE table this host writes into it. The other Bit says yes or no.
+   OFFER xid kind size crc name (again every 500 ms until answered) -> ANS xid yes (again on a repeated OFFER)
+   -> DATA xid offset bytes (200 a packet, at most a window of 32 ahead of what was acknowledged) <- ACK xid have
+   (every few packets, every 200 ms, and at once when one is missing: the sender goes back to "have").
+   The file is checked with its hash (fnv) and written next to the games or the captures. END xid stops it. */
+#define SH_CHUNK 200
+#define SH_WINDOW (32 * SH_CHUNK)
+#define SH_BURST 8                    /* packets a frame */
+#define SH_MAX (4u << 20)
+#define SH_ITEMS 64
+enum { SH_NONE, SH_ASK, SH_GO, SH_OK, SH_NO, SH_FAIL };
+enum { SK_GAME = 1, SK_APP, SK_PHOTO, SK_CLIP };
+static const char *SH_KIND[5] = { "", "game", "app", "photo", "clip" };
+static struct {
+  int open; slot *app; uint32_t v; int dirty, push_t;
+  int nitems; struct { char path[200], name[48]; uint8_t kind; uint32_t size; } item[SH_ITEMS];
+  int nbits; uint32_t bit[LK_PEERS];
+  int offer; uint32_t o_from, o_xid, o_size, o_crc; uint8_t o_kind; char o_name[48], o_who[12];
+  int x, dir; uint32_t xid, peer, size, crc, done, next, t_prog, t_send, t_ack, n_since_ack, xids;
+  uint8_t kind; char name[48], why[40], who[12];
+  uint8_t *buf;
+  uint32_t fin_xid, fin_peer, fin_size, no_xid;   /* the last one we got (for a sender that missed our last ACK), the last one we said no to */
+  int sent_ok;                        /* transfers that finished, for tests */
+} BK_BIG_BSS SH;
+
+static int share_open(void) { return SH.open && mode == MODE_GAME && cur == SH.app; }
+int bk_host_shared(void) { return SH.sent_ok; }
+static const char *peer_name(uint32_t id, char *out, size_t n) {
+  lk_peer *p = find_peer(id);
+  if (p && p->name[0]) snprintf(out, n, "%s", p->name); else snprintf(out, n, "BIT %d", p ? p->num : 0);
+  return out;
+}
+static void sh_list(void) {               /* what this Bit can send: your games and apps, photos and clips */
+  SH.nitems = 0;
+  for (int i = 0; i < nE && SH.nitems < SH_ITEMS; i++) {
+    if (E[i].builtin) continue;           /* every Bit has those already */
+    struct stat st; if (stat(E[i].path, &st)) continue;
+    snprintf(SH.item[SH.nitems].path, 200, "%s", E[i].path);
+    snprintf(SH.item[SH.nitems].name, 48, "%s", E[i].name);
+    SH.item[SH.nitems].kind = E[i].is_app ? SK_APP : SK_GAME;
+    SH.item[SH.nitems].size = (uint32_t)st.st_size;
+    SH.nitems++;
+  }
+  DIR *d = C.captures_dir ? opendir(C.captures_dir) : NULL;
+  struct dirent *de;
+  while (d && (de = readdir(d)) && SH.nitems < SH_ITEMS) {
+    const char *nm = de->d_name; size_t l = strlen(nm);
+    if (nm[0] == '.' || l < 5 || l > 47) continue;
+    const int gif = !strcmp(nm + l - 4, ".gif"), png = !strcmp(nm + l - 4, ".png");
+    if (!gif && !png) continue;
+    char path[200]; snprintf(path, sizeof(path), "%s/%s", C.captures_dir, nm);
+    struct stat st; if (stat(path, &st)) continue;
+    snprintf(SH.item[SH.nitems].path, 200, "%s", path);
+    snprintf(SH.item[SH.nitems].name, 48, "%s", nm);
+    SH.item[SH.nitems].kind = gif ? SK_CLIP : SK_PHOTO;
+    SH.item[SH.nitems].size = (uint32_t)st.st_size;
+    SH.nitems++;
+  }
+  if (d) closedir(d);
+  SH.dirty = 1;
+}
+static void sh_send_ans(uint32_t to, uint32_t xid, int yes, int busy) {
+  lk_w w; whead(&w, LK_SH_ANS); w32(&w, to); w32(&w, xid); w8(&w, (uint32_t)yes); w8(&w, (uint32_t)busy); wsend(&w);
+}
+static void sh_send_end(uint32_t to, uint32_t xid) { lk_w w; whead(&w, LK_SH_END); w32(&w, to); w32(&w, xid); wsend(&w); }
+static void sh_send_offer(void) {
+  lk_w w; whead(&w, LK_SH_OFFER);
+  w32(&w, SH.peer); w32(&w, SH.xid); w8(&w, SH.kind); w32(&w, SH.size); w32(&w, SH.crc); wstr(&w, SH.name, 40); wstr(&w, bs.name[0] ? bs.name : "", 10);
+  wsend(&w); SH.t_send = lk_now();
+}
+static void sh_send_ack(void) {
+  lk_w w; whead(&w, LK_SH_ACK); w32(&w, SH.peer); w32(&w, SH.xid); w32(&w, SH.done); wsend(&w);
+  SH.t_ack = lk_now(); SH.n_since_ack = 0;
+}
+static void sh_drop(void) { free_(SH.buf); SH.buf = NULL; }
+static void sh_fail(const char *why) {
+  if (SH.x == SH_ASK || SH.x == SH_GO) { SH.x = SH_FAIL; snprintf(SH.why, sizeof(SH.why), "%s", why); say(why, 1); }
+  sh_drop(); SH.dirty = 1;
+}
+static void sh_reset(void) {
+  if ((SH.x == SH_ASK || SH.x == SH_GO) && SH.peer) sh_send_end(SH.peer, SH.xid);
+  sh_drop(); SH.x = SH_NONE; SH.why[0] = 0; SH.dirty = 1;
+}
+static void share_close(void) {
+  sh_reset();
+  if (SH.offer) sh_send_ans(SH.o_from, SH.o_xid, 0, 0);
+  SH.offer = 0; SH.open = 0; SH.app = NULL;
+}
+
+/* a received file onto the memory: games and apps with your games (on the home screen at once), photos and
+   clips with the captures */
+static int sh_keep(void) {
+  const int cap = SH.kind == SK_PHOTO || SH.kind == SK_CLIP;
+  const char *dir = cap ? C.captures_dir : C.game_dirs[0];
+  if (!dir) return 1;
+  mkdir(dir, 0775);
+  char base[48]; size_t j = 0; int dash = 0;
+  for (const char *q = SH.name; *q && j < sizeof(base) - 1; q++) {
+    if (cap && *q == '.') break;
+    char c = *q >= 'A' && *q <= 'Z' ? (char)(*q + 32) : *q;
+    if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) { base[j++] = c; dash = 0; }
+    else if (j && !dash) { base[j++] = '-'; dash = 1; }
+  }
+  while (j && base[j - 1] == '-') j--;
+  base[j] = 0;
+  if (!j) snprintf(base, sizeof(base), "shared");
+  const char *ext = SH.kind == SK_PHOTO ? "png" : SH.kind == SK_CLIP ? "gif" : "bitkit";
+  char path[260];
+  for (int n = 1; n < 1000; n++) {
+    if (n == 1) snprintf(path, sizeof(path), "%s/%s.%s", dir, base, ext); else snprintf(path, sizeof(path), "%s/%s-%d.%s", dir, base, n, ext);
+    struct stat st; if (stat(path, &st)) break;
+  }
+  FILE *f = fopen(path, "wb");
+  if (!f) return 1;
+  const int ok = fwrite(SH.buf, 1, SH.size, f) == SH.size;
+  fclose(f);
+  if (!ok) { remove(path); return 1; }
+  if (!cap) {
+    bk_cart c; char err[200];
+    if (bk_cart_load(&c, path, BK_CART_INFO, &CM, err, sizeof(err))) { remove(path); snprintf(SH.why, sizeof(SH.why), "THAT IS NOT A GAME"); return 2; }
+    bk_cart_free(&c, &CM);
+    add_entry(path, 0);
+  }
+  char m[320]; snprintf(m, sizeof(m), "got %s \"%s\" from %s: %s", SH_KIND[SH.kind], SH.name, SH.who, path); say(m, 0);
+  return 0;
+}
+
+/* the app's request: op 0 hello (send the state), 1 send item a to Bit b, 2 answer the offer, 3 stop / close */
+static void share_request(int op, int a, int b) {
+  if (mode != MODE_GAME || !cur) return;
+  if (op == 0) {
+    if (!SH.open || SH.app != cur) { SH.open = 1; SH.app = cur; sh_list(); send_hi(); }
+    SH.dirty = 1;
+  } else if (op == 1) {
+    if (a < 1 || a > SH.nitems || b < 1 || b > SH.nbits || SH.x == SH_ASK || SH.x == SH_GO || !find_peer(SH.bit[b - 1])) return;
+    sh_drop();
+    size_t len = 0;
+    SH.buf = (uint8_t *)read_file(SH.item[a - 1].path, &len);
+    snprintf(SH.name, sizeof(SH.name), "%s", SH.item[a - 1].name); SH.kind = SH.item[a - 1].kind;
+    SH.peer = SH.bit[b - 1]; peer_name(SH.peer, SH.who, sizeof(SH.who));
+    SH.dir = 1; SH.size = (uint32_t)len; SH.done = SH.next = 0; SH.why[0] = 0;
+    if (!SH.buf || !len || len > SH_MAX) { SH.x = SH_ASK; sh_fail(len > SH_MAX ? "TOO BIG TO SEND" : "COULD NOT READ IT"); return; }
+    SH.crc = fnv(2166136261u, SH.buf, len);
+    SH.xid = (LK.id * 2654435761u) ^ (++SH.xids) ^ lk_now();
+    SH.x = SH_ASK; SH.t_prog = lk_now();
+    sh_send_offer();
+  } else if (op == 2) {
+    if (!SH.offer) return;
+    SH.offer = 0;
+    if (!a) { sh_send_ans(SH.o_from, SH.o_xid, 0, 0); SH.no_xid = SH.o_xid; SH.dirty = 1; return; }
+    sh_drop();
+    SH.buf = malloc_(SH.o_size);
+    if (!SH.buf) { sh_send_ans(SH.o_from, SH.o_xid, 0, 1); SH.x = SH_ASK; sh_fail("NOT ENOUGH MEMORY"); return; }
+    SH.dir = 2; SH.x = SH_GO; SH.xid = SH.o_xid; SH.peer = SH.o_from; SH.size = SH.o_size; SH.crc = SH.o_crc; SH.kind = SH.o_kind;
+    snprintf(SH.name, sizeof(SH.name), "%s", SH.o_name); snprintf(SH.who, sizeof(SH.who), "%s", SH.o_who);
+    SH.done = 0; SH.t_prog = lk_now(); SH.why[0] = 0;
+    sh_send_ans(SH.peer, SH.xid, 1, 0); sh_send_ack();
+  } else if (op == 3) {
+    const int got = SH.x == SH_OK && SH.dir == 2;
+    sh_reset();
+    if (got) sh_list();
+  }
+  SH.dirty = 1;
+}
+
+static void share_recv(int type, uint32_t from, lk_peer *p, lk_r *r) {
+  const uint32_t to = r32(r), xid = r32(r);
+  if (r->bad || (to != LK.id)) return;
+  if (type == LK_SH_OFFER) {
+    const uint8_t kind = (uint8_t)r8(r); const uint32_t size = r32(r), crc = r32(r);
+    char name[48], who[12]; rstr(r, name, sizeof(name)); rstr(r, who, sizeof(who));
+    if (r->bad) return;
+    if (SH.dir == 2 && SH.xid == xid && SH.peer == from) { if (SH.x == SH_GO) sh_send_ans(from, xid, 1, 0); return; }   /* our yes got lost */
+    if (SH.offer && SH.o_xid == xid) return;
+    if (SH.no_xid == xid) { sh_send_ans(from, xid, 0, 0); return; }   /* our no got lost */
+    if (!share_open() || SH.offer || SH.x == SH_ASK || SH.x == SH_GO) { sh_send_ans(from, xid, 0, 1); return; }
+    if (kind < SK_GAME || kind > SK_CLIP || !size || size > SH_MAX) { sh_send_ans(from, xid, 0, 0); return; }
+    SH.offer = 1; SH.o_from = from; SH.o_xid = xid; SH.o_kind = kind; SH.o_size = size; SH.o_crc = crc;
+    snprintf(SH.o_name, sizeof(SH.o_name), "%s", name);
+    if (who[0]) snprintf(SH.o_who, sizeof(SH.o_who), "%s", who); else snprintf(SH.o_who, sizeof(SH.o_who), "BIT %d", p ? p->num : 0);
+    SH.dirty = 1;
+  } else if (type == LK_SH_ANS) {
+    const int yes = (int)r8(r), busy = (int)r8(r);
+    if (r->bad || SH.dir != 1 || SH.xid != xid || SH.x != SH_ASK) return;
+    if (yes) { SH.x = SH_GO; SH.done = SH.next = 0; SH.t_prog = lk_now(); }
+    else { SH.x = SH_NO; snprintf(SH.why, sizeof(SH.why), "%s", busy ? "THEY ARE BUSY, TRY AGAIN" : ""); sh_drop(); }
+    SH.dirty = 1;
+  } else if (type == LK_SH_DATA) {
+    const uint32_t off = r32(r); const int n = (int)r8(r);
+    if (r->bad) return;
+    if (SH.fin_xid == xid && SH.fin_peer == from && !(SH.x == SH_GO && SH.xid == xid)) {   /* the sender missed our last ACK */
+      lk_w w; whead(&w, LK_SH_ACK); w32(&w, from); w32(&w, xid); w32(&w, SH.fin_size); wsend(&w); return;
+    }
+    if (SH.dir != 2 || SH.xid != xid) return;
+    if (SH.x != SH_GO || n <= 0 || n > SH_CHUNK || r->i + n > r->n) return;
+    if (off != SH.done) { if (lk_now() - SH.t_ack > 40) sh_send_ack(); return; }   /* one went missing: ask from there */
+    if (off + (uint32_t)n > SH.size) { sh_fail("THE FILE CAME IN WRONG"); return; }
+    memcpy(SH.buf + off, r->b + r->i, (size_t)n);
+    SH.done += (uint32_t)n; SH.t_prog = lk_now(); SH.n_since_ack++;
+    if (SH.done == SH.size) {
+      if (fnv(2166136261u, SH.buf, SH.size) != SH.crc) { sh_send_end(SH.peer, SH.xid); SH.x = SH_GO; sh_fail("THE FILE CAME IN WRONG"); return; }
+      const int k = sh_keep();
+      if (k) { sh_send_end(SH.peer, SH.xid); SH.x = SH_GO; sh_fail(k == 2 ? "THAT IS NOT A GAME" : "COULD NOT SAVE IT"); return; }
+      SH.x = SH_OK; SH.sent_ok++; sh_drop();
+      SH.fin_xid = SH.xid; SH.fin_peer = SH.peer; SH.fin_size = SH.size;
+      sh_send_ack();
+    } else if (SH.n_since_ack >= 8) sh_send_ack();
+    if (SH.done % 4000 < SH_CHUNK) SH.dirty = 1;
+  } else if (type == LK_SH_ACK) {
+    const uint32_t have = r32(r);
+    if (r->bad || SH.dir != 1 || SH.xid != xid || SH.x != SH_GO || have > SH.size) return;
+    if (have > SH.done) { SH.done = have; SH.t_prog = lk_now(); SH.dirty = 1; }
+    if (have < SH.next) SH.next = have;            /* go back to what is missing */
+    if (SH.done == SH.size) {
+      SH.x = SH_OK; SH.sent_ok++; sh_drop();
+      char m[200]; snprintf(m, sizeof(m), "sent %s \"%s\" to %s", SH_KIND[SH.kind], SH.name, SH.who); say(m, 0);
+      snprintf(SH.why, sizeof(SH.why), "IT IS ON %s'S BIT", SH.who);
+    }
+  } else if (type == LK_SH_END) {
+    if (SH.offer && SH.o_xid == xid && SH.o_from == from) { SH.offer = 0; SH.dirty = 1; }
+    else if (SH.xid == xid && SH.peer == from) sh_fail("THEY STOPPED IT");
+  }
+}
+
+/* every frame while Share is open: resend, send the next packets, notice silence, tell the app */
+static void lua_q(char *o, size_t n, const char *s);
+static void share_tick(void) {
+  if (SH.open && !share_open()) share_close();
+  if (!SH.open) return;
+  const uint32_t now = lk_now();
+  if (SH.x == SH_ASK && SH.dir == 1) {
+    if (now - SH.t_prog > 20000) sh_fail("NO ANSWER");
+    else if (now - SH.t_send >= 500) sh_send_offer();
+  }
+  if (SH.x == SH_GO && SH.dir == 1) {
+    if (now - SH.t_prog > 8000) sh_fail("LOST THE OTHER BIT");
+    else {
+      if (now - SH.t_prog > 250 && SH.next > SH.done && now - SH.t_send > 250) SH.next = SH.done;   /* nothing back: from the last ACK */
+      for (int k = 0; k < SH_BURST && SH.next < SH.size && SH.next < SH.done + SH_WINDOW; k++) {
+        const uint32_t n = SH.size - SH.next < SH_CHUNK ? SH.size - SH.next : SH_CHUNK;
+        lk_w w; whead(&w, LK_SH_DATA); w32(&w, SH.peer); w32(&w, SH.xid); w32(&w, SH.next); w8(&w, n);
+        memcpy(w.b + w.n, SH.buf + SH.next, n); w.n += (int)n;
+        wsend(&w);
+        SH.next += n; SH.t_send = now;
+      }
+    }
+  }
+  if (SH.x == SH_GO && SH.dir == 2) {
+    if (now - SH.t_prog > 8000) { sh_send_end(SH.peer, SH.xid); sh_fail("LOST THE OTHER BIT"); }
+    else if (now - SH.t_ack >= 200) sh_send_ack();
+  }
+  /* the Bits nearby */
+  int nb = 0; uint32_t ids[LK_PEERS];
+  for (int i = 0; i < LK.npeers; i++) ids[nb++] = LK.peer[i].id;
+  for (int i = 1; i < nb; i++) for (int j = i; j > 0 && find_peer(ids[j])->num < find_peer(ids[j - 1])->num; j--) { uint32_t t = ids[j]; ids[j] = ids[j - 1]; ids[j - 1] = t; }
+  if (nb != SH.nbits || memcmp(ids, SH.bit, sizeof(uint32_t) * (size_t)nb)) { SH.nbits = nb; memcpy(SH.bit, ids, sizeof(ids)); SH.dirty = 1; }
+  if (SH.offer && !find_peer(SH.o_from)) { SH.offer = 0; SH.dirty = 1; }
+  if (++SH.push_t % 30 == 0) SH.dirty = 1;       /* "ready" changes come with the hellos */
+  if (!SH.dirty || !share_open()) return;
+  SH.dirty = 0;
+  /* SHARE = {...} into the app */
+  static char lua[12288]; size_t o = 0;
+  char q[120], nm[16];
+  #define PUT(...) do { if (o < sizeof(lua)) o += (size_t)snprintf(lua + o, sizeof(lua) - o, __VA_ARGS__); } while (0)
+  lua_q(q, sizeof(q), bs.name[0] ? bs.name : "");
+  PUT("SHARE = {v = %u, me = {name = %s, num = %d, color = %d}, items = {", (unsigned)++SH.v, q, my_num(), bs.color);
+  for (int i = 0; i < SH.nitems; i++) { lua_q(q, sizeof(q), SH.item[i].name); PUT("{name = %s, kind = \"%s\", size = %u},", q, SH_KIND[SH.item[i].kind], (unsigned)SH.item[i].size); }
+  PUT("}, bits = {");
+  for (int i = 0; i < SH.nbits; i++) {
+    const lk_peer *p = find_peer(SH.bit[i]);
+    lua_q(q, sizeof(q), peer_name(SH.bit[i], nm, sizeof(nm)));
+    PUT("{name = %s, num = %d, color = %d, ready = %s},", q, p->num, p->color ? p->color : 13, p->st == 4 ? "true" : "false");
+  }
+  PUT("}");
+  if (SH.offer) {
+    char who[40]; lua_q(who, sizeof(who), SH.o_who); lua_q(q, sizeof(q), SH.o_name);
+    PUT(", offer = {from = %s, kind = \"%s\", name = %s, size = %u}", who, SH_KIND[SH.o_kind], q, (unsigned)SH.o_size);
+  }
+  if (SH.x != SH_NONE) {
+    static const char *ST[6] = { "", "ask", "go", "ok", "no", "fail" };
+    char who[40], why[100]; lua_q(who, sizeof(who), SH.who); lua_q(q, sizeof(q), SH.name); lua_q(why, sizeof(why), SH.why);
+    PUT(", xfer = {dir = \"%s\", name = %s, kind = \"%s\", peer = %s, size = %u, done = %u, state = \"%s\", why = %s}",
+        SH.dir == 1 ? "send" : "recv", q, SH_KIND[SH.kind], who, (unsigned)SH.size, (unsigned)SH.done, ST[SH.x], why);
+  }
+  PUT("}");
+  #undef PUT
+  if (o < sizeof(lua)) bk_lua_eval(lua);
+}
+static void lua_q(char *o, size_t n, const char *s) { lua_str(o, n, s); }
+
 /* ------------------------------------------------------------ the frame */
 static void handle_requests(void);
 int bk_host_frame(uint16_t mask, const uint8_t *press) {
@@ -1088,6 +1387,7 @@ int bk_host_frame(uint16_t mask, const uint8_t *press) {
     }
   }
   handle_requests();
+  share_tick();
   return 0;
 }
 
@@ -1101,6 +1401,7 @@ static void handle_requests(void) {
     case 3: say("Y edits a game in the studio, not on the Bit", 0); break;
     case 4: if (mode == MODE_GAME && cur->has_cart && arg >= 1 && arg <= cur->cart.nlevels) { memcpy(BK->map, cur->cart.maps[arg - 1], sizeof(BK->map)); cur->level = arg - 1; } break;
     case 5: if (mode == MODE_GAME) restart_game(arg); break;
+    case 6: share_request((int)((uint32_t)arg >> 24), (arg >> 12) & 0xFFF, arg & 0xFFF); break;
     default: break;
   }
 }
@@ -1178,6 +1479,7 @@ int bk_host_init(const bk_host_config *cfg) {
   boot_code = C.boot_lua ? read_file(C.boot_lua, NULL) : NULL;
   load_settings();
   link_init();
+  sh_drop(); memset(&SH, 0, sizeof(SH));
   char m[80]; snprintf(m, sizeof(m), "%d games and apps", nE); say(m, 0);
   boot_anim();
   return 0;
