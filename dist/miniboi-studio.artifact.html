@@ -11080,7 +11080,8 @@ DROP = 3           -- tile number of a water drop
 MAP_W, MAP_H = 160, 30
 
 function _init()
-  p = {x = 24, y = 120, vx = 0, vy = 0, flip = false, ground = false}
+  p = {x = 24, y = 120, vx = 0, vy = 0, ry = 0, flip = false,
+       ground = false, coyote = 0, jbuf = 0}
   score, total = 0, 0
   for y = 0, MAP_H - 1 do
     for x = 0, MAP_W - 1 do
@@ -11116,22 +11117,30 @@ function _update()
   end
 
   -- gravity and jumping
-  p.vy = math.min(p.vy + 0.25, 4)
-  if p.ground and btnp("a") then
+  -- "ground" = there is solid floor 1px below us (checked every frame)
+  p.ground = hits(p.x, p.y + 1)
+  if p.ground then p.coyote = 6 elseif p.coyote > 0 then p.coyote = p.coyote - 1 end
+  -- remember a jump press for a few frames, so pressing slightly early still works
+  if btnp("a") then p.jbuf = 6 elseif p.jbuf > 0 then p.jbuf = p.jbuf - 1 end
+  if p.jbuf > 0 and p.coyote > 0 then
     p.vy = -4.2
+    p.jbuf, p.coyote = 0, 0
     sfx("C5", 5, 0.5, 10, nil, 0, 600)
+  elseif p.ground and p.vy > 0 then
+    p.vy = 0
+  else
+    p.vy = math.min(p.vy + 0.25, 4)
   end
   if not btn("a") and p.vy < -1.5 then p.vy = -1.5 end
 
-  p.ground = false
-  local stepy = p.vy > 0 and 1 or -1
-  for i = 1, math.floor(math.abs(p.vy) + 0.5) do
-    if hits(p.x, p.y + stepy) then
-      if stepy > 0 then p.ground = true end
-      p.vy = 0
-      break
-    end
+  -- move y with sub-pixel precision, stopping at floors and ceilings
+  p.ry = p.ry + p.vy
+  local n = math.floor(math.abs(p.ry))
+  local stepy = p.ry > 0 and 1 or -1
+  for i = 1, n do
+    if hits(p.x, p.y + stepy) then p.vy, p.ry = 0, 0 break end
     p.y = p.y + stepy
+    p.ry = p.ry - stepy
   end
 
   -- pick up drops
@@ -11145,7 +11154,7 @@ function _update()
 
   -- fell off the world
   if p.y > MAP_H * 8 then
-    p.x, p.y, p.vy = 24, 120, 0
+    p.x, p.y, p.vy, p.ry = 24, 120, 0, 0
     sfx("C3", 2, 0.6, 20, nil, 0, -200)
   end
 end
