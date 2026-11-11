@@ -23,7 +23,7 @@ static int ring_mute;                               /* fast-forward frames make 
 static void ring_push(int16_t l, int16_t r) {
   if (ring_mute) return;
   uint32_t w = ring_w;
-  if (w - ring_r >= RING - 1) return;
+  if (w - ring_r >= RING / 2) return;               /* nobody is listening (muted): keep the delay bounded */
   ring[(w & (RING - 1)) * 2] = l; ring[(w & (RING - 1)) * 2 + 1] = r;
   ring_w = w + 1;
 }

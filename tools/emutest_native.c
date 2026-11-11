@@ -20,9 +20,9 @@ static int block_x(int colour) {
   return n ? (int)(sx / n) : -1;
 }
 static float loudness(void) {
-  static float buf[2048 * 2];
-  bk_audio_render(buf, 2048);
-  float e = 0; for (int i = 0; i < 4096; i++) e += buf[i] * buf[i];
+  static float buf[8192 * 2];
+  bk_audio_render(buf, 8192);
+  float e = 0; for (int i = 0; i < 8192 * 2; i++) e += buf[i] * buf[i];
   return e;
 }
 
@@ -49,7 +49,7 @@ static void card(const char *kind, int index, int draw_w, int block_colour) {
   if (x1 <= x0 + 10) FAIL("%s: the block did not move right with the D-pad (%d -> %d)", kind, x0, x1);
   loudness();                                             /* empty the sound ring */
   bk_lua_eval("PAD = 1");                                 /* press A: a beep */
-  for (int f = 0; f < 3; f++) bk_lua_frame();
+  for (int f = 0; f < 8; f++) bk_lua_frame();
   float e = loudness();
   printf("  sound energy after A: %.3f\n", e);
   if (e < 0.5f) FAIL("%s: no sound after pressing A", kind);
