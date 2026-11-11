@@ -13562,7 +13562,7 @@ window.BKTracks = (function () {
 
   const code = `-- Kart Lab: a 2.5D kart racing demo for BitKit
 -- It's all about the karts. Build one in the garage (body, engine, tyres, paint), pick a track,
--- then race three rival karts for 3 laps.
+-- then race rival karts for 3 laps (KARTS in a race, 8 by default).
 -- Multiplayer: every player (PLAYERS) races in the same match. One screen splits into views; linked Bits
 -- (ME > 0) each draw only their own kart's view. Game logic never uses rnd() in drawing, so Bits stay in step.
 --   Throttle: R (analog: squeeze harder to go faster) or A     Brake / reverse: B
@@ -13591,6 +13591,7 @@ ROADW, KERBW = 44, 7          -- half width of the road, kerb width (pixels)
 CAM_H, HORIZON, FOCAL, CAM_D = 22, 84, 170, 40
 SPR_K = 0.6        -- sprite pixels per world pixel
 STEP = 1           -- floor column step: 2 is chunkier but faster (handy on the device)
+KARTS = 8          -- karts in a race: the players, then rivals fill the grid (2 to 8)
 
 -- steering stages: {how hard, frames held before this stage starts}
 STEER = {{0.35, 0}, {0.7, 10}, {1.0, 26}}
@@ -14144,7 +14145,7 @@ end
 
 -- ------------------------------------------------------------------ items
 function roll_item(k)
-  local place = math.min(k.place or 4, 4)
+  local place = math.min(4, math.ceil((k.place or #karts) * 4 / math.max(#karts, 1)))   -- 1st .. last as 4 bands
   local total = 0
   for _, it in ipairs(ITEMS) do total = total + it.odds[place] end
   local r = rnd(total)
@@ -14313,7 +14314,7 @@ function _init()
     if d and type(d.best) == "table" then best = d.best end
   end
   if sel.track > #TRACKS then sel.track = 1 end
-  -- everyone playing gets a kart in the same race (rivals fill the grid up to 4).
+  -- everyone playing gets a kart in the same race (rivals fill the grid up to KARTS).
   -- Each player builds their own kart; only player 1 picks the track.
   NH = math.max(1, math.min(PLAYERS or 1, 4))
   sels, rows, ready, humans = {sel}, {1}, {}, {}
@@ -14365,11 +14366,14 @@ function start_race()
   -- rivals, each a different random build (never a player's paint)
   local paints = {}
   for i = 1, #PAINTS do if not used[i] then paints[#paints + 1] = i end end
-  local grid = {{NWP - 1, -16}, {NWP - 1, 16}, {NWP - 4, -16}, {NWP - 4, 16}}
-  for i = 1, 4 - NH do
+  local field = math.max(NH, math.min(KARTS, #PAINTS))
+  local grid = {}
+  for i = 1, field do grid[i] = {NWP - 1 - ((i - 1) // 2) * 3, (i % 2 == 1) and -16 or 16} end   -- two by two
+  local nr = field - NH
+  for i = 1, nr do
     local p = table.remove(paints, rnd(#paints))
     local k = new_kart(rnd(#BODIES), rnd(#ENGINES), rnd(#TYRES), p, true)
-    k.skill, k.lane, k.lane_want = 0.9 + i * 0.025, rnd(-14, 14), 0
+    k.skill, k.lane, k.lane_want = 0.9 + 0.075 * i / nr, rnd(-14, 14), 0
     karts[#karts + 1] = k
   end
   for p = 1, NH do table.insert(karts, rnd(NH == 1 and 2 or 1, #karts + 1), humans[p]) end   -- start somewhere in the pack
@@ -14713,7 +14717,7 @@ function draw_hud()
   if VH < 200 then draw_hud_small(); return order end
   camera(-VX, -VY)
   -- place
-  shadow_text(place_str(player.place), 8, 8, ({27, 29, 10, 13})[player.place], 3)
+  shadow_text(place_str(player.place), 8, 8, ({27, 29, 10})[player.place] or 13, 3)
   -- lap and time
   local lap = clamp(player.lap, 1, LAPS)
   shadow_text("LAP " .. lap .. "/" .. LAPS, 240, 8, 13)
@@ -14761,7 +14765,7 @@ end
 function draw_hud_small()
   camera(-VX, -VY)
   local W, H = VW, VH
-  shadow_text(place_str(player.place), 4, 4, ({27, 29, 10, 13})[player.place], 2)
+  shadow_text(place_str(player.place), 4, 4, ({27, 29, 10})[player.place] or 13, 2)
   local lap = clamp(player.lap, 1, LAPS)
   shadow_text("LAP " .. lap .. "/" .. LAPS, W - 52, 4, 13)
   shadow_text(tstr(player.done and player.time or race_t), W - 52, 13, 12)
@@ -14830,21 +14834,24 @@ function _draw()
   set_view({x = 0, y = 0, w = 320, h = 240})
   if #vs == 2 then rectfill(0, 119, 320, 2, 1) elseif #vs > 2 then rectfill(0, 119, 320, 2, 1); rectfill(159, 0, 2, 240, 1) end
   if mode == "results" then
-    rectfill(56, 60, 208, 112, 1); rect(56, 60, 208, 112, 13)
-    text("FINISH!", 104, 66, 27, 2)
+    local n = #order
+    local top = 112 - n * 6
+    local ph = n * 12 + 56
+    rectfill(56, top, 208, ph, 1); rect(56, top, 208, ph, 13)
+    text("FINISH!", 104, top + 6, 27, 2)
     for i, k in ipairs(order) do
-      local y = 86 + i * 14
+      local y = top + 14 + i * 12
       local c = k.human and 27 or 13
       text(place_str(i), 64, y, c)
       text(k.name, 96, y, c)
       text(k.done and tstr(k.time) or "--", 200, y, c)
     end
     local b = best[TRACKS[sel.track].name] or 0
-    text(new_best and "New best time!" or ("Best " .. tstr(b)), 64, 154, new_best and 17 or 29)
-    if gt > 60 then text("A: back to garage", 104, 164, 29) end
+    text(new_best and "New best time!" or ("Best " .. tstr(b)), 64, top + ph - 18, new_best and 17 or 29)
+    if gt > 60 then text("A: back to garage", 104, top + ph - 8, 29) end
     if #humans > 1 then
       local p = humans[(ME or 0) > 0 and ME or 1]
-      if (ME or 0) > 0 and p then text("You: " .. place_str(p.place), 200, 154, 27) end
+      if (ME or 0) > 0 and p then text("You: " .. place_str(p.place), 200, top + ph - 18, 27) end
     end
   end
 end

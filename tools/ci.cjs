@@ -177,7 +177,7 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
     if (M._bkw_load(s(kd.code + auto)) !== 0) fail('Kart Lab did not load');
     for (let f = 0; f < 2300; f++) if (M._bkw_frame(f === 10 ? 1 << 4 : (f > 400 && f < 700 ? (1 << 8) | (f % 90 < 45 ? 1 : 2) : 0), 0)) { fail('Kart Lab stopped at frame ' + f); break; }
     const kl = (logs.find(x => x.startsWith('kart')) || '').split(/\s+/);
-    if (kl[1] !== 'race' || !(+kl[2] >= 2) || kl[3] !== '4' || !(+kl[4] >= 5) || kl[5] !== 'true') fail('Kart Lab race: ' + kl.join(' ') + ' (expected racing on lap 2 with 4 karts, every item used)');
+    if (kl[1] !== 'race' || !(+kl[2] >= 2) || kl[3] !== '8' || !(+kl[4] >= 5) || kl[5] !== 'true') fail('Kart Lab race: ' + kl.join(' ') + ' (expected racing on lap 2 with 8 karts, every item used)');
     if (errors.length) { errors.forEach(e => fail('Kart Lab: ' + e)); errors = []; }
   }
 
@@ -256,7 +256,7 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
     const b = logs.filter(l => l.startsWith('B2 ksync')).map(l => l.split(/\s+/).slice(2).join(' '));
     if (a.length < 4 || a.join('|') !== b.join('|')) fail('Kart Lab linked Bits drifted apart:\n  bit 1: ' + a.join(' | ') + '\n  bit 2: ' + b.join(' | '));
     const k2 = (logs.find(l => l.startsWith('k2p')) || '').split(/\s+/).slice(1).join(' ');
-    if (k2 !== '2 4 1 1 true true false 1') fail('Kart Lab linked race: ' + k2 + ' (expected 2 players + 2 rivals racing, both driving, one view per Bit)');
+    if (k2 !== '2 8 1 1 true true false 1') fail('Kart Lab linked race: ' + k2 + ' (expected 2 players + 6 rivals racing, both driving, one view per Bit)');
     // one screen: player 1 picks, then player 2, then the race runs split-screen
     logs = [];
     M._bkw_players(2, 0);
@@ -267,7 +267,7 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
       if (M._bkw_frame(m1, 0)) { fail('Kart Lab 2 players stopped at frame ' + f); break; }
     }
     const k3 = (logs.find(l => l.startsWith('k2p')) || '').split(/\s+/).slice(1).join(' ');
-    if (k3 !== '2 4 1 1 true true false 2') fail('Kart Lab split screen: ' + k3 + ' (expected 2 players racing in 2 views)');
+    if (k3 !== '2 8 1 1 true true false 2') fail('Kart Lab split screen: ' + k3 + ' (expected 2 players racing in 2 views)');
     M._bkw_players(1, 0);
     if (errors.length) { errors.forEach(e => fail('Kart Lab 2 players: ' + e)); errors = []; }
   }
