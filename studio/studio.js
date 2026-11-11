@@ -64,7 +64,8 @@ end
   const cart = {
     name: 'my game', code: NEW_CODE,
     palette: new Uint8Array(DEFAULT_PAL), tiles: new Uint8Array(TILES * 64),
-    flags: new Uint8Array(TILES), map: new Uint16Array(MAPW * MAPH)
+    flags: new Uint8Array(TILES), map: new Uint16Array(MAPW * MAPH),
+    entities: { types: [], placed: [] }
   };
 
   // byte RLE: [count, value] pairs (count 1..255) then base64
@@ -89,7 +90,8 @@ end
     return {
       format: 'miniboi-cart', version: 1, name: cart.name, code: getCode(),
       palette: b64(cart.palette), tiles: rle(cart.tiles), flags: rle(cart.flags),
-      map: rle(new Uint8Array(cart.map.buffer.slice(0)))
+      map: rle(new Uint8Array(cart.map.buffer.slice(0))),
+      entities: cart.entities, entities_lua: MBEntities.toLua(cart.entities)
     };
   }
   function deserialize(o) {
@@ -99,6 +101,7 @@ end
     cart.palette.set(o.palette ? unb64(o.palette).subarray(0, 768) : DEFAULT_PAL);
     cart.tiles.set(o.tiles ? unrle(o.tiles, TILES * 64) : new Uint8Array(TILES * 64));
     cart.flags.set(o.flags ? unrle(o.flags, TILES) : new Uint8Array(TILES));
+    cart.entities = o.entities && o.entities.types ? o.entities : { types: [], placed: [] };
     cart.map.set(new Uint16Array((o.map ? unrle(o.map, MAPW * MAPH * 2) : new Uint8Array(MAPW * MAPH * 2)).buffer));
   }
 
@@ -162,7 +165,8 @@ end
     document.querySelectorAll('.tab').forEach(el => el.classList.toggle('active', el.id === 'tab-' + t));
     if (t === 'code' && cm) cm.refresh();
     if (t === 'sprites') drawSprites();
-    if (t === 'map') drawMap();
+    if (t === 'map') { refreshEntSelect(); drawMap(); }
+    if (t === 'entities') entEd.render();
     lsSet(LS.settings + '.tab', t);
   }
 
@@ -195,6 +199,19 @@ end
   }
   const tileHist = makeHistory(() => cart.tiles, v => { cart.tiles.set(v); gfxChanged(); drawSprites(); });
   const mapHist = makeHistory(() => cart.map, v => { cart.map.set(v); mapDirtyRT = true; markDirty(); drawMap(); });
+
+  function getAtlas() { if (atlasDirty) rebuildAtlas(); return atlas; }
+  function tileThumb(n, scale) {
+    const c = document.createElement('canvas');
+    c.width = c.height = 8 * scale;
+    const x = c.getContext('2d'); x.imageSmoothingEnabled = false;
+    x.drawImage(getAtlas(), (n % 16) * 8, (n >> 4) * 8, 8, 8, 0, 0, 8 * scale, 8 * scale);
+    return c;
+  }
+  const entEd = MBEntities.init({
+    cart, $, toast, escapeHtml, tileThumb, getAtlas,
+    changed: markDirty, ask: (...a) => ask(...a), isActive: () => activeTab === 'entities'
+  });
 
   /* ------------------------------------------------------------ sprite editor */
   const spr = { tile: 1, size: 1, color: 13, tool: 'pen', clip: null };
@@ -358,7 +375,7 @@ end
   /* ------------------------------------------------------------ map editor */
   const mv = $('mapView'), mvCtx = mv.getContext('2d');
   const mapSheet = $('mapSheet'), msCtx = mapSheet.getContext('2d');
-  const mp = { x: 0, y: 0, zoom: 2, tile: 1, tool: 'paint', grid: true, hover: null };
+  const mp = { x: 0, y: 0, zoom: 2, tile: 1, tool: 'paint', grid: true, hover: null, layer: 'tiles', ent: '' };
   let mapPainting = false, mapPanning = null;
 
   function mapViewTiles() { return [Math.ceil(mv.width / (8 * mp.zoom)), Math.ceil(mv.height / (8 * mp.zoom))]; }
@@ -384,7 +401,31 @@ end
     for (let i = 0; i <= vw; i++) if ((mp.x + i) % 40 === 0) { mvCtx.moveTo(i * s + .5, 0); mvCtx.lineTo(i * s + .5, mv.height); }
     for (let j = 0; j <= vh; j++) if ((mp.y + j) % 30 === 0) { mvCtx.moveTo(0, j * s + .5); mvCtx.lineTo(mv.width, j * s + .5); }
     mvCtx.stroke(); mvCtx.setLineDash([]);
-    if (mp.hover) {
+    // placed entities
+    const pz = mp.zoom;
+    cart.entities.placed.forEach(pl => {
+      const t = cart.entities.types.find(x => x.name === pl.type); if (!t) return;
+      const a = t.anims.find(q => q.name === 'idle' && q.frames.length) || t.anims.find(q => q.frames.length);
+      const sx = (pl.x - mp.x * 8) * pz, sy = (pl.y - mp.y * 8) * pz;
+      if (sx < -64 || sy < -64 || sx > mv.width || sy > mv.height) return;
+      mvCtx.globalAlpha = mp.layer === 'ents' ? 1 : .7;
+      if (a) for (let j = 0; j < t.sh; j++) for (let i = 0; i < t.sw; i++) {
+        const n = a.frames[0] + j * 16 + i;
+        const fl = t.left;
+        mvCtx.drawImage(atlas, (n % 16) * 8, (n >> 4) * 8, 8, 8, sx + (fl ? t.sw - 1 - i : i) * 8 * pz, sy + j * 8 * pz, 8 * pz, 8 * pz);
+      }
+      mvCtx.globalAlpha = 1;
+      if (mp.layer === 'ents' || !a || t.hidden) {
+        mvCtx.strokeStyle = t.hidden ? 'rgba(110,195,240,.9)' : 'rgba(255,107,94,.8)';
+        mvCtx.strokeRect(sx + .5, sy + .5, t.sw * 8 * pz - 1, t.sh * 8 * pz - 1);
+        if (mp.zoom > 1) { mvCtx.fillStyle = '#fff'; mvCtx.font = '10px system-ui'; mvCtx.fillText(pl.type, sx, sy - 2); }
+      }
+    });
+    if (mp.hover && mp.layer === 'ents') {
+      const [hx, hy] = mp.hover, s2 = 8 * mp.zoom;
+      mvCtx.strokeStyle = '#fff'; mvCtx.strokeRect((hx - mp.x) * s2 + .5, (hy - mp.y) * s2 + .5, s2 - 1, s2 - 1);
+      $('mapPos').textContent = `x ${hx * 8}, y ${hy * 8} px  (tile ${hx}, ${hy})`;
+    } else if (mp.hover) {
       const [hx, hy] = mp.hover;
       mvCtx.globalAlpha = .6;
       mvCtx.drawImage(atlas, (mp.tile % 16) * 8, (mp.tile >> 4) * 8, 8, 8, (hx - mp.x) * s, (hy - mp.y) * s, s, s);
@@ -406,9 +447,30 @@ end
     const y = Math.floor((e.clientY - r.top) / r.height * mv.height / s) + mp.y;
     return x >= 0 && y >= 0 && x < MAPW && y < MAPH ? [x, y] : null;
   }
+  function entAt(px, py) {
+    for (let i = cart.entities.placed.length - 1; i >= 0; i--) {
+      const pl = cart.entities.placed[i], t = cart.entities.types.find(x => x.name === pl.type);
+      const w = (t ? t.sw : 1) * 8, h = (t ? t.sh : 1) * 8;
+      if (px >= pl.x && py >= pl.y && px < pl.x + w && py < pl.y + h) return i;
+    }
+    return -1;
+  }
   function mapApply(e, first) {
     const p = mapPos(e); if (!p) return;
     const [x, y] = p;
+    if (mp.layer === 'ents') {
+      if (!first) return;
+      const px = x * 8 + 4, py = y * 8 + 4, hit = entAt(px, py);
+      if (e.button === 2 || e.buttons & 2) { if (hit >= 0) cart.entities.placed.splice(hit, 1); }
+      else if (hit >= 0 && (mp.tool === 'pick' || e.altKey)) { mp.ent = cart.entities.placed[hit].type; $('mapEnt').value = mp.ent; }
+      else if (hit < 0) {
+        const t = cart.entities.types.find(q => q.name === mp.ent);
+        if (!t) return toast('Make an entity on the Entities tab first');
+        cart.entities.placed.push({ type: t.name, x: x * 8, y: (y - t.sh + 1) * 8 });
+      }
+      markDirty(); drawMap();
+      return;
+    }
     if (mp.tool === 'pick' || e.altKey) { mp.tile = cart.map[y * MAPW + x]; drawMap(); return; }
     const t = (e.buttons & 2 || e.button === 2) ? 0 : mp.tile;
     if (first) mapHist.push();
@@ -464,6 +526,17 @@ end
   });
   document.querySelectorAll('.mtool').forEach(b => b.onclick = () => setMapTool(b.dataset.mtool));
   function setMapTool(t) { mp.tool = t; document.querySelectorAll('.mtool').forEach(b => b.classList.toggle('active', b.dataset.mtool === t)); }
+  function refreshEntSelect() {
+    const sel = $('mapEnt'), types = cart.entities.types;
+    if (!types.some(t => t.name === mp.ent)) mp.ent = types.length ? types[0].name : '';
+    sel.innerHTML = types.length ? types.map(t => `<option${t.name === mp.ent ? ' selected' : ''}>${escapeHtml(t.name)}</option>`).join('') : '<option value="">(no entities yet)</option>';
+  }
+  $('mapLayer').onchange = e => {
+    mp.layer = e.target.value;
+    $('mapEnt').hidden = mp.layer !== 'ents';
+    refreshEntSelect(); drawMap();
+  };
+  $('mapEnt').onchange = e => { mp.ent = e.target.value; };
   $('mapZoom').onchange = e => { mp.zoom = +e.target.value; panMap(0, 0); };
   $('mapGrid').onchange = e => { mp.grid = e.target.checked; drawMap(); };
   $('mapUndo').onclick = () => mapHist.pop();
@@ -633,10 +706,10 @@ end
     if (withMap) RT.HEAPU16.set(cart.map, ptr.map >> 1);
     gfxDirtyRT = false;
   }
-  function loadCode(code) {
-    const p = RT.stringToNewUTF8(code);
-    const rc = RT._mbw_load(p);
-    RT._free(p);
+  function loadCode(code, data) {
+    const p = RT.stringToNewUTF8(code), d = RT.stringToNewUTF8(data || '');
+    const rc = RT._mbw_load_ex(d, p);
+    RT._free(p); RT._free(d);
     return rc;
   }
   function run() {
@@ -646,7 +719,7 @@ end
     syncToRuntime(true);
     mapDirtyRT = false;
     log(`▶ running "${cart.name}"`, 'sys');
-    running = loadCode(getCode()) === 0;
+    running = loadCode(getCode(), MBEntities.toLua(cart.entities)) === 0;
     acc = 0; last = performance.now();
     screen.focus();
   }
@@ -706,7 +779,8 @@ end
     setCode(cart.code);
     atlasDirty = true; gfxDirtyRT = true;
     if (activeTab === 'sprites') drawSprites();
-    if (activeTab === 'map') drawMap();
+    if (activeTab === 'map') { refreshEntSelect(); drawMap(); }
+    if (activeTab === 'entities') entEd.render();
   }
   function loadDemo() {
     cart.name = MB_DEMO.name; cart.code = MB_DEMO.code; cart.palette.set(DEFAULT_PAL);
@@ -718,6 +792,7 @@ end
     if (!await ask('Start a new cart?', 'This replaces the current cart. Use Save / share first if you want to keep a copy.', 'Start new cart')) return;
     cart.name = 'my game'; cart.code = NEW_CODE; cart.palette.set(DEFAULT_PAL);
     cart.tiles.fill(0); cart.flags.fill(0); cart.map.fill(0);
+    cart.entities = { types: [], placed: [] };
     applyCart(); saveLocal();
   };
   $('btnDemo').onclick = async () => {
@@ -806,6 +881,22 @@ end
       ['sfx(note,[wave],[vol],[frames],[ch],[pan],[slide])', 'Play a note like "C4", "F#5" or a MIDI number. wave: 0 square, 1 triangle, 2 saw, 3 noise, 4 sine, 5 thin pulse. vol 0-1, frames = length (60 per second), pan -1..1, slide in Hz per second. Picks a free channel if ch is nil.'],
       ['tone(hz,...)', 'Like sfx but with a frequency in Hz.'],
       ['stop([ch])', 'Silence one channel or all.']]],
+    ['Entities (made on the Entities tab)', [
+      ['ents_update() / ents_draw()', 'Run every entity\'s behavior, physics and animation; draw them. Call in _update and _draw (after camera()).'],
+      ['ents_player(x,y,[w,h])', 'Tell entities where the player is (for chasing, sensors, touch and damage). Call every frame before ents_update.'],
+      ['ents_spawn(name,x,y)', 'Create an entity. Returns it: e.x, e.y, e.vx, e.vy, e.dir, e.hp, e.name, e.ground, e.data (your own table).'],
+      ['ents_all([name])', 'List of living entities, optionally only one type.'],
+      ['ents_touch(x,y,w,h)', 'Entities overlapping a box.'],
+      ['ents_kill(e) / ents_reset()', 'Remove one entity / respawn everything placed on the map.'],
+      ['ents_damage(e,n,[src])', 'Take n hp. Entities blink and can\'t be hurt again for 15 frames. HP 0 in the editor means can\'t be hurt.']]],
+    ['Events', [
+      ['on(name, fn)', 'Call fn whenever the event happens. Built-in: "player_hurt" (damage, source), "death" (entity).'],
+      ['emit(name, ...)', 'Send an event. Behavior trees can react with the "Heard event" check, and send events with "Send event".'],
+      ['ents_on(type, ev, fn)', 'Per type events: "touch" fn(e, other), "hurt" fn(e, amount, source), "death" fn(e, source).']]],
+    ['Sensors', [
+      ['raycast(x,y,dx,dy,len,[what],[ignore])', 'Cast a line. Returns hit, hx, hy, thing. what: "wall", "player", "any", "enemy", "friend" or an entity name. Walls block it.'],
+      ['circlecast(x,y,r,[what],[ignore])', 'List of things (entities or PLAYER) inside the circle.'],
+      ['Teams and damage', 'Entities with touch damage hurt the other team when they first touch. The player is on the friend team, so enemy damage sends "player_hurt". Projectiles vanish after hitting.']]],
     ['Time and randomness', [
       ['t()', 'Frames since the cart started (60 per second).'],
       ['time()', 'Seconds since the cart started.'],

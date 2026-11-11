@@ -45,6 +45,7 @@
       <button data-tab="code" class="active">Code</button>
       <button data-tab="sprites">Sprites</button>
       <button data-tab="map">Map</button>
+      <button data-tab="entities">Entities</button>
       <button data-tab="input">Controller</button>
       <button data-tab="help">Help</button>
     </nav>
@@ -89,6 +90,8 @@
 
     <div id="tab-map" class="tab">
       <div class="toolbar">
+        <select id="mapLayer" title="What to edit"><option value="tiles">Tiles</option><option value="ents">Entities</option></select>
+        <select id="mapEnt" hidden title="Entity to place"></select>
         <button data-mtool="paint" class="mtool active" title="Paint (P)">Paint</button>
         <button data-mtool="fill" class="mtool" title="Fill (F)">Fill</button>
         <button data-mtool="pick" class="mtool" title="Pick tile (I, or Alt+click)">Pick</button>
@@ -109,6 +112,49 @@
         <div class="map-picker">
           <div class="dim small">Tile: <b id="mapTileInfo">1</b></div>
           <div class="sheet-scroll small-sheet"><canvas id="mapSheet" width="256" height="512" class="pix"></canvas></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-entities" class="tab">
+      <div class="ent-layout">
+        <div class="ent-col ent-listcol">
+          <div class="toolbar"><button id="entNew" class="primary">New</button><button id="entDup">Copy</button><button id="entDel">Delete</button></div>
+          <div id="entList" class="ent-list"></div>
+          <p class="dim small">Place entities on the Map tab (switch the layer to Entities). In your code call <code>ents_update()</code> in <code>_update</code>, <code>ents_draw()</code> in <code>_draw</code>, and <code>ents_player(x, y, w, h)</code> so they know where the player is. See Help for events and sensors.</p>
+        </div>
+        <div class="ent-col ent-main">
+          <div id="entForm">
+            <div class="ent-props">
+              <label>Name <input id="entName" spellcheck="false"></label>
+              <label>Size <select id="entW"><option value="1">8</option><option value="2">16</option><option value="3">24</option><option value="4">32</option></select> x
+                <select id="entH"><option value="1">8</option><option value="2">16</option><option value="3">24</option><option value="4">32</option></select> px</label>
+              <label>HP <input id="entHp" type="number" min="0" max="999" title="0 = can't be hurt"></label>
+              <label>Team <select id="entTeam" title="Damage only hits the other team. The player is on the friend team."><option value="enemy">enemy</option><option value="friend">friend</option><option value="neutral">neutral</option></select></label>
+              <label title="Damage dealt to the other team on touch. Projectiles vanish after a hit.">Touch damage <input id="entDmg" type="number" min="0" max="99"></label>
+              <label title="Shrinks the hitbox by this many pixels on the sides and top">Hitbox inset <input id="entInset" type="number" min="0" max="3"></label>
+              <label class="chk"><input type="checkbox" id="entGrav"> gravity</label>
+              <label class="chk"><input type="checkbox" id="entCollide"> stops at walls</label>
+              <label class="chk"><input type="checkbox" id="entLeft"> sprite faces left</label>
+              <label class="chk" title="Not drawn in the game. Good for triggers and sensors."><input type="checkbox" id="entHidden"> invisible</label>
+            </div>
+            <div class="ent-anim-wrap">
+              <canvas id="entPreview" width="128" height="128" class="pix checker"></canvas>
+              <div class="ent-anims">
+                <div class="dim small">Animations: <b>idle</b>, <b>walk</b> and <b>jump</b> play automatically. Click a frame to remove it.</div>
+                <div id="entAnims"></div>
+                <button id="entAnimAdd" class="tiny">+ animation</button>
+              </div>
+            </div>
+            <div id="entTreeBox" class="ent-tree-box">
+              <div class="toolbar"><b>Behavior</b> <span class="dim small">runs top to bottom every frame</span><span class="grow"></span><select id="entPreset"></select></div>
+              <div id="entTree" class="bt"></div>
+            </div>
+          </div>
+        </div>
+        <div class="ent-col">
+          <div class="dim small">Pick a tile (tile <b id="entTileInfo">1</b>), then press + tile</div>
+          <div class="sheet-scroll small-sheet"><canvas id="entSheet" width="256" height="512" class="pix"></canvas></div>
         </div>
       </div>
     </div>
@@ -143,6 +189,7 @@
 <script src="vendor/codemirror/comment.js"></script>
 <script src="runtime.js"></script>
 <script src="demo.js"></script>
+<script src="entities.js"></script>
 <script src="studio.js"></script>
 </body>
 </html>

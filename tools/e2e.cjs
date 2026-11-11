@@ -22,11 +22,13 @@ const { chromium } = require('playwright');
   await pg.waitForTimeout(300);
   await pg.screenshot({ path: process.argv[2] + '/run.png' });
   console.log('running', await pg.evaluate(() => mbStudio.isRunning()), 'press', await pg.evaluate(() => [...mbStudio.input.press].join(',')));
-  for (const t of ['sprites', 'map', 'input', 'help']) {
+  for (const t of ['sprites', 'map', 'entities', 'input', 'help']) {
     await pg.click(`.tabs button[data-tab=${t}]`);
     await pg.waitForTimeout(200);
     await pg.screenshot({ path: process.argv[2] + `/${t}.png` });
   }
+  await pg.click('.tabs button[data-tab=entities]'); await pg.click('.ent-item:nth-child(3)'); await pg.waitForTimeout(150); await pg.screenshot({ path: process.argv[2] + '/ent-flower.png' });
+  await pg.click('.tabs button[data-tab=map]'); await pg.selectOption('#mapLayer', 'ents'); await pg.evaluate(() => { const k = new KeyboardEvent('keydown', {key: 'd', shiftKey: true, bubbles: true}); const mv = document.getElementById('mapView'); mv.focus(); for (let i = 0; i < 7; i++) mv.dispatchEvent(k); }); await pg.waitForTimeout(100); await pg.screenshot({ path: process.argv[2] + '/map-ents.png' });
   await pg.click('#btnSave'); await pg.waitForTimeout(200); await pg.screenshot({ path: process.argv[2] + '/save.png' }); await pg.keyboard.press('Escape');
   await pg.click('#btnDemo'); await pg.click('.m-buttons .primary'); await pg.waitForTimeout(300); console.log('demo running', await pg.evaluate(() => mbStudio.isRunning()));
   // error path

@@ -1,5 +1,6 @@
 /* MiniBoi runtime: Lua 5.4 API bindings. MIT License. */
 #include "mb.h"
+#include "mb_prelude.h"
 #include "lua.h"
 #include "lauxlib.h"
 #include "lualib.h"
@@ -275,7 +276,18 @@ static int pcall_budget(int nargs) {
 
 void mb_lua_close(void) { if (L) lua_close(L); L = 0; }
 
-int mb_lua_load(const char *code) {
+static int run_chunk(const char *src, const char *name) {
+  if (luaL_loadbufferx(L, src, strlen(src), name, "t") != LUA_OK) {
+    snprintf(err_buf, sizeof(err_buf), "%s", lua_tostring(L, -1));
+    log_msg(err_buf, 1);
+    return 1;
+  }
+  return pcall_budget(0) != LUA_OK;
+}
+
+int mb_lua_load(const char *code) { return mb_lua_load_ex(0, code); }
+
+int mb_lua_load_ex(const char *data, const char *code) {
   mb_lua_close();
   err_buf[0] = 0;
   L = luaL_newstate();
@@ -303,6 +315,8 @@ int mb_lua_load(const char *code) {
   MB->frame = 0;
   for (int c = 0; c < MB_CHANNELS; c++) MB->voice[c].len = 0;
 
+  if (run_chunk(mb_prelude_lua, "=entities-runtime")) return 1;
+  if (data && data[0] && run_chunk(data, "=entities")) return 1;
   if (luaL_loadbufferx(L, code, strlen(code), "=cart", "t") != LUA_OK) {
     snprintf(err_buf, sizeof(err_buf), "%s", lua_tostring(L, -1));
     log_msg(err_buf, 1);

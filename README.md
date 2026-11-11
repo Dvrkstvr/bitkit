@@ -25,7 +25,12 @@ cd studio && python3 -m http.server 8000   # then open http://localhost:8000
   (pen/fill/pick, 8/16/32 px, flip/rotate/copy/paste, flags, palette editing), map editor (paint/fill/pick, pan, screen guides),
   controller page (live `btn()`/`press()` view, remapping, threshold and deadzone), API help.
   Carts autosave in the browser and save/load as `.mboi` files (JSON).
-- **Demo cart**: "Sprout Hop", a small platformer that uses the R trigger as an analog run button.
+- **Entities**: an Entities tab to make enemies, NPCs, projectiles, buttons and doors: sprite size, animations
+  (idle/walk/jump play automatically), team, HP, touch damage, and a behavior tree (flow, checks, sensors, actions) with presets.
+  Place them on the map's Entities layer. The entity system is Lua built into the runtime (`runtime/mb_entities.lua`), so it runs the same on the device.
+- **Sensors and events**: `raycast`, `circlecast`, touch events, damage with teams and i-frames, `on`/`emit` events
+  that behavior trees can send and hear.
+- **Demo cart**: "Sprout Hop", a small platformer: analog run on R, pebbles on B, stompable slugs and bees, a seed-shooting flower, talking NPCs, and a pressure button that opens a gate.
 
 ## Controls
 
@@ -39,7 +44,8 @@ cd studio && python3 -m http.server 8000   # then open http://localhost:8000
 ## Lua API (short)
 
 `_init()`, `_update()`, `_draw()`; `cls pset pget line rect rectfill circ circfill text spr map mget mset fget fset camera clip pal palt palette`;
-`btn btnp btnr press`; `sfx tone stop`; `t time rnd srand`; `print` writes to the console. Full reference in the studio's Help tab.
+`btn btnp btnr press`; `sfx tone stop`; `t time rnd srand`;
+`ents_update ents_draw ents_player ents_spawn ents_all ents_touch ents_kill ents_damage ents_reset ents_on`; `on emit raycast circlecast`; `print` writes to the console. Full reference in the studio's Help tab.
 
 ## Build the runtime
 

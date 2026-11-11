@@ -15,6 +15,7 @@ static void logger(const char *msg, int is_err) { js_log(msg, is_err); }
 
 EMSCRIPTEN_KEEPALIVE void mbw_init(void) { mb_machine_init(&machine); mb_set_logger(logger); }
 EMSCRIPTEN_KEEPALIVE int mbw_load(const char *code) { return mb_lua_load(code); }
+EMSCRIPTEN_KEEPALIVE int mbw_load_ex(const char *data, const char *code) { return mb_lua_load_ex(data, code); }
 EMSCRIPTEN_KEEPALIVE void mbw_stop(void) { mb_lua_close(); for (int c = 0; c < MB_CHANNELS; c++) machine.voice[c].len = 0; }
 EMSCRIPTEN_KEEPALIVE int mbw_frame(int mask, uint8_t *press) {
   mb_set_input((uint16_t)mask, press);

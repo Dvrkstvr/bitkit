@@ -106,6 +106,7 @@ void mb_audio_render(float *out, int frames); /* interleaved stereo */
 typedef void (*mb_log_fn)(const char *msg, int is_error);
 void mb_set_logger(mb_log_fn fn);
 int  mb_lua_load(const char *code);   /* 0 ok, else error (see mb_lua_error) */
+int  mb_lua_load_ex(const char *entity_data, const char *code); /* entity_data: Lua chunk from the studio, may be NULL */
 int  mb_lua_frame(void);              /* runs _update + _draw. 0 ok */
 const char *mb_lua_error(void);
 void mb_lua_close(void);
