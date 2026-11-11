@@ -17,7 +17,7 @@ require('../studio/runtime.js')({ onLog: (m, e) => { if (e) errors.push(m); else
   d.buildGfx(c);
   M.HEAPU8.set(c.tiles, M._bkw_tiles()); M.HEAPU8.set(c.flags, M._bkw_flags());
   const meta = c.levels.map(L => ({ name: L.name, w: L.w, h: L.h, placed: L.placed }));
-  const PROBE = 'local _pd = _draw\nfunction _draw() if _pd then _pd() end print("gs", GAME.state, LEVEL, cutscene_playing() and "cut" or "nocut", SKIP, rec(1).clears, rec(1).deaths, rec(1).time or -1, mode, sel, unlocked(2)) end';
+  const PROBE = 'local _pd = _bk_overlay\nfunction _bk_overlay() if _pd then _pd() end print("gs", GAME.state, LEVEL, cutscene_playing() and "cut" or "nocut", SKIP, rec(1).clears, rec(1).deaths, rec(1).time or -1, mode, sel, unlocked(2)) end';
   const load = (probe, extra) => {
     M.HEAPU16.set(c.levels[0].map, M._bkw_map() >> 1);
     logs = [];

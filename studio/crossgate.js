@@ -33,9 +33,62 @@ ROOMS = {
   [3] = { name = "Sea Gate", deco = "seagate" },
 }
 
+-- the title screen (game{title_draw = ...}): Wren and Rook trade bolts across the market square, each
+-- ducking or jumping the other's shot
+function draw_title(t)
+  local g0 = gt
+  gt = t
+  for k = 0, 2 do rectfill(0, 14 + k * 50, 320, 50, ({ 3, 4, 9 })[k + 1]) end   -- dusk over the town
+  rectfill(0, 0, 320, 14, 2)
+  circfill(160, 150, 40, 10) circfill(160, 150, 30, 11)
+  for i = 0, 3 do
+    local cx = (i * 97 + t // 6) % 380 - 30
+    local cy = 30 + (i * 23) % 40
+    circfill(cx, cy, 8, 5) circfill(cx + 10, cy - 3, 10, 5) circfill(cx + 22, cy + 1, 7, 5)
+  end
+  gate(false) gate(true)
+  house(84, 52, 80, 12, 8) house(184, 56, 70, 11, 24)
+  ground("market")
+  gt = g0
+  -- the duel: one shoots, the bolt drops as it flies, the other ducks under it or jumps over it
+  local cyc, ph = (t // 120) % 4, t % 120
+  local shooter = cyc % 2 + 1
+  local W1 = { n = 1, x = 36, y = 200, face = 1, alive = true, onground = true, stance = 2, anim = 0, stun = 0, hand = true, rl = 0, loaded = true }
+  local R1 = { n = 2, x = 284, y = 200, face = -1, alive = true, onground = true, stance = 2, anim = 0, stun = 0, hand = true, rl = 0, loaded = true }
+  local F2 = { W1, R1 }
+  local a, b = F2[shooter], F2[3 - shooter]
+  local fly = ph - 20                                          -- frames since the shot
+  if fly >= 0 then
+    a.loaded = false
+    if fly > 60 then a.rl = fly end
+    local duck = cyc < 2
+    if fly > 18 and fly < 52 then
+      if duck then b.stance = 3
+      else
+        b.onground = false
+        b.y = 200 - math.sin((fly - 18) / 34 * math.pi) * 26
+      end
+    end
+    if fly < 60 then                                           -- the bolt
+      local s = a.face
+      local x = a.x + s * (14 + fly * 4.6)
+      local y = a.y - STANCE_H[2] + fly * fly * 0.004 + (duck and 0 or 8)
+      local ty = y - (fly * 0.03)
+      line(x - s * 9, ty, x, y, 29)
+      pset(x, y, 13)
+      pset(x - s * 9, ty - 1, COL[a.n][1]) pset(x - s * 8, ty + 1, COL[a.n][1])
+    end
+  end
+  draw_fighter(W1) draw_fighter(R1)
+  text("WREN", 20, 160 - (W1.y < 200 and 200 - W1.y or 0), 10)
+  text("ROOK", 268, 160 - (R1.y < 200 and 200 - R1.y or 0), 21)
+end
+
 function _init()
   game{
     title = "Crossgate",
+    title_draw = draw_title,          -- its own animated title screen (above)
+    look = { title = 27, shadow = 24, panel = 6, edge = 8, hi = 24, text = 12, pick = 27, goal = 11, footer = 11 },
     goal = "Fight your way through the town and out of your gate before your rival gets out of theirs.",
     help = {
       "Left / right: walk. Hold down: crouch. A: jump. X: shoot.",

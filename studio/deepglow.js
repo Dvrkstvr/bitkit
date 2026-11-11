@@ -76,9 +76,70 @@ function carried()
   return n
 end
 
+-- the title screen (game{title_draw = ...}): a diver sinks through the cave; every sonar ping lights up
+-- the pearls around them for a moment
+function draw_title(t)
+  cls(19)
+  local sink = t * 0.4
+  for k = 0, 4 do                                             -- light from the surface
+    local x = 30 + k * 66 + math.sin(t / 90 + k) * 10
+    for y = 0, 200, 2 do
+      local w = 4 + y / 14
+      rectfill(x + y * 0.3 - w / 2, y, w, 1, 20)
+    end
+  end
+  for sy = 0, 239, 2 do                                       -- cave walls, scrolling up as the diver sinks
+    local y = sy + sink
+    local l = 40 + math.sin(y / 31 + 1) * 16 + math.sin(y / 11) * 5
+    local r = 280 + math.sin(y / 27) * 16 + math.sin(y / 9 + 2) * 5
+    rectfill(0, sy, l, 2, 30) pset(l - 1, sy, 28)
+    rectfill(r, sy, 320 - r, 2, 30) pset(r, sy, 28)
+    if (y // 2) % 30 == 0 then                                -- seaweed
+      for k = 0, 5 do
+        local s = math.sin(t / 30 + y + k * 0.6) * k * 1.4
+        pset(l + k * 3 + s, sy - k * 2, 16) pset(r - k * 3 - s, sy + 10 - k * 2, 15)
+      end
+    end
+  end
+  local dx, dy = 160 + math.sin(t / 110) * 60, 124 + math.sin(t / 70) * 6
+  local face = math.cos(t / 110) >= 0 and 1 or -1
+  local ping = t % 150
+  for i = 0, 9 do                                             -- pearls: they shine once the ping reaches them
+    local px = 70 + (i * 71) % 180
+    local py = ((i * 53 + 20 - sink) % 300) - 30
+    local d = math.sqrt((px - dx) ^ 2 + (py - dy) ^ 2)
+    if ping * 3 > d and ping < 120 then
+      circ(px, py, 8 + math.sin(t / 8) * 2, 23)
+      sprfx{ light_at = { dx, dy }, light = 0.8 }
+      spr(66, px - 4, py - 4)
+      sprfx()
+    end
+  end
+  for i = 0, 2 do                                             -- jellyfish (colour 4, cycled by remap() below)
+    local jx = 80 + i * 80 + math.sin(t / 50 + i * 2) * 14
+    local jy = ((i * 97 - t * 0.25) % 300) - 30
+    circfill(jx, jy, 7, 4) circfill(jx - 2, jy - 2, 3, 5)
+    for k = -2, 2 do line(jx + k * 3, jy + 5, jx + k * 3 + math.sin(t / 10 + k) * 2, jy + 14, 4) end
+  end
+  for i = 0, 5 do                                             -- bubbles
+    local q = (t + i * 13) % 80
+    circ(dx + face * 6 + math.sin(t / 9 + i) * 3, dy - 10 - q * 1.5, 1 + i % 2, 23)
+  end
+  sprfx{ outline = 1, light = 0.7, light_x = 0, light_y = -1 }
+  spr(64, dx - 8, dy - 8, 2, 2, face < 0)
+  sprfx()
+  remap({ [4] = JELLY_GLOW[(t // 8) % #JELLY_GLOW + 1] })
+  wave(1.2, 70, 0.35)
+  for i = 0, 5 do clip(0, 140 + i * 17, 320, 17) dither(1, 0.06 + i * 0.07) end   -- darker further down
+  clip()
+  if ping < 70 then ripple(dx, dy, ping * 3, 4, 12) end
+end
+
 function _init()
   game{
     title = "Deepglow",
+    title_draw = draw_title,          -- its own animated title screen (above)
+    look = { title = 22, shadow = 1, panel = 1, edge = 21, hi = 19, text = 23, pick = 27, goal = 22, footer = 21 },
     goal = "Bring " .. GOAL .. " glowing pearls up from the deep cave to your boat.",
     help = {
       "D-pad: swim. B: dash. A: sonar ping.",
