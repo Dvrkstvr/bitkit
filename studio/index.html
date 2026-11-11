@@ -50,6 +50,7 @@
       <button data-tab="sprites">Sprites</button>
       <button data-tab="map">Map</button>
       <button data-tab="entities">Entities</button>
+      <button data-tab="cutscenes">Cutscenes</button>
       <button data-tab="input">Controller</button>
       <button data-tab="help">Help</button>
     </nav>
@@ -297,6 +298,55 @@
       </div>
     </div>
 
+    <div id="tab-cutscenes" class="tab">
+      <div class="ent-layout">
+        <aside class="ent-col ent-listcol">
+          <div class="side-head"><b>Cutscenes</b><span class="grow"></span><button id="csNew" class="tiny primary" title="Make a new cutscene">+ new</button></div>
+          <div id="csList" class="ent-list"></div>
+          <details class="ent-help" open>
+            <summary>How cutscenes work</summary>
+            <p>A cutscene is a list of steps that play in order: dialog, camera pans, walks, fades. While it plays, enemies and the player stop, nothing takes damage, and black bars slide in. START skips it.</p>
+            <p>Three ways to start one:</p>
+            <ol>
+              <li><b>When a level starts</b>: pick it under <i>Plays</i>.</li>
+              <li><b>A zone on the map</b>: press <i>Place a trigger zone</i>, then click on the map.</li>
+              <li><b>From code</b>: <code>cutscene("name")</code>. <code>on("cutscene_end", fn)</code> tells you when it is over.</li>
+            </ol>
+            <p>Positions are in tiles. The Map tab shows the tile under the mouse.</p>
+          </details>
+        </aside>
+        <section class="ent-col ent-main">
+          <div id="csEmpty" class="card">
+            <p><b>No cutscene selected.</b></p>
+            <p class="dim">Press <b>+ new</b> to make one. Try a short intro: a few lines of dialog and a camera pan to where the player should go.</p>
+          </div>
+          <div id="csForm" hidden>
+            <div class="ent-head">
+              <span class="cs-badge">🎬</span>
+              <input id="csName" class="ent-name" spellcheck="false" title="Name (used by triggers and cutscene(&quot;name&quot;))">
+              <span class="grow"></span>
+              <button id="csPlay" class="tiny primary" title="Run the game and play this cutscene now">▶ Preview</button>
+              <button id="csDup" class="tiny" title="Make a copy">Copy</button>
+              <button id="csDel" class="tiny danger" title="Delete this cutscene">Delete</button>
+            </div>
+            <div class="card">
+              <div class="card-title">Plays</div>
+              <div class="cs-when">
+                <select id="csWhen"></select>
+                <span id="csZoneRow"><button id="csZone" class="tiny" title="Make an invisible zone that plays this cutscene, then place it on the map">📍 Place a trigger zone</button>
+                <span class="dim small">or call <code id="csCode"></code> from code</span></span>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-title">Steps <span id="csCount" class="count"></span></div>
+              <div id="csSteps" class="cs-steps"></div>
+              <select id="csAdd" class="cs-add"></select>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
     <div id="tab-input" class="tab">
       <div class="input-page">
         <div id="padList" class="pad-list"></div>
@@ -328,6 +378,7 @@
 <script src="runtime.js"></script>
 <script src="demo.js"></script>
 <script src="entities.js"></script>
+<script src="cutscenes.js"></script>
 <script src="bitstore.js"></script>
 <script src="home.js"></script>
 <script src="studio.js"></script>

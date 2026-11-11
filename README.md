@@ -42,6 +42,7 @@ The game runtime and browser studio for **PocketBit**, a DIY ESP32-S3 handheld.
 | **Sprites** | 512 tiles of 8×8 pixels; pen, fill, pick, flip, rotate and flags; a 256-colour palette editor |
 | **Map** | 256×128 tile map with Tiles and Entities layers. A ghost of your last 3 play routes shows where the player actually goes |
 | **Entities** | Sprites, animations, team, HP, stats, effects (heal, slow…) and a behavior tree with presets |
+| **Cutscenes** | Dialog with portraits, camera pans, walks, fades and screen shake. Play them when a level starts, from a trigger zone on the map, or from code |
 | **Controller** | Live view of every button, remapping, threshold and deadzone |
 | **Help** | Full API reference |
 
@@ -80,6 +81,7 @@ A small platformer that shows off most of the engine:
 - Water drops heal you. Mud and sticky seeds slow you down.
 - Stand next to a **sapling** while it grows and fight off the bees it attracts. Once it's a tree, it's your checkpoint.
 - Talking NPCs, and a pressure button that opens a gate.
+- Two levels, with cutscenes when each one starts and when you reach the gate.
 
 ## 🕹️ Controls
 
@@ -102,6 +104,7 @@ A small platformer that shows off most of the engine:
 | Entities | `ents_update ents_draw ents_player ents_spawn ents_all ents_touch ents_kill ents_damage ents_on` |
 | Stats & effects | `stat stat_set fx_apply fx_has fx_remove fx_clear` |
 | Sensors & events | `raycast circlecast on emit` |
+| Levels & cutscenes | `level LEVEL LEVELS cutscene cutscene_playing` |
 | Misc | `t time rnd srand print` |
 
 The full reference is in the studio's **Help** tab.
@@ -144,6 +147,7 @@ docs/media/     README images
 - [x] Entity maker with behavior trees, sensors and events
 - [x] Stats, effects and checkpoints
 - [x] Player route overlay in the map editor
+- [x] Levels and cutscenes
 - [ ] Music tracker and SFX editor
 - [ ] Animation timeline editor
 - [ ] ESP32-S3 host (PocketBit firmware)

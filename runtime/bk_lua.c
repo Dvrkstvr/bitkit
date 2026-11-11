@@ -359,6 +359,18 @@ int bk_lua_frame(void) {
   lua_getglobal(L, "_draw");
   if (lua_isfunction(L, -1)) { if (pcall_budget(0) != LUA_OK) return 1; }
   else lua_pop(L, 1);
+  /* built-in overlay (cutscene bars, dialog, fades), drawn in screen space on top of the cart */
+  lua_getglobal(L, "_bk_overlay");
+  if (lua_isfunction(L, -1)) {
+    int cx = BK->cam_x, cy = BK->cam_y, x0 = BK->clip_x0, y0 = BK->clip_y0, x1 = BK->clip_x1, y1 = BK->clip_y1;
+    uint8_t dp[256], tr[256];
+    memcpy(dp, BK->draw_pal, 256); memcpy(tr, BK->transparent, 256);
+    bk_reset_draw_state();
+    int r = pcall_budget(0);
+    BK->cam_x = cx; BK->cam_y = cy; BK->clip_x0 = x0; BK->clip_y0 = y0; BK->clip_x1 = x1; BK->clip_y1 = y1;
+    memcpy(BK->draw_pal, dp, 256); memcpy(BK->transparent, tr, 256);
+    if (r != LUA_OK) return 1;
+  } else lua_pop(L, 1);
   BK->frame++;
   return 0;
 }

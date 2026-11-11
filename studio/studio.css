@@ -255,3 +255,18 @@ button.danger:hover { border-color: var(--err); color: var(--err); }
 .lib-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .lib-tag { font-size: 10px; padding: 0 6px; border-radius: 8px; background: #2f6b3a; margin-left: 4px; }
 .err { color: var(--err); }
+
+/* cutscenes tab */
+.cs-badge { font-size: 22px; width: 32px; text-align: center; }
+.cs-when { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.cs-when code { color: var(--accent); }
+.cs-steps { display: flex; flex-direction: column; gap: 4px; counter-reset: step; }
+.cs-step { display: flex; align-items: flex-start; gap: 6px; padding: 4px 6px; background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; }
+.cs-step:hover > .bt-ctl, .cs-step .bt-ctl:focus-within { opacity: 1; }
+.cs-num { flex: none; width: 20px; height: 20px; margin-top: 2px; border-radius: 10px; background: var(--bg); color: var(--dim); font-size: 11px; display: flex; align-items: center; justify-content: center; }
+.cs-step .cs-type { font-weight: 600; }
+.cs-step input[type=number] { width: 64px; }
+.cs-long { flex: 1 1 100%; }
+.cs-long textarea { width: 100%; min-height: 38px; resize: vertical; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; font: inherit; }
+.cs-add { align-self: flex-start; }
+#tab-cutscenes [hidden] { display: none !important; }

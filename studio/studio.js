@@ -147,7 +147,7 @@ end
   /* ------------------------------------------------------------ code editor */
   const API_NAMES = ['cls', 'pset', 'pget', 'line', 'rect', 'rectfill', 'circ', 'circfill', 'text', 'spr', 'map', 'mget', 'mset',
     'fget', 'fset', 'camera', 'clip', 'pal', 'palt', 'palette', 'btn', 'btnp', 'btnr', 'press', 't', 'time', 'rnd', 'srand',
-    'sfx', 'tone', 'stop', 'print', '_init', '_update', '_draw'];
+    'sfx', 'tone', 'stop', 'print', '_init', '_update', '_draw', 'cutscene', 'cutscene_playing'];
   let cm = null, ta = null, errLine = null;
   if (window.CodeMirror) {
     // highlight the engine API on top of the lua mode
@@ -201,6 +201,7 @@ end
     if (t === 'sprites') drawSprites();
     if (t === 'map') { refreshLevels(); refreshEntSelect(); drawMap(); }
     if (t === 'entities') entEd.render();
+    if (t === 'cutscenes') csEd.render();
     lsSet(LS.settings + '.tab', t);
   }
 
@@ -246,6 +247,17 @@ end
   const entEd = BKEntities.init({
     cart, $, toast, escapeHtml, tileThumb, getAtlas,
     changed: markDirty, ask: (...a) => ask(...a), isActive: () => activeTab === 'entities'
+  });
+  const csEd = BKCutscenes.init({
+    cart, $, toast, escapeHtml, changed: markDirty, ask: (...a) => ask(...a),
+    levels: () => cart.levels,
+    // run the game (on the cutscene's level, or the one open on the Map tab) and start the cutscene right away
+    preview: (name, lvl) => run(typeof lvl === 'number' ? lvl : cart.level, `cutscene(${JSON.stringify(name)})\n`),
+    placeOnMap: name => {
+      showTab('map');
+      mp.layer = 'ents'; $('mapLayer').value = 'ents'; $('mapEnt').hidden = false;
+      mp.ent = name; refreshEntSelect(); drawMap();
+    }
   });
 
   /* ------------------------------------------------------------ sprite editor */
@@ -841,7 +853,7 @@ end
     route.runs.push(route.cur);
     if (route.runs.length > 24) route.runs.shift();
   }
-  function run(startLevel) {
+  function run(startLevel, extraLua) {
     const start = typeof startLevel === 'number' ? startLevel : 0;
     syncLevel();
     newRouteSegment(start);
@@ -853,7 +865,7 @@ end
     log(`▶ running "${cart.name}"` + (start ? ` from ${cart.levels[start].name}` : ''), 'sys');
     playingEditor = true; playingLevels = cart.levels;
     if (bit.on) bit.playing = 'studio';
-    running = loadCode(getCode(), BKEntities.toLua(cart.entities, levelsMeta(cart.levels), start)) === 0;
+    running = loadCode(getCode(), BKEntities.toLua(cart.entities, levelsMeta(cart.levels), start, extraLua)) === 0;
     acc = 0; last = performance.now();
     screen.focus();
   }
@@ -1241,6 +1253,13 @@ end
       ['LEVEL / LEVELS', 'The current level number, and the list of levels: LEVELS[n].name, .w and .h (in tiles).'],
       ['on("level", fn)', 'Called with (n, name) after a level loads. Use it to move the camera or reset a respawn point.'],
       ['Go to level', 'Behavior step that calls level(n). The Exit preset uses it when the player touches the entity.']]],
+    ['Cutscenes', [
+      ['Cutscenes tab', 'Make a list of steps: Say, Move camera to, Walk, Jump, Turn, Fade, Shake, Wait and more. Preview plays it right away.'],
+      ['cutscene(name, [once])', 'Play a cutscene. With once = true it only plays the first time. Returns false if there is no such cutscene.'],
+      ['cutscene_playing()', 'Returns true and the name while one plays. Behaviors pause, nothing takes damage and ents_camera() follows the cutscene.'],
+      ['on("cutscene_end", fn)', 'Called with the name when a cutscene finishes or is skipped. on("cutscene", fn) is called when one starts.'],
+      ['Trigger zones', 'An invisible entity with the "Play cutscene" step. "Place a trigger zone" on the Cutscenes tab makes one for you. Level intros play when their level starts.'],
+      ['Needs', 'ents_update() in _update (it runs the cutscene) and ents_camera() if the camera should pan. The dialog box, bars and fades are drawn for you on top of _draw. START skips.']]],
     ['The Bit (emulated PocketBit)', [
       ['⏻ Bit button', 'Turns on the emulated PocketBit: a home screen with the studio cart and every game on its memory card. D-pad chooses, A plays, Y opens a game in the studio.'],
       ['Start + Select', 'Hold both in a game to go back to the home screen, like on the device.'],
