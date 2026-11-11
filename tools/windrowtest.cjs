@@ -242,6 +242,47 @@ require('../studio/runtime.js')({ onLog: (m, e) => { (e ? errors : logs).push(m)
   tap('down'); tap('a', 70); check('and takes you there', get('G.area, mine_n'), '3 5');
   if (errors.length) { errors.forEach(e => fail('mine: ' + e)); errors = []; }
 
+  // 7d. the tractor: mend the wreck with ore, climb on, and work three cells at a time with each implement
+  load(null); run(5);
+  ev('G.coins = 5000 G.inv = { iron = 12, copper = 10, wood = 6 } G.plots = { true, true, true } px, py, dx, dy = 27 * 16 + 8, 15 * 16 + 14, 0, -1');
+  tap('a'); check('A at the wreck offers to mend it', get('ui, ui_kind'), 'build trac');
+  tap('a'); check('mending takes iron, copper, wood and coins', get('G.trac, G.coins, have("iron")'), '1 4200 0');
+  ev('ui = "shop" local L = shop_items() for i, it in ipairs(L) do if it.name == "Plough" then ui_sel = i end end');
+  tap('a'); tap('b');
+  check('Marrow sells the plough once it runs', get('G.imp[1], G.impsel, G.coins'), '1 1 3800');
+  ev('toast_t = 0'); tap('a');
+  check('A climbs on', get('riding'), 'true');
+  // drive along the middle row of the Long acre, plough down
+  ev('for i, f in ipairs(FIELD[3]) do f.k, f.c = (i % 2), 0 end px, py, dx, dy = 5 * 16 + 8, 17 * 16 + 12, 1, 0');
+  run(60, (1 << B.right) | (1 << B.a));
+  const dug = num('(function() local n = 0 for i, f in ipairs(FIELD[3]) do if f.k == 4 then n = n + 1 end end return n end)()');
+  if (dug < 18 || dug % 3 !== 0) fail('the plough should turn three rows as it drives: ' + dug + ' cells');
+  check('it only works the three rows it crosses', get('FIELD[3][1].k + FIELD[3][22 * 4 + 1].k < 8'), 'true');
+  shot('windrow-tractor');
+  ev('G.imp = { 1, 1, 1, 1 } G.impsel = 2 G.sel = 1 G.seeds[1] = 50 G.tank = 90 px, py, dx, dy = 5 * 16 + 8, 17 * 16 + 12, 1, 0');
+  run(60, (1 << B.right) | (1 << B.a));
+  check('the seed drill sows what the plough turned', num('50 - G.seeds[1]'), dug);
+  tap('l'); check('L changes the implement', num('G.impsel'), 3);
+  ev('px, py, dx, dy = 5 * 16 + 8, 17 * 16 + 12, 1, 0');
+  run(60, (1 << B.right) | (1 << B.a));
+  check('the water tank waters them', num('90 - G.tank'), dug);
+  ev('for i, f in ipairs(FIELD[3]) do if f.c > 0 then f.age = 9 end end G.bag = 3 G.impsel = 4 px, py, dx, dy = 5 * 16 + 8, 17 * 16 + 12, 1, 0');
+  run(60, (1 << B.right) | (1 << B.a));
+  check('and the reaper brings them in', num('have("radish")'), dug);
+  if (shotDir) {
+    ev('for i, f in ipairs(FIELD[3]) do f.k, f.c, f.age, f.wet = 4, (i // 22) % 2 == 0 and 2 or 1, (i % 22 < 9) and 0 or 9, i % 22 < 14 end px, py, dx, dy = 13 * 16 + 4, 17 * 16 + 12, 1, 0 floats = {} G.clk = DAY_FRAMES * 0.4');
+    run(2); shot('windrow-reaper');
+    ev('G.impsel = 1 px, py, dx, dy = 8 * 16 + 8, 13 * 16 + 12, 0, 1'); run(2); shot('windrow-tractor-down');
+    ev('dx, dy = 0, -1 G.impsel = 3'); run(2); shot('windrow-tractor-up');
+    ev('G.impsel = 4');
+  }
+  ev('px, py, dx = 20, 5 * 16 + 12, -1 toast_t = 0'); run(30, 1 << B.left);
+  check('the tractor stays on the farm', get('G.area, riding'), '1 true');
+  tap('y'); check('Y hops off and leaves it where it stands', get('riding, G.tx == 12 or G.tx > 0'), 'false true');
+  ev('persist()'); load(getSave()); run(3);
+  check('the tractor and its implements are in the save', get('G.trac, G.imp[4], riding'), '1 1 false');
+  if (errors.length) { errors.forEach(e => fail('tractor: ' + e)); errors = []; }
+
   // 8. all four seasons draw, with rain, snow and nightfall
   load(null);
   for (const [d, name] of [[3, 'spring'], [10, 'summer'], [17, 'autumn'], [24, 'winter']]) {
@@ -261,6 +302,7 @@ require('../studio/runtime.js')({ onLog: (m, e) => { (e ? errors : logs).push(m)
     if (f % 12 === 0) mask = (1 << rand(4)) | (rand(3) === 0 ? 1 << (4 + rand(6)) : 0);
     if (f === 8000) ev('G.area, px, py = 2, 20 * 16, 10 * 16 + 12');
     if (f === 12000) ev('G.area, mine_hp = 3, 3 mine_floor(7)');
+    if (f === 4000) ev('G.trac, G.imp, G.impsel, G.plots = 1, { 1, 1, 1, 1 }, 1, { true, true, true } G.area, px, py = 1, 10 * 16, 17 * 16 mount()');
     if (M._bkw_frame(mask, 0)) { fail('random play stopped at frame ' + f + ': ' + errors.join(' ')); break; }
   }
   if (num('G.day') < 5) fail('days should pass on their own: day ' + get('G.day'));
