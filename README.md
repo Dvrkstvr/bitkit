@@ -120,10 +120,12 @@ A kart racer drawn SNES-style: the map becomes a floor seen in perspective, with
 - **Analog throttle** on R: squeeze harder to go faster. B brakes. Steering comes in 3 stages that blend as you hold a direction: a tap nudges, a hold turns, a long hold turns hard.
 - **Drift** with L (or B while on the throttle). The sparks go white, amber, then violet; let go for a boost. Full lock into a drift turns just a bit tighter than normal steering, and steering against it opens the line up.
 - **Items** from crates, used with X: Nitro, Oil Slick, Bolt, Drone (chases the kart in front) and Shield. Rivals use them too. Hold down to look back, and hold down while using a Bolt or Drone to fire it backwards.
+- **Race your friends** in the same match: pick **2 players** for split screen (up to 4 with controllers), or **2 Bits, linked** so each Bit shows its own kart. Everyone builds their own kart in the garage, player 1 picks the track, and rivals fill the grid up to 4.
 - **Hills and jumps**: the ground rises and falls, and fast karts leave the ground over crests.
 - **Tracks are made on the Track tab.** The road is a smooth loop: drag its points, double-click the road to add one, and place boost pads, crate rows, hills, bumps and dips along it. Paint elevation with the height brush (raise, lower, flatten, smooth), set the road width, kerbs and laps, and press **▶ race it**. The road is built from a few segment tiles you paint right there (road, kerb A/B, grass, start line, boost pad); the edge tiles where they meet are generated. Two tracks are included: Pinewood Loop and Quarry Hills.
 
 <img src="docs/media/kart-lab-race.png" width="400" alt="Kart Lab race"> <img src="docs/media/kart-lab-garage.png" width="400" alt="Kart Lab garage">
+<img src="docs/media/kart-split-screen.png" width="400" alt="Kart Lab two-player split screen">
 
 <img src="docs/media/kart-track-editor.png" width="640" alt="Track tab: the spline road, items and elevation">
 
