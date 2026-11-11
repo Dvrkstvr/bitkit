@@ -32,6 +32,7 @@
     <div id="gameWrap" class="game-wrap">
       <canvas id="screen" width="320" height="240" tabindex="0" aria-label="Game screen"></canvas>
       <div id="gameOverlay" class="overlay hidden"></div>
+      <div id="padChooser" class="pad-chooser" hidden></div>
     </div>
     <div class="game-bar">
       <select id="inputPick" class="pad-pick" title="Input for this tab: pick a controller or the keyboard, so two studio windows can each have their own"></select>
@@ -50,6 +51,7 @@
     <div id="linkBar" class="link-bar" hidden>
       <span id="linkStatus">Not linked</span>
       <span class="grow"></span>
+      <button id="linkPad" class="tiny" title="Choose the controller (or keyboard) for this Bit">🎮 Controller</button>
       <button id="linkOpen" class="tiny" title="Open a second Bit in a new window">Open a 2nd Bit</button>
     </div>
     <div class="console-head">Console <button id="btnClear" class="tiny">clear</button></div>
