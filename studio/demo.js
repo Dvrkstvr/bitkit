@@ -8,6 +8,7 @@
 -- Water drops heal you, mud and sticky seeds slow you down.
 -- Reach the red flag to go to the next level (levels are made on the Map tab).
 -- Cutscenes (Cutscenes tab) play when a level starts, when you walk into a trigger zone, or from code.
+-- Two players: pick 2 under Players. Each player's sprout reads its own controller.
 
 function _init()
   score, total, defeated = 0, #ents_all("drop"), 0
@@ -41,6 +42,10 @@ function _init()
     p.alive = true                 -- don't die: respawn at the last checkpoint
     p.hp = stat(p, "hp")
     p.x, p.y, p.vx, p.vy = spawn_x, spawn_y, 0, 0
+    -- with a friend still standing, pop back in next to them instead
+    for _, q in ipairs(ents_players()) do
+      if q ~= p and q.alive and q.ground then p.x, p.y = q.x, q.y - 12 break end
+    end
     fx_clear(p)
     p.inv = 60
     sfx("C3", 2, 0.6, 20, nil, 0, -200)
@@ -72,17 +77,27 @@ function _draw()
   hud()
 end
 
+function hearts(p, x)
+  for i = 1, stat(p, "hp") do
+    spr(i <= p.hp and 23 or 24, x + (i - 1) * 9, 2)
+  end
+end
+
 function hud()
   rectfill(0, 0, 320, 12, 1)
-  for i = 1, stat(PLAYER, "hp") do
-    spr(i <= PLAYER.hp and 23 or 24, 4 + (i - 1) * 9, 2)
-  end
+  local pl = ents_players()
+  hearts(PLAYER, 4)
   spr(3, 44, 2)
   text(score .. "/" .. total, 54, 2, 13)
   text("x" .. defeated, 110, 2, 26)
   if fx_has(PLAYER, "slow") then text("SLOW", 150, 2, 22) end
-  text("L", 200, 2, 29) bar(210, 3, press("l"))
-  text("R", 258, 2, 29) bar(268, 3, press("r"))
+  if #pl > 1 then                -- two players: player 2's hearts on the right
+    text("P2", 262, 2, 22)
+    hearts(pl[2], 282)
+  else
+    text("L", 200, 2, 29) bar(210, 3, press("l"))
+    text("R", 258, 2, 29) bar(268, 3, press("r"))
+  end
   if won then
     text("YOU MADE IT!", 112, 100, 27)
     text(score .. "/" .. total .. " drops", 124, 114, 13)

@@ -16,7 +16,8 @@
 #define BK_CHANNELS 8
 #define BK_SAMPLE_RATE 44100
 #define BK_FPS 60
-#define BK_SAVE_MAX 4096      /* bytes of save data per cart */
+#define BK_SAVE_MAX 4096
+#define BK_MAX_PLAYERS 4      /* bytes of save data per cart */
 
 /* Buttons. Bit index in the button mask and index for btn()/press(). */
 enum {
@@ -54,10 +55,16 @@ typedef struct {
   uint8_t draw_pal[256];
   uint8_t transparent[256];
 
-  /* --- input --- */
-  uint16_t btn, btn_prev;
-  uint8_t press[BK_NUM_BUTTONS];        /* analog 0..255 */
-  uint16_t hold[BK_NUM_BUTTONS];        /* frames held, for btnp repeat */
+  /* --- input: one pad per player. In a linked game every device runs the same frames with everyone's input. --- */
+  struct {
+    uint16_t btn, btn_prev;
+    uint8_t press[BK_NUM_BUTTONS];      /* analog 0..255 */
+    uint16_t hold[BK_NUM_BUTTONS];      /* frames held, for btnp repeat */
+    uint16_t ignore;                    /* buttons still held from before the cart started: ignored until released */
+    uint8_t fresh;                      /* set at cart start: the first input decides what to ignore */
+  } pad[BK_MAX_PLAYERS];
+  int32_t players;                      /* players in this game, 1..4 */
+  int32_t me;                           /* this device's player (1..4), or 0 when everyone shares this screen */
 
   /* --- player tracking (studio draws the route on the map) --- */
   int32_t track[3];                     /* x, y, set this frame */
@@ -100,9 +107,9 @@ void bk_to_rgba(uint32_t *out);       /* for hosts that want RGBA8888 */
 void bk_to_rgb565(uint16_t *out);     /* for the ST7789 on device */
 
 /* input: call once per frame before update */
-void bk_set_input(uint16_t mask, const uint8_t *press);
-int  bk_btn(int i);
-int  bk_btnp(int i);
+void bk_set_input(int player, uint16_t mask, const uint8_t *press);   /* player 0..3 */
+int  bk_btn(int player, int i);
+int  bk_btnp(int player, int i);
 
 /* rng (deterministic, xorshift64*) */
 void bk_srand(uint64_t seed);

@@ -6,7 +6,8 @@ eval(fs.readFileSync(__dirname + '/../studio/entities.js', 'utf8'));
 eval(fs.readFileSync(__dirname + '/../studio/home.js', 'utf8'));
 let errors = [], logs = [];
 const fail = m => { console.error('FAIL', m); process.exitCode = 1; };
-require('../studio/runtime.js')({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then(M => {
+const runtime = require('../studio/runtime.js');
+runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then(async M => {
   const s = x => M.stringToNewUTF8(x);
   M._bkw_init();
   if (M._bkw_load(s('function _draw() cls(1) text("hi",0,0) end')) !== 0) fail('simple cart did not load');
@@ -86,6 +87,55 @@ require('../studio/runtime.js')({ onLog: (m, e) => { if (e) errors.push(m); else
 
   // playing level 2 from the start
   for (let f = 0; f < 1500; f++) if (frame((1 << 1) | ((f % 30) < 12 ? 1 << 4 : 0))) { fail('level 2 stopped at frame ' + f); break; }
+
+  // two players sharing one screen: player 2 gets its own sprout, driven by its own pad
+  {
+    logs = [];
+    M._bkw_players(2, 0);
+    M.HEAPU16.set(levels[0].map, M._bkw_map() >> 1);
+    const probe2 = '\nlocal _u = _update\nfunction _update() _u() if t() == 200 then local p = ents_players() print("two", #p, p[1].pnum, p[2].pnum, math.floor(p[2].x - p[1].x)) end end';
+    M._bkw_load_ex(s(window.BKEntities.toLua(cart.entities, meta, 0)), s(window.BK_DEMO.code + probe2));
+    const pr = M._malloc(16);
+    for (let f = 0; f < 210; f++) {
+      M._bkw_input(2, f > 150 ? (1 << 1) : 0, 0);     // only player 2 walks right once the intro is skipped
+      frame(f === 3 ? 1 << 10 : 0);
+    }
+    M._free(pr);
+    const l2 = (logs.find(l => l.startsWith('two')) || '').split(/\s+/);
+    if (l2[1] !== '2' || l2[2] !== '1' || l2[3] !== '2' || !(+l2[4] > 8)) fail('two players on one screen: ' + l2.join(' ') + ' (expected 2 players, player 2 to the right of player 1)');
+    M._bkw_players(1, 0);
+  }
+
+  // linked Bits: two runtimes fed the same inputs (each seeing its own player) must stay identical
+  {
+    const M2 = await runtime({ onLog: (m, e) => { if (e) errors.push('bit 2: ' + m); else logs.push('B2 ' + m); } });
+    M2._bkw_init();
+    const sys2 = M2._bkw_sys() >> 2;
+    const boot = (R, me) => {
+      R._bkw_players(2, me);
+      R.HEAPU8.set(cart.tiles, R._bkw_tiles()); R.HEAPU8.set(cart.flags, R._bkw_flags()); R.HEAPU16.set(levels[0].map, R._bkw_map() >> 1);
+      const probe = '\nlocal _u = _update\nfunction _update() _u() if t() % 300 == 0 then local h = LEVEL * 7 + #ents_all() for _, p in ipairs(ents_players()) do h = h + math.floor(p.x) * 3 + math.floor(p.y) * 5 + p.hp end print("sync", t(), h, rnd(1000)) end end';
+      return R._bkw_load_ex(R.stringToNewUTF8(window.BKEntities.toLua(cart.entities, meta, 0)), R.stringToNewUTF8(window.BK_DEMO.code + probe));
+    };
+    logs = [];
+    if (boot(M, 1) || boot(M2, 2)) fail('linked bits did not load');
+    const step = (R, sysp, m1, m2) => {
+      R._bkw_input(2, m2, 0);
+      const r = R._bkw_frame(m1, 0);
+      if (R.HEAP32[sysp] === 4) R.HEAPU16.set(levels[R.HEAP32[sysp + 1] - 1].map, R._bkw_map() >> 1);
+      return r;
+    };
+    for (let f = 0; f < 2400; f++) {
+      const m1 = (1 << 1) | ((f % 30) < 12 ? 1 << 4 : 0) | (f % 20 === 0 ? 1 << 5 : 0);
+      const m2 = (f % 200 < 120 ? 1 << 1 : 1 << 0) | ((f % 24) < 10 ? 1 << 4 : 0) | (f % 90 === 0 ? 1 << 10 : 0);
+      if (step(M, sys, m1, m2) || step(M2, sys2, m1, m2)) { fail('linked bits stopped at frame ' + f); break; }
+    }
+    const a = logs.filter(l => l.startsWith('sync')).map(l => l.split(/\s+/).slice(1).join(' '));
+    const b = logs.filter(l => l.startsWith('B2 sync')).map(l => l.split(/\s+/).slice(2).join(' '));
+    if (a.length < 7 || a.join('|') !== b.join('|')) fail('linked bits drifted apart:\n  bit 1: ' + a.join(' | ') + '\n  bit 2: ' + b.join(' | '));
+    M._bkw_players(1, 0);
+  }
+
   errors.forEach(e => fail('Lua error: ' + e));
-  if (!process.exitCode) console.log('ok: runtime checks, home screen, 3000 demo frames, level switching, cutscenes and save data passed');
+  if (!process.exitCode) console.log('ok: runtime checks, home screen, 3000 demo frames, level switching, cutscenes, save data and multiplayer passed');
 });

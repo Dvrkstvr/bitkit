@@ -86,6 +86,7 @@ A small platformer that shows off most of the engine:
 - Stand next to a **sapling** while it grows and fight off the bees it attracts. Once it's a tree, it's your checkpoint.
 - Talking NPCs, and a pressure button that opens a gate.
 - Two levels, with cutscenes when each one starts and when you reach the gate.
+- Two players: pick **2 players** under the screen (player 2 is the blue sprout), or **2 Bits, linked** to play from two windows.
 
 ### Beacon Keeper
 
@@ -121,6 +122,8 @@ An idle game where you are the lighthouse. Everything is drawn from code, withou
 | Stats & effects | `stat stat_set fx_apply fx_has fx_remove fx_clear` |
 | Sensors & events | `raycast circlecast on emit` |
 | Levels & cutscenes | `level LEVEL LEVELS cutscene cutscene_playing` |
+| Multiplayer | `btn(b, p) press(b, p) PLAYERS ME ents_players ents_player_pal` |
+| Save data | `save saved clock` |
 | Misc | `t time rnd srand print` |
 
 The full reference is in the studio's **Help** tab.
@@ -164,6 +167,7 @@ docs/media/     README images
 - [x] Stats, effects and checkpoints
 - [x] Player route overlay in the map editor
 - [x] Levels and cutscenes
+- [x] Multiplayer in the studio: two players on one screen, or two linked Bit windows in lockstep
 - [ ] Music tracker and SFX editor
 - [ ] Animation timeline editor
 - [ ] ESP32-S3 host (PocketBit firmware)

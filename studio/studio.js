@@ -36,7 +36,7 @@
   RT._bkw_init();
   const ptr = {
     pal: RT._bkw_palette(), tiles: RT._bkw_tiles(), flags: RT._bkw_flags(), map: RT._bkw_map(),
-    press: RT._malloc(16), track: RT._bkw_track() >> 2, sys: RT._bkw_sys() >> 2, save: RT._bkw_save() >> 2
+    press: RT._malloc(16), track: RT._bkw_track() >> 2, sys: RT._bkw_sys() >> 2, save: RT._bkw_save() >> 2, press2: RT._malloc(16)
   };
   const DEFAULT_PAL = RT.HEAPU8.slice(ptr.pal, ptr.pal + 768);
 
@@ -141,7 +141,7 @@ end
 
   let dirtySave = false;
   function markDirty() { dirtySave = true; }
-  setInterval(() => { if (dirtySave) { saveLocal(); dirtySave = false; } }, 2000);
+  setInterval(() => { if (dirtySave && !/[?&]bit=2\b/.test(location.search)) { saveLocal(); dirtySave = false; } }, 2000);
   function saveLocal() { lsSet(LS.cart, JSON.stringify(serialize())); }
 
   /* ------------------------------------------------------------ code editor */
@@ -706,35 +706,53 @@ end
   try { Object.assign(settings, JSON.parse(lsGet(LS.settings) || '{}')); } catch (e) { /* ignore */ }
   function saveSettings() { lsSet(LS.settings, JSON.stringify(settings)); }
 
-  const keys = new Uint8Array(12);
+  // player 2 on the same keyboard: IJKL move, N = A, M = B, H = X, U = Y, Y = L, O = R, Backspace = Start, B = Select
+  const KEYMAP2 = { KeyJ: 0, KeyL: 1, KeyI: 2, KeyK: 3, KeyN: 4, KeyM: 5, KeyH: 6, KeyU: 7, KeyY: 8, KeyO: 9, Backspace: 10, KeyB: 11 };
+  const keys = new Uint8Array(12), keys2 = new Uint8Array(12);
   const input = { mask: 0, press: new Uint8Array(12), pads: [] };
+  const input2 = { mask: 0, press: new Uint8Array(12) };
+  const IS_BIT2 = /[?&]bit=2\b/.test(location.search);   // a linked second Bit window: just the screen
+  let playMode = IS_BIT2 ? 'link' : (lsGet('bitkit.players') || '1');
   const screen = $('screen');
   function gameHasFocus() { const a = document.activeElement; return a === screen || a === document.body || a === null; }
   window.addEventListener('keydown', e => {
-    const i = KEYMAP[e.code];
-    if (i === undefined || !gameHasFocus() || e.ctrlKey || e.metaKey || e.altKey) return;
-    keys[i] = 1; e.preventDefault();
+    if (!gameHasFocus() || e.ctrlKey || e.metaKey || e.altKey) return;
+    const i = KEYMAP[e.code], j = playMode === '2' ? KEYMAP2[e.code] : undefined;
+    if (i !== undefined) { keys[i] = 1; e.preventDefault(); }
+    else if (j !== undefined) { keys2[j] = 1; e.preventDefault(); }
   });
-  window.addEventListener('keyup', e => { const i = KEYMAP[e.code]; if (i !== undefined) keys[i] = 0; });
-  window.addEventListener('blur', () => keys.fill(0));
+  window.addEventListener('keyup', e => {
+    const i = KEYMAP[e.code], j = KEYMAP2[e.code];
+    if (i !== undefined) keys[i] = 0;
+    if (j !== undefined) keys2[j] = 0;
+  });
+  window.addEventListener('blur', () => { keys.fill(0); keys2.fill(0); });
 
   function srcValue(pad, s) {
     if (s[0] === 'b') { const b = pad.buttons[s[1]]; return b ? (b.value || (b.pressed ? 1 : 0)) : 0; }
     const v = (pad.axes[s[1]] || 0) * s[2], dz = settings.dead / 100;
     return v <= dz ? 0 : Math.min(1, (v - dz) / (1 - dz));
   }
+  function readInput(out, keyArr, pads) {
+    let mask = 0;
+    for (let i = 0; i < 12; i++) {
+      let v = keyArr[i] ? 1 : 0;
+      for (const pad of pads) for (const s of padmap[BTN[i]] || []) v = Math.max(v, srcValue(pad, s));
+      const p = Math.round(v * 255);
+      out.press[i] = p;
+      if (p >= settings.thresh || keyArr[i]) mask |= 1 << i;
+    }
+    out.mask = mask;
+  }
   function pollInput() {
     const pads = navigator.getGamepads ? [...navigator.getGamepads()].filter(Boolean) : [];
     input.pads = pads;
-    let mask = 0;
-    for (let i = 0; i < 12; i++) {
-      let v = keys[i] ? 1 : 0;
-      for (const pad of pads) for (const s of padmap[BTN[i]] || []) v = Math.max(v, srcValue(pad, s));
-      const p = Math.round(v * 255);
-      input.press[i] = p;
-      if (p >= settings.thresh || keys[i]) mask |= 1 << i;
-    }
-    input.mask = mask;
+    if (playMode === '2') {             // same screen: first controller + left keys = player 1, second controller + IJKL = player 2
+      readInput(input, keys, pads.slice(0, 1));
+      readInput(input2, keys2, pads.slice(1, 2));
+    } else if (playMode === 'link' && IS_BIT2 && pads.length > 1) {
+      readInput(input, keys, pads.slice(1, 2));   // two Bit windows on one computer: the second window uses the second controller
+    } else readInput(input, keys, playMode === 'link' && pads.length > 1 ? pads.slice(0, 1) : pads);
   }
 
   // controller tab UI
@@ -865,8 +883,9 @@ end
     for (let i = 0; i < n; i++) str += String.fromCharCode(RT.HEAPU8[off + i]);
     lsSet('bitkit.save.' + saveKey, str);
   }
-  function loadCode(code, data, key) {
+  function loadCode(code, data, key, players, me) {
     putSave(key || null);
+    RT._bkw_players(players || 1, me || 0);
     const p = RT.stringToNewUTF8(code), d = RT.stringToNewUTF8(data || '');
     const rc = RT._bkw_load_ex(d, p);
     RT._free(p); RT._free(d);
@@ -891,11 +910,22 @@ end
     log(`▶ running "${cart.name}"` + (start ? ` from ${cart.levels[start].name}` : ''), 'sys');
     playingEditor = true; playingLevels = cart.levels;
     if (bit.on) bit.playing = 'studio';
-    running = loadCode(getCode(), BKEntities.toLua(cart.entities, levelsMeta(cart.levels), start, extraLua), cart.name || 'untitled') === 0;
+    let np = playMode === '2' ? 2 : 1, me = 0;
+    if (playMode === 'link' && link.peer) {        // linked: this window is Bit 1 and sends the cart to Bit 2
+      linkSend({ t: 'start', to: link.peer, cart: serialize(), level: start });
+      linkBegin(1); np = 2; me = 1;
+      log('🔗 playing linked: you are player 1', 'sys');
+    } else if (playMode === 'link') log('🔗 no other Bit is linked yet, so this runs for one player. Press "Open a 2nd Bit".', 'sys');
+    running = loadCode(getCode(), BKEntities.toLua(cart.entities, levelsMeta(cart.levels), start, extraLua), cart.name || 'untitled', np, me) === 0;
     acc = 0; last = performance.now();
     screen.focus();
   }
-  function stop(quiet) { if (activeTab === 'map') setTimeout(drawMap, 0); running = false; RT._bkw_stop(); if (quiet !== true) log('■ stopped', 'sys'); }
+  function stop(quiet) {
+    if (link.running) { link.running = false; linkSend({ t: 'stop', to: link.peer }); linkUI(); }
+    if (activeTab === 'map') setTimeout(drawMap, 0);
+    running = false; RT._bkw_stop();
+    if (quiet !== true) log('■ stopped', 'sys');
+  }
   onRuntimeError = msg => {
     running = false;
     overlay.textContent = msg;
@@ -919,12 +949,22 @@ end
     requestAnimationFrame(frame);
     pollInput();
     if (running) {
-      if (gfxDirtyRT && playingEditor) syncToRuntime(false);   // live sprite edits while the game runs
+      if (gfxDirtyRT && playingEditor && !link.running) syncToRuntime(false);   // live sprite edits while the game runs
       acc += Math.min(now - last, 100);
       let ticks = 0;
+      if (link.running) linkPump();
       while (acc >= STEP && running) {
-        RT.HEAPU8.set(input.press, ptr.press);
-        if (RT._bkw_frame(input.mask, ptr.press) !== 0) running = false;
+        let m1 = input.mask, p1 = input.press;
+        if (link.running) {          // lockstep: only run a frame once both Bits' input for it is here
+          const f = linkTake();
+          if (!f) { acc = Math.min(acc, STEP * 3); linkWaiting(now); break; }
+          [m1, p1] = f[0];
+          RT.HEAPU8.set(f[1][1], ptr.press2); RT._bkw_input(2, f[1][0], ptr.press2);
+        } else if (playMode === '2') {
+          RT.HEAPU8.set(input2.press, ptr.press2); RT._bkw_input(2, input2.mask, ptr.press2);
+        }
+        RT.HEAPU8.set(p1, ptr.press);
+        if (RT._bkw_frame(m1, ptr.press) !== 0) running = false;
         takeSave();
         const tr = RT.HEAP32;
         if (playingEditor && tr[ptr.track + 2] && route.cur) route.cur.push(tr[ptr.track], tr[ptr.track + 1]);
@@ -939,6 +979,124 @@ end
     if (now - fpsT >= 1000) { $('fps').textContent = running ? `${fpsCount} fps` : ''; fpsCount = 0; fpsT = now; }
     updateInputUI();
   }
+
+  /* ------------------------------------------------------------ multiplayer: players and linked Bits */
+  // Linked Bits work like PocketBits over ESP-NOW: both windows run the same cart in lockstep, and each frame
+  // runs only when both Bits' buttons for that frame have arrived. Each window shows its own player's camera.
+  const link = { id: Math.random().toString(36).slice(2), ch: null, peer: null, peerSeen: 0, running: false, me: 0,
+    f: 0, sent: 0, mine: new Map(), theirs: new Map(), waitSince: 0, DELAY: 3 };
+  function linkSend(o) { if (link.ch) { o.from = link.id; link.ch.postMessage(o); } }
+  function linkOpen() {
+    if (link.ch) return;
+    if (!window.BroadcastChannel) { toast('This browser cannot link windows'); return; }
+    link.ch = new BroadcastChannel('bitkit-link');
+    link.ch.onmessage = e => linkMsg(e.data || {});
+    linkSend({ t: 'hello' });
+    linkUI();
+  }
+  function linkClose() {
+    if (!link.ch) return;
+    if (link.running) stop(true);
+    linkSend({ t: 'bye' });
+    link.ch.close(); link.ch = null; link.peer = null;
+    linkUI();
+  }
+  function linkBegin(me) {
+    Object.assign(link, { running: true, me, f: 0, sent: 0, waitSince: 0 });
+    link.mine.clear(); link.theirs.clear();
+    linkUI();
+  }
+  function linkPump() {        // send this Bit's buttons a few frames ahead (input delay hides the link's lag)
+    while (link.sent <= link.f + link.DELAY) {
+      const p = Array.from(input.press);
+      link.mine.set(link.sent, [input.mask, Uint8Array.from(p)]);
+      linkSend({ t: 'in', to: link.peer, f: link.sent, m: input.mask, p });
+      link.sent++;
+    }
+  }
+  function linkTake() {
+    const a = link.mine.get(link.f), b = link.theirs.get(link.f);
+    if (!a || !b) return null;
+    link.mine.delete(link.f); link.theirs.delete(link.f); link.f++;
+    if (link.waitSince) { link.waitSince = 0; linkUI(); }
+    return link.me === 1 ? [a, b] : [b, a];
+  }
+  function linkWaiting(now) {
+    if (!link.waitSince) link.waitSince = now;
+    else if (now - link.waitSince > 600) linkUI('Waiting for the other Bit…');
+  }
+  function linkMsg(m) {
+    if (m.from === link.id || (m.to && m.to !== link.id)) return;
+    const now = performance.now();
+    if (m.t === 'hello') {
+      if (link.peer && link.peer !== m.from) return;          // already linked to another window
+      const isNew = !link.peer;
+      link.peer = m.from; link.peerSeen = now;
+      if (isNew) { linkSend({ t: 'hello', to: m.from }); log('🔗 linked with another Bit', 'sys'); }
+      linkUI();
+      return;
+    }
+    if (m.from !== link.peer) return;
+    link.peerSeen = now;
+    if (m.t === 'in') { if (link.running) link.theirs.set(m.f, [m.m, Uint8Array.from(m.p)]); }
+    else if (m.t === 'start') linkJoin(m.cart, m.level | 0);
+    else if (m.t === 'stop') { if (link.running) { link.running = false; stop(true); log('■ the other Bit stopped the game', 'sys'); linkUI(); } }
+    else if (m.t === 'bye') {
+      link.peer = null;
+      if (link.running) { link.running = false; stop(true); log('🔗 the other Bit left', 'sys'); }
+      linkUI();
+    }
+  }
+  // Bit 2: play the cart Bit 1 sent, as player 2
+  function linkJoin(data, level) {
+    let c;
+    try { c = decodeCart(data); } catch (e) { log('🔗 could not read the cart from the other Bit: ' + e.message, 'err'); return; }
+    if (running) { link.running = false; stop(true); }
+    startAudio();
+    overlay.classList.add('hidden');
+    const L = c.levels[level] ? level : 0;
+    RT.HEAPU8.set(c.palette, ptr.pal); RT.HEAPU8.set(c.tiles, ptr.tiles); RT.HEAPU8.set(c.flags, ptr.flags);
+    RT.HEAPU16.set(c.levels[L].map, ptr.map >> 1);
+    gfxDirtyRT = true; playingEditor = false; playingLevels = c.levels;
+    linkBegin(2);
+    log(`🔗 playing "${c.name}" linked: you are player 2`, 'sys');
+    running = loadCode(c.code, BKEntities.toLua(c.entities, levelsMeta(c.levels), L), null, 2, 2) === 0;
+    acc = 0; last = performance.now();
+    screen.focus();
+  }
+  setInterval(() => {          // heartbeat: notice a closed window
+    if (!link.ch) return;
+    linkSend({ t: link.peer ? 'ping' : 'hello', to: link.peer || undefined });
+    if (link.peer && performance.now() - link.peerSeen > 4000) {
+      link.peer = null;
+      if (link.running) { link.running = false; stop(true); log('🔗 lost the other Bit', 'sys'); }
+      linkUI();
+    }
+  }, 1000);
+  window.addEventListener('pagehide', () => { if (link.ch) linkSend({ t: 'bye' }); });
+  function linkUI(msg) {
+    const bar = $('linkBar');
+    bar.hidden = playMode !== 'link';
+    bar.classList.toggle('ok', !!link.peer);
+    $('linkStatus').textContent = msg || (!link.peer
+      ? (IS_BIT2 ? 'Bit 2: looking for Bit 1…' : 'Not linked yet. Open a 2nd Bit, or pick "2 Bits, linked" in another studio window.')
+      : link.running ? `Linked · you are player ${link.me}`
+      : IS_BIT2 ? 'Linked. Waiting for Bit 1 to press Run…' : 'Linked with a 2nd Bit. Press Run to play together.');
+  }
+  $('players').value = playMode;
+  $('players').onchange = e => {
+    if (running) stop(true);
+    playMode = e.target.value; lsSet('bitkit.players', playMode);
+    if (playMode === 'link') linkOpen(); else linkClose();
+    linkUI();
+    if (playMode === '2') log('2 players: player 2 uses the second controller, or I J K L to move, N to jump, M to throw.', 'sys');
+  };
+  $('linkOpen').onclick = () => {
+    const w = window.open(location.pathname + '?bit=2', 'bitkit-bit2', 'width=720,height=640');
+    if (!w) toast('The browser blocked the new window. Allow pop-ups, or open this page again in another window.');
+  };
+  if (playMode === 'link') linkOpen();
+  linkUI();
 
   /* ------------------------------------------------------------ boot screen */
   function bootScreen() {
@@ -1097,7 +1255,7 @@ end
     RT.HEAPU16.set(c.levels[0].map, ptr.map >> 1);
     gfxDirtyRT = true; playingEditor = false; bit.playing = label; playingLevels = c.levels;
     log(`▶ Bit: playing "${c.name}"`, 'sys');
-    running = loadCode(c.code, BKEntities.toLua(c.entities, levelsMeta(c.levels), 0), c.name || label) === 0;
+    running = loadCode(c.code, BKEntities.toLua(c.entities, levelsMeta(c.levels), 0), c.name || label, playMode === '2' ? 2 : 1, 0) === 0;
     acc = 0; last = performance.now();
     screen.focus();
   }
@@ -1299,6 +1457,13 @@ end
       ['on("cutscene_end", fn)', 'Called with the name when a cutscene finishes or is skipped. on("cutscene", fn) is called when one starts.'],
       ['Trigger zones', 'An invisible entity with the "Play cutscene" step. "Place a trigger zone" on the Cutscenes tab makes one for you. Level intros play when their level starts.'],
       ['Needs', 'ents_update() in _update (it runs the cutscene) and ents_camera() if the camera should pan. The dialog box, bars and fades are drawn for you on top of _draw. START skips.']]],
+    ['Multiplayer', [
+      ['Players menu', '"2 players": both play on this screen. Player 2 uses the second controller, or I J K L to move, N = A, M = B, H = X, U = Y, Y = L, O = R. "2 Bits, linked": two windows play together like two PocketBits over ESP-NOW, each with its own camera.'],
+      ['btn(b, [p]) / btnp / btnr / press', 'The last argument picks the player (1-4, default 1). Player entities read their own player\'s buttons by themselves.'],
+      ['PLAYERS / ME', 'How many play, and which player this screen belongs to (0 when everyone shares this screen). Use ME only for what you draw, never for game logic, or linked Bits drift apart.'],
+      ['ents_players()', 'The player entities, player 1 first. PLAYER is player 1. Extra players start next to player 1 as copies of its entity; e.pnum is the player number.'],
+      ['ents_player_pal(n, {from = to})', 'Recolour player n\'s sprite. Players 2-4 get blue, red and yellow leaves by default.'],
+      ['Lockstep rules', 'Linked games run the same frames with the same buttons on every Bit, so the game must be deterministic: use rnd() and t(), not clock(), and avoid pairs() order in game logic. Enemies chase the nearest player; cutscenes listen to every player.']]],
     ['Save data and clock', [
       ['save(t)', 'Keep a table (numbers, strings, booleans, nested tables; up to 4 KB) for the next time the cart runs. save(nil) deletes it. The studio keeps it per cart name in this browser; PocketBit keeps it in flash.'],
       ['saved()', 'The table from the last save(), or nil if there is none.'],
@@ -1333,11 +1498,16 @@ end
   applyCart();
   log(`${APP} Studio ready. ${restored ? 'Restored your last cart.' : 'Loaded the demo cart.'} Press Run (Ctrl+Enter).`, 'sys');
   showTab(lsGet(LS.settings + '.tab') || 'code');
-  bootScreen();
+  if (IS_BIT2) {
+    document.body.classList.add('bit-only');
+    document.title = `${APP} · Bit 2`;
+    loadCode(`function _draw() cls(1) text("BIT 2", 120, 84, 22, 3) text("Linked to the studio window", 52, 130, 29) text("Press Run there to play together", 32, 144, 29) end`);
+    RT._bkw_frame(0, ptr.press); blit(); RT._bkw_stop();
+  } else bootScreen();
   requestAnimationFrame(frame);
 
   // expose for tests / debugging
-  window.bkStudio = { cart, run, stop, input, RT, isRunning: () => running, bit, setBitPower, showLibrary, saveToBit, BKStore };
+  window.bkStudio = { cart, run, stop, input, input2, link, RT, isRunning: () => running, bit, setBitPower, showLibrary, saveToBit, BKStore };
 })().catch(e => {
   document.body.innerHTML = `<pre style="color:#ff6b5e;padding:20px">Studio failed to start: ${e && e.stack || e}</pre>`;
 });
