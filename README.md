@@ -156,6 +156,7 @@ A tug-of-war crossbow duel. Wren (orange) fights east out of the Sea Gate, Rook 
 
 A kart racer drawn SNES-style: the map becomes a floor seen in perspective, with real hills, and karts, trees and items are scaled sprites.
 
+- **Modes:** the main menu has **Race**, **Rumble** (an arena fight: every hit knocks off a helmet, lose them all and you're KO, last kart driving wins) and **Time Trial** (just you, two Nitros and the clock). Then pick the track or arena and the rules (laps, rivals, rival skill, which items are in the pool, helmets, time limit), build your kart, and go.
 - **It's all about the karts.** In the garage, pick a body (Dart, Brick, Hopper), an engine (Buzz 2-stroke, Twin, V-Torque), tyres (Slicks, Knobbly, Softs) and a paint job. Every part changes speed, accel, grip, weight, offroad and drift.
 - **Analog throttle** on R: squeeze harder to go faster. B brakes. Steering comes in 3 stages that blend as you hold a direction: a tap nudges, a hold turns, a long hold turns hard.
 - **Drift** with L (or B while on the throttle). The sparks go white, amber, then violet; let go for a boost. Full lock into a drift turns just a bit tighter than normal steering, and steering against it opens the line up.

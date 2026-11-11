@@ -132,10 +132,13 @@ require('../studio/runtime.js')({ onLog: (m, e) => { if (e) errors.push(m); else
   const KP = 'local _pd = _draw\nfunction _draw() if _pd then _pd() end print("gs", GAME.state, mode) end';
   load('Kart Lab', KP);
   run(2);
-  tap('a'); run(12);                              // New game -> garage
-  if (st()[1] !== 'garage') fail('Kart Lab New game should open the garage, got ' + st().join(' '));
-  for (let i = 0; i < 5; i++) tap('down');
-  tap('a'); run(5);                               // RACE! -> saves the kart
+  tap('a'); run(12);                              // New game -> the main menu
+  if (st()[1] !== 'menu') fail('Kart Lab New game should open the main menu, got ' + st().join(' '));
+  tap('a'); run(12);                              // Race -> track and rules
+  tap('a'); run(2); tap('a'); run(12);            // jump to Next, then Next -> garage
+  if (st()[1] !== 'garage') fail('Kart Lab Next should open the garage, got ' + st().join(' '));
+  for (let i = 0; i < 4; i++) tap('down');
+  tap('a'); run(5);                               // GO! -> saves the kart
   load('Kart Lab', KP);
   run(2); tap('a'); run(2);                       // Continue
   if (st()[0] !== 'play' || !['loading', 'count'].includes(st()[1])) fail('Kart Lab Continue should go straight to a race, got ' + st().join(' '));
