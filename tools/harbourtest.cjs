@@ -26,7 +26,7 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
     if (str == null) { M.HEAP32[sv] = -1; return; }
     const b = Buffer.from(str); M.HEAPU8.set(b, (sv + 2) << 2); M.HEAP32[sv] = b.length; M.HEAP32[sv + 1] = 0;
   };
-  const probe = '\nlocal _u = _update\nfunction _update() _u() if t() % 600 == 0 then print("st", G.coins, G.docked, G.lost, #ships, #pirates, G.day, is_night() and 1 or 0, G.tank, report and report.earned or -1, scared or 0, sunk or 0) end end\n' +
+  const probe = '\nfunction need_yard() return false end\nlocal _u = _update\nfunction _update() _u() if t() % 600 == 0 then print("st", G.coins, G.docked, G.lost, #ships, #pirates, G.day, is_night() and 1 or 0, G.tank, report and report.earned or -1, scared or 0, sunk or 0) end end\n' +
     'local _f = float\nfunction float(x, y, s, c) if s == "scared!" then scared = (scared or 0) + 1 elseif s == "+12" then sunk = (sunk or 0) + 1 end _f(x, y, s, c) end\n';
   const last = () => { const l = logs.filter(x => x.startsWith('st')).pop(); return l ? l.split(/\s+/).slice(1).map(Number) : null; };
   const load = save => { setSave(save); logs = []; if (M._bkw_load_ex(ents, s(D.code + probe)) !== 0) fail('Beacon Keeper did not load'); };
@@ -74,7 +74,7 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
   // 5. three players: rowboats pick up crates, unload them at the island, spill them on rocks;
   //    wrecks drop crates; player 1 hops into a boat with Y
   M._bkw_players(3, 0);
-  const mp = '\nlocal _u = _update\nfunction _update()\n' +
+  const mp = '\nfunction need_yard() return false end\nlocal _u = _update\nfunction _update()\n' +
     ' if t() == 5 then local b = boats[2] loot = {} drop_loot(b.x + 14, b.y, 1, 7) loot[1].x, loot[1].y = b.x + 14, b.y end\n' +
     ' if t() == 40 then print("pick", boats[2].cargo, boats[2].val, #loot) end\n' +
     ' if t() == 41 then c0 = G.coins boats[2].x, boats[2].y, boats[2].vx, boats[2].vy = ISLE.x, ISLE.y + ISLE.r + 8, 0, 0 end\n' +
@@ -104,7 +104,7 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
 
   // 5b. stations: one keeper at a time, swap only while docked, Y cycles lamp -> cannons -> boat,
   //     a manned cannon aims with left / right and fires with A
-  const st = '\nlocal _u = _update\nfunction _update()\n' +
+  const st = '\nfunction need_yard() return false end\nlocal _u = _update\nfunction _update()\n' +
     ' if t() == 2 then G.cannon = 2 end\n' +
     ' if t() == 25 then boats[3].x, boats[3].y = 400, 100 end\n' +
     ' if t() == 64 then a0 = angle end\n' +
@@ -141,11 +141,27 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
   eq('s_p1c1', [1, 1, 0]);             // P1 back to the boat, then to the free cannon 1
   if (errors.length) { errors.forEach(e => fail('stations: ' + e)); errors = []; }
 
+  // 5c. the boat yard: two players pick hull, sail and rig, then A to cast off; one boat per player
+  const yd = '\nlocal _u = _update\nfunction _update() local y0 = yard _u()\n' +
+    ' if t() == 1 then print("y_open", yard and 1 or 0, #boats) end\n' +
+    ' if y0 and not yard then print("y_done", t(), look[2].hull, look[2].sail, look[2].rig, PCOL[2], look[1].hull, G.hull) end\n' +
+    'end\n';
+  logs = []; setSave(null); M._bkw_players(2, 0);
+  if (M._bkw_load_ex(ents, s(D.code + yd)) !== 0) fail('boat yard game did not load');
+  const p2keys = { 3: B.right, 6: B.down, 9: B.right, 12: B.down, 15: B.right, 18: B.a };
+  for (let f = 1; f <= 30; f++) {
+    M._bkw_input(2, p2keys[f] !== undefined ? 1 << p2keys[f] : 0, 0);
+    frame(f === 10 || f === 20 ? 1 << B.a : 0);
+  }
+  eq('y_open', [1, 2]);
+  q = L('y_done'); if (q.slice(1).join() !== '3,2,2,26,1,1' || !(q[0] >= 15)) fail('boat yard picks: ' + q);
+  if (errors.length) { errors.forEach(e => fail('boat yard: ' + e)); errors = []; }
+
   // 6. two linked Bits fed the same buttons stay identical
   {
     const M2 = await runtime({ onLog: (m, e) => { if (e) errors.push('bit 2: ' + m); else logs.push('B2 ' + m); } });
     M2._bkw_init();
-    const sync = '\nlocal _u = _update\nfunction _update() _u() if t() % 500 == 0 then local h = G.coins * 7 + #ships * 3 + #loot + #pirates for _, b in ipairs(boats) do h = h + math.floor(b.x) * 3 + math.floor(b.y) * 5 + b.cargo end for _, s in ipairs(ships) do h = h + math.floor(s.x) end print("sync", t(), h, rnd(1000)) end end';
+    const sync = '\nfunction need_yard() return false end\nlocal _u = _update\nfunction _update() _u() if t() % 500 == 0 then local h = G.coins * 7 + #ships * 3 + #loot + #pirates for _, b in ipairs(boats) do h = h + math.floor(b.x) * 3 + math.floor(b.y) * 5 + b.cargo end for _, s in ipairs(ships) do h = h + math.floor(s.x) end print("sync", t(), h, rnd(1000)) end end';
     const boot = (R, me) => {
       R._bkw_players(2, me);
       R.HEAPU8.set(cart.tiles, R._bkw_tiles());
