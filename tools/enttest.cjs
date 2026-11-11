@@ -1,7 +1,7 @@
 // Headless test of the entity system: walker, flyer, shooter, button + door, damage.
 require('../studio/runtime.js')({ onLog: (m, e) => console.log(e ? 'ERR' : 'LOG', m) }).then(M => {
-  M._mbw_init();
-  const tiles = M._mbw_tiles(), flags = M._mbw_flags(), map = M._mbw_map() >> 1;
+  M._bkw_init();
+  const tiles = M._bkw_tiles(), flags = M._bkw_flags(), map = M._bkw_map() >> 1;
   M.HEAPU8.fill(7, tiles + 64 * 16, tiles + 64 * 17); M.HEAPU8[flags + 16] = 1;
   for (let x = 0; x < 60; x++) M.HEAPU16[map + 20 * 256 + x] = 16;          // floor at row 20
   M.HEAPU16[map + 19 * 256 + 30] = 16;                                       // wall at x=30
@@ -32,12 +32,12 @@ require('../studio/runtime.js')({ onLog: (m, e) => console.log(e ? 'ERR' : 'LOG'
     local hit, hx, hy, th = raycast(0, 156, 1, 0, 300, "wall")
     local b = ents_all("button")[1] print("btn", b and b.x, b and b.y, b and #b.touch_now, PLAYER.x, PLAYER.y) for _, s in ipairs(ents_all("seed")) do print("seed", s.x, s.y, s.vx, s.age) end print("slugs", #ents_all("slug"), "deaths", deaths, "hurts", hurts, "opened", opened, "doors", #ents_all("door"), "seeds", #ents_all("seed"), "ray wall at", hx, "circle", #circlecast(104, 156, 10, "any"))
   end`;
-  const rc = M._mbw_load_ex(M.stringToNewUTF8(data), M.stringToNewUTF8(code));
+  const rc = M._bkw_load_ex(M.stringToNewUTF8(data), M.stringToNewUTF8(code));
   console.log('load', rc);
-  for (let f = 0; f < 200; f++) if (M._mbw_frame(0, 0)) break;
-  M._mbw_load; // keep
+  for (let f = 0; f < 200; f++) if (M._bkw_frame(0, 0)) break;
+  M._bkw_load; // keep
   const r = M.stringToNewUTF8('report()');
   // run report via a frame hook: redefine _update
-  M._mbw_frame(0, 0);
+  M._bkw_frame(0, 0);
   // simple way: evaluate by reloading is not possible; use _draw override trick
 });

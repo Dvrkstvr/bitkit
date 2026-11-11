@@ -1,11 +1,11 @@
-/* MiniBoi Studio. MIT License. */
+/* BitKit Studio. MIT License. */
 'use strict';
 (async function () {
-  const APP = 'MiniBoi';
+  const APP = 'BitKit';
   const W = 320, H = 240, TILES = 512, MAPW = 256, MAPH = 128;
   const BTN = ['left', 'right', 'up', 'down', 'a', 'b', 'x', 'y', 'l', 'r', 'start', 'select'];
   const BTN_LABEL = ['Left', 'Right', 'Up', 'Down', 'A', 'B', 'X', 'Y', 'L', 'R', 'Start', 'Select'];
-  const LS = { cart: 'miniboi.cart', pad: 'miniboi.padmap', settings: 'miniboi.settings' };
+  const LS = { cart: 'bitkit.cart', pad: 'bitkit.padmap', settings: 'bitkit.settings' };
 
   const $ = id => document.getElementById(id);
   const toastEl = $('toast');
@@ -13,6 +13,8 @@
   function toast(msg) { toastEl.textContent = msg; toastEl.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => toastEl.classList.remove('show'), 1600); }
   function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* storage unavailable */ } }
+  // carry over data saved before the rename (MiniBoi -> BitKit)
+  ['cart', 'padmap', 'settings', 'settings.tab'].forEach(k => { const old = lsGet('miniboi.' + k); if (old !== null && lsGet('bitkit.' + k) === null) lsSet('bitkit.' + k, old); });
 
   /* ------------------------------------------------------------ console */
   const consoleEl = $('console');
@@ -28,12 +30,12 @@
 
   /* ------------------------------------------------------------ runtime */
   let onRuntimeError = () => {};
-  const RT = await MiniBoiRuntime({
+  const RT = await BitKitRuntime({
     onLog: (msg, isErr) => { if (isErr) { log(msg, 'err'); onRuntimeError(msg); } else log(msg); }
   });
-  RT._mbw_init();
+  RT._bkw_init();
   const ptr = {
-    pal: RT._mbw_palette(), tiles: RT._mbw_tiles(), flags: RT._mbw_flags(), map: RT._mbw_map(),
+    pal: RT._bkw_palette(), tiles: RT._bkw_tiles(), flags: RT._bkw_flags(), map: RT._bkw_map(),
     press: RT._malloc(16)
   };
   const DEFAULT_PAL = RT.HEAPU8.slice(ptr.pal, ptr.pal + 768);
@@ -88,14 +90,14 @@ end
 
   function serialize() {
     return {
-      format: 'miniboi-cart', version: 1, name: cart.name, code: getCode(),
+      format: 'bitkit-cart', version: 1, name: cart.name, code: getCode(),
       palette: b64(cart.palette), tiles: rle(cart.tiles), flags: rle(cart.flags),
       map: rle(new Uint8Array(cart.map.buffer.slice(0))),
-      entities: cart.entities, entities_lua: MBEntities.toLua(cart.entities)
+      entities: cart.entities, entities_lua: BKEntities.toLua(cart.entities)
     };
   }
   function deserialize(o) {
-    if (!o || o.format !== 'miniboi-cart') throw new Error('Not a ' + APP + ' cart file');
+    if (!o || (o.format !== 'bitkit-cart' && o.format !== 'miniboi-cart')) throw new Error('Not a ' + APP + ' cart file');
     cart.name = o.name || 'untitled';
     cart.code = o.code || '';
     cart.palette.set(o.palette ? unb64(o.palette).subarray(0, 768) : DEFAULT_PAL);
@@ -117,19 +119,19 @@ end
   let cm = null, ta = null, errLine = null;
   if (window.CodeMirror) {
     // highlight the engine API on top of the lua mode
-    CodeMirror.defineMode('mblua', (config) => {
+    CodeMirror.defineMode('bklua', (config) => {
       const base = CodeMirror.getMode(config, 'lua');
       const api = new Set(API_NAMES);
       return Object.assign({}, base, {
         token(stream, state) {
           const style = base.token(stream, state);
-          if (style === 'variable' && api.has(stream.current())) return 'mb-api';
+          if (style === 'variable' && api.has(stream.current())) return 'bk-api';
           return style;
         }
       });
     });
     cm = CodeMirror($('codeHost'), {
-      value: cart.code, mode: 'mblua', lineNumbers: true, indentUnit: 2, tabSize: 2,
+      value: cart.code, mode: 'bklua', lineNumbers: true, indentUnit: 2, tabSize: 2,
       matchBrackets: true, lineWrapping: false,
       extraKeys: {
         'Ctrl-Enter': () => run(), 'Cmd-Enter': () => run(),
@@ -208,7 +210,7 @@ end
     x.drawImage(getAtlas(), (n % 16) * 8, (n >> 4) * 8, 8, 8, 0, 0, 8 * scale, 8 * scale);
     return c;
   }
-  const entEd = MBEntities.init({
+  const entEd = BKEntities.init({
     cart, $, toast, escapeHtml, tileThumb, getAtlas,
     changed: markDirty, ask: (...a) => ask(...a), isActive: () => activeTab === 'entities'
   });
@@ -682,7 +684,7 @@ end
       audioNode.onaudioprocess = ev => {
         const L = ev.outputBuffer.getChannelData(0), R = ev.outputBuffer.getChannelData(1);
         if (!running || settings.muted) { L.fill(0); R.fill(0); return; }
-        const p = RT._mbw_audio(L.length) >> 2, f = RT.HEAPF32;
+        const p = RT._bkw_audio(L.length) >> 2, f = RT.HEAPF32;
         for (let i = 0; i < L.length; i++) { L[i] = f[p + i * 2]; R[i] = f[p + i * 2 + 1]; }
       };
       audioNode.connect(actx.destination);
@@ -708,7 +710,7 @@ end
   }
   function loadCode(code, data) {
     const p = RT.stringToNewUTF8(code), d = RT.stringToNewUTF8(data || '');
-    const rc = RT._mbw_load_ex(d, p);
+    const rc = RT._bkw_load_ex(d, p);
     RT._free(p); RT._free(d);
     return rc;
   }
@@ -719,11 +721,11 @@ end
     syncToRuntime(true);
     mapDirtyRT = false;
     log(`▶ running "${cart.name}"`, 'sys');
-    running = loadCode(getCode(), MBEntities.toLua(cart.entities)) === 0;
+    running = loadCode(getCode(), BKEntities.toLua(cart.entities)) === 0;
     acc = 0; last = performance.now();
     screen.focus();
   }
-  function stop() { running = false; RT._mbw_stop(); log('■ stopped', 'sys'); }
+  function stop() { running = false; RT._bkw_stop(); log('■ stopped', 'sys'); }
   onRuntimeError = msg => {
     running = false;
     overlay.textContent = msg;
@@ -738,7 +740,7 @@ end
   let acc = 0, last = performance.now(), fpsCount = 0, fpsT = last;
   const STEP = 1000 / 60;
   function blit() {
-    const p = RT._mbw_render();
+    const p = RT._bkw_render();
     img.data.set(RT.HEAPU8.subarray(p, p + W * H * 4));
     sctx.putImageData(img, 0, 0);
   }
@@ -751,7 +753,7 @@ end
       let ticks = 0;
       while (acc >= STEP && running) {
         RT.HEAPU8.set(input.press, ptr.press);
-        if (RT._mbw_frame(input.mask, ptr.press) !== 0) running = false;
+        if (RT._bkw_frame(input.mask, ptr.press) !== 0) running = false;
         acc -= STEP; ticks++; fpsCount++;
       }
       if (ticks) blit();
@@ -768,9 +770,9 @@ end
   text("Press Run or Ctrl+Enter", 68, 130, 29)
   text("or try the Demo", 100, 144, 29) end`);
     RT.HEAPU8.fill(0, ptr.press, ptr.press + 12);
-    RT._mbw_frame(0, ptr.press);
+    RT._bkw_frame(0, ptr.press);
     blit();
-    RT._mbw_stop();
+    RT._bkw_stop();
   }
 
   /* ------------------------------------------------------------ cart actions */
@@ -783,8 +785,8 @@ end
     if (activeTab === 'entities') entEd.render();
   }
   function loadDemo() {
-    cart.name = MB_DEMO.name; cart.code = MB_DEMO.code; cart.palette.set(DEFAULT_PAL);
-    MB_DEMO.buildGfx(cart);
+    cart.name = BK_DEMO.name; cart.code = BK_DEMO.code; cart.palette.set(DEFAULT_PAL);
+    BK_DEMO.buildGfx(cart);
     applyCart(); saveLocal();
   }
   $('cartName').addEventListener('input', e => { cart.name = e.target.value || 'untitled'; markDirty(); });
@@ -799,7 +801,7 @@ end
     if (!await ask('Load the demo cart?', 'This replaces the current cart with Sprout Hop. Use Save / share first if you want to keep a copy.', 'Load demo')) return;
     loadDemo(); run();
   };
-  function cartFileName() { return (cart.name || 'cart').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').toLowerCase() + '.mboi'; }
+  function cartFileName() { return (cart.name || 'cart').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').toLowerCase() + '.bitkit'; }
   $('btnSave').onclick = () => {
     saveLocal();
     const text = JSON.stringify(serialize());
@@ -816,7 +818,7 @@ end
     $('mText').value = text;
   };
   $('btnOpen').onclick = () => {
-    modal('Open cart', `<p class="dim">Pick a .mboi file, or paste cart text. This replaces the current cart.</p><textarea id="mText" placeholder="Paste cart text here"></textarea>`, [
+    modal('Open cart', `<p class="dim">Pick a .bitkit file, or paste cart text. This replaces the current cart.</p><textarea id="mText" placeholder="Paste cart text here"></textarea>`, [
       ['Choose file…', () => $('fileOpen').click()],
       ['Load pasted text', () => { try { deserialize(JSON.parse($('mText').value)); applyCart(); saveLocal(); closeModal(); toast('Cart loaded'); } catch (err) { toast('That text is not a cart: ' + err.message); } }, 'primary'],
       ['Cancel', closeModal]]);
@@ -876,7 +878,7 @@ end
       ['btn(b)', 'True while the button is held. b is "left","right","up","down","a","b","x","y","l","r","start","select" or 0-11.'],
       ['btnp(b)', 'True on the frame the button goes down, then repeats while held.'],
       ['btnr(b)', 'True on the frame the button is released.'],
-      ['press(b)', 'How hard the button is pressed, 0-255. Analog triggers (L/R) give the full range. On the handheld L/R (and later ABXY) are Hall-effect sensors.']]],
+      ['press(b)', 'How hard the button is pressed, 0-255. Analog triggers (L/R) give the full range. On PocketBit L/R (and later ABXY) are Hall-effect sensors.']]],
     ['Sound (8 channels, stereo)', [
       ['sfx(note,[wave],[vol],[frames],[ch],[pan],[slide])', 'Play a note like "C4", "F#5" or a MIDI number. wave: 0 square, 1 triangle, 2 saw, 3 noise, 4 sine, 5 thin pulse. vol 0-1, frames = length (60 per second), pan -1..1, slide in Hz per second. Picks a free channel if ch is nil.'],
       ['tone(hz,...)', 'Like sfx but with a frequency in Hz.'],
@@ -910,7 +912,7 @@ end
       ['Map: P / F / I, WASD', 'Paint, fill, pick tile; pan the view (Shift = faster).'],
       ['Keyboard as controller', 'Arrows, Z=A, X=B, A=X, S=Y, Q=L, W=R, Enter=Start, Shift=Select. Click the game screen first.']]]
   ];
-  $('helpBody').innerHTML = `<h2>${APP} API</h2><p class="dim">Lua 5.4. The same runtime (C, compiled to WebAssembly here) runs on the handheld. Carts are deterministic: no clock, no file access, seeded random.</p>` +
+  $('helpBody').innerHTML = `<h2>${APP} API</h2><p class="dim">Lua 5.4. The same runtime (C, compiled to WebAssembly here) runs on the PocketBit handheld. Carts are deterministic: no clock, no file access, seeded random.</p>` +
     HELP.map(([h, rowsH]) => `<h3>${h}</h3><table>${rowsH.map(([a, b]) => `<tr><td>${escapeHtml(a)}</td><td>${escapeHtml(b)}</td></tr>`).join('')}</table>`).join('');
 
   /* ------------------------------------------------------------ start */
@@ -918,7 +920,7 @@ end
   $('appName').textContent = APP;
   let restored = false;
   try { const s = lsGet(LS.cart); if (s) { deserialize(JSON.parse(s)); restored = true; } } catch (e) { log('Saved cart was unreadable, starting fresh', 'sys'); }
-  if (!restored) { cart.name = MB_DEMO.name; cart.code = MB_DEMO.code; MB_DEMO.buildGfx(cart); }
+  if (!restored) { cart.name = BK_DEMO.name; cart.code = BK_DEMO.code; BK_DEMO.buildGfx(cart); }
   applyCart();
   log(`${APP} Studio ready. ${restored ? 'Restored your last cart.' : 'Loaded the demo cart.'} Press Run (Ctrl+Enter).`, 'sys');
   showTab(lsGet(LS.settings + '.tab') || 'code');
@@ -926,7 +928,7 @@ end
   requestAnimationFrame(frame);
 
   // expose for tests / debugging
-  window.mbStudio = { cart, run, stop, input, RT, isRunning: () => running };
+  window.bkStudio = { cart, run, stop, input, RT, isRunning: () => running };
 })().catch(e => {
   document.body.innerHTML = `<pre style="color:#ff6b5e;padding:20px">Studio failed to start: ${e && e.stack || e}</pre>`;
 });

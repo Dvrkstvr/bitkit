@@ -1,6 +1,6 @@
-/* MiniBoi Studio: entity maker (sprites, animations, behavior trees). MIT License. */
+/* BitKit Studio: entity maker (sprites, animations, behavior trees). MIT License. */
 'use strict';
-window.MBEntities = (function () {
+window.BKEntities = (function () {
   // Behavior tree node catalog. p: [key, kind, default, unit]
   const NODES = {
     selector: { g: 'Flow', label: 'Try each, first that works', kids: 'many', help: 'Runs children top to bottom and stops at the first one that succeeds.' },

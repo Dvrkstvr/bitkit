@@ -87,7 +87,7 @@ select { background: var(--panel2); border: 1px solid var(--line); border-radius
 .CodeMirror-matchingbracket { color: var(--warn) !important; text-decoration: underline; }
 .cm-keyword { color: #c06bd0; } .cm-builtin { color: #6ec3f0; } .cm-variable-2 { color: #bff0ff; }
 .cm-string { color: #8ad35a; } .cm-number { color: #f08a4b; } .cm-comment { color: #6c6a88; font-style: italic; }
-.cm-variable { color: #e6e4f0; } .cm-def { color: #ffd23f; } .cm-mb-api { color: #6ec3f0; font-weight: 600; }
+.cm-variable { color: #e6e4f0; } .cm-def { color: #ffd23f; } .cm-bk-api { color: #6ec3f0; font-weight: 600; }
 .cm-error-line { background: rgba(255, 80, 70, .18); }
 
 .toolbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0; }

@@ -1,13 +1,12 @@
-# MiniBoi
+# BitKit
 
-A DIY handheld game console (ESP32-S3, 320x240) with a browser studio for making games in Lua.
-The same C runtime runs on the device and, compiled to WebAssembly, in the browser.
-
-> "MiniBoi" is a working name. To rename, change `APP` in `studio/studio.js` and the titles in `studio/index.html`.
+BitKit is the game runtime and browser studio for **PocketBit**, a DIY handheld game console (ESP32-S3, 320x240).
+Make games in Lua in the browser, test them with a controller, and run the same carts on the device:
+the same C runtime runs on PocketBit and, compiled to WebAssembly, in the browser.
 
 ## Try it
 
-Open `dist/miniboi-studio.html` in Chrome, Edge or Firefox. It is one self-contained file and works offline.
+Open `dist/bitkit-studio.html` in Chrome, Edge or Firefox. It is one self-contained file and works offline.
 Plug in a controller and press any button on it so the browser sees it.
 
 For development, serve the `studio/` folder:
@@ -24,17 +23,17 @@ cd studio && python3 -m http.server 8000   # then open http://localhost:8000
 - **Studio** (`studio/`): code editor (CodeMirror) with Run and error-line highlighting, sprite editor
   (pen/fill/pick, 8/16/32 px, flip/rotate/copy/paste, flags, palette editing), map editor (paint/fill/pick, pan, screen guides),
   controller page (live `btn()`/`press()` view, remapping, threshold and deadzone), API help.
-  Carts autosave in the browser and save/load as `.mboi` files (JSON).
+  Carts autosave in the browser and save/load as `.bitkit` files (JSON).
 - **Entities**: an Entities tab to make enemies, NPCs, projectiles, buttons and doors: sprite size, animations
   (idle/walk/jump play automatically), team, HP, touch damage, and a behavior tree (flow, checks, sensors, actions) with presets.
-  Place them on the map's Entities layer. The entity system is Lua built into the runtime (`runtime/mb_entities.lua`), so it runs the same on the device.
+  Place them on the map's Entities layer. The entity system is Lua built into the runtime (`runtime/bk_entities.lua`), so it runs the same on the device.
 - **Sensors and events**: `raycast`, `circlecast`, touch events, damage with teams and i-frames, `on`/`emit` events
   that behavior trees can send and hear.
 - **Demo cart**: "Sprout Hop", a small platformer: analog run on R, pebbles on B, stompable slugs and bees, a seed-shooting flower, talking NPCs, and a pressure button that opens a gate.
 
 ## Controls
 
-| MiniBoi | Gamepad (standard mapping) | Keyboard |
+| PocketBit | Gamepad (standard mapping) | Keyboard |
 |---|---|---|
 | D-pad | D-pad or left stick | Arrow keys |
 | A / B / X / Y | South / East / West / North face buttons | Z / X / A / S |
@@ -54,13 +53,13 @@ Needs [Emscripten](https://emscripten.org/docs/getting_started/downloads.html).
 ```sh
 ./build.sh                      # -> studio/runtime.js (WASM inlined)
 node tools/smoke.mjs            # headless runtime test
-python3 tools/bundle.py dist/miniboi-studio.html
+python3 tools/bundle.py dist/bitkit-studio.html
 ```
 
 ## Layout
 
 ```
-runtime/        C core shared by device and web (mb.h, mb_core.c, mb_lua.c, mb_font.h)
+runtime/        C core shared by device and web (bk.h, bk_core.c, bk_lua.c, bk_font.h)
 platform/web/   Emscripten host glue
 studio/         Browser studio (plain HTML/JS, no build step)
 third_party/    Lua 5.4.7 (MIT)

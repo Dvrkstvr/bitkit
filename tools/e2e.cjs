@@ -12,7 +12,7 @@ const { chromium } = require('playwright');
     navigator.getGamepads = () => [window.__pad];
   });
   await pg.goto(process.argv[3] || 'http://localhost:8765/index.html');
-  await pg.waitForFunction(() => window.mbStudio);
+  await pg.waitForFunction(() => window.bkStudio);
   await pg.screenshot({ path: process.argv[2] + '/boot.png' });
   await pg.click('#btnRun');
   // hold right on d-pad + R trigger half
@@ -21,7 +21,7 @@ const { chromium } = require('playwright');
   await pg.evaluate(() => { __pad.buttons[0] = { pressed: true, value: 1 }; });
   await pg.waitForTimeout(300);
   await pg.screenshot({ path: process.argv[2] + '/run.png' });
-  console.log('running', await pg.evaluate(() => mbStudio.isRunning()), 'press', await pg.evaluate(() => [...mbStudio.input.press].join(',')));
+  console.log('running', await pg.evaluate(() => bkStudio.isRunning()), 'press', await pg.evaluate(() => [...bkStudio.input.press].join(',')));
   for (const t of ['sprites', 'map', 'entities', 'input', 'help']) {
     await pg.click(`.tabs button[data-tab=${t}]`);
     await pg.waitForTimeout(200);
@@ -30,7 +30,7 @@ const { chromium } = require('playwright');
   await pg.click('.tabs button[data-tab=entities]'); await pg.click('.ent-item:nth-child(3)'); await pg.waitForTimeout(150); await pg.screenshot({ path: process.argv[2] + '/ent-flower.png' });
   await pg.click('.tabs button[data-tab=map]'); await pg.selectOption('#mapLayer', 'ents'); await pg.evaluate(() => { const k = new KeyboardEvent('keydown', {key: 'd', shiftKey: true, bubbles: true}); const mv = document.getElementById('mapView'); mv.focus(); for (let i = 0; i < 7; i++) mv.dispatchEvent(k); }); await pg.waitForTimeout(100); await pg.screenshot({ path: process.argv[2] + '/map-ents.png' });
   await pg.click('#btnSave'); await pg.waitForTimeout(200); await pg.screenshot({ path: process.argv[2] + '/save.png' }); await pg.keyboard.press('Escape');
-  await pg.click('#btnDemo'); await pg.click('.m-buttons .primary'); await pg.waitForTimeout(300); console.log('demo running', await pg.evaluate(() => mbStudio.isRunning()));
+  await pg.click('#btnDemo'); await pg.click('.m-buttons .primary'); await pg.waitForTimeout(300); console.log('demo running', await pg.evaluate(() => bkStudio.isRunning()));
   // error path
   await pg.click('.tabs button[data-tab=code]');
   await pg.evaluate(() => { document.querySelector('.CodeMirror').CodeMirror.setValue('function _draw()\n  cls(1)\n  foo()\nend'); });

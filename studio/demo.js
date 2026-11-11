@@ -1,6 +1,6 @@
 /* Demo cart "Sprout Hop": original art and code. MIT License. */
 (function () {
-  const code = `-- Sprout Hop: a tiny MiniBoi demo
+  const code = `-- Sprout Hop: a tiny BitKit demo
 -- Move: d-pad / left stick    Jump: A (hold for higher)
 -- Run: squeeze R (analog!)    Throw a pebble: B
 -- Stomp or pelt the critters, step on the red button to open the gate,
@@ -271,5 +271,5 @@ end
     place('guide', 73); place('button', 77); place('gate', 82, 0, 4);
   }
 
-  window.MB_DEMO = { name: 'Sprout Hop', code, buildGfx };
+  window.BK_DEMO = { name: 'Sprout Hop', code, buildGfx };
 })();
