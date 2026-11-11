@@ -112,6 +112,7 @@ int bk_cart_load(bk_cart *c, const char *path, int what, const bk_cart_mem *mem,
   c->name = bk_json_str(c->root, "name", "untitled");
   c->code = bk_json_str(c->root, "code", "");
   c->entities_lua = bk_json_str(c->root, "entities_lua", "");
+  c->builtin = bk_json_bool(c->root, "builtin", 0);
   const bk_json *app = bk_json_get(c->root, "app");
   if (app && app->type == BJ_OBJ) {
     c->is_app = 1;

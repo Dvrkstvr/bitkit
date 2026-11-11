@@ -10,6 +10,7 @@
 
 typedef struct {
   const char *home_lua;          /* path of the home screen cart (sys/home.lua) */
+  const char *boot_lua;          /* the theme's power-on animation (sys/boot.lua), or NULL */
   const char *game_dirs[4];      /* folders with .bitkit games, in order (first wins on equal names); NULL ends */
   const char *app_dirs[2];       /* folders with the Bit's apps */
   const char *save_dir;          /* save files: <save_dir>/<name>.sav */
@@ -25,8 +26,11 @@ typedef struct {
 } bk_host_config;
 
 typedef struct {
-  char look[16];                 /* screen look over every game ("game" = the game's own) */
+  char look[16];                 /* screen look over every game ("game" = the game's own, "theme" = the theme's) */
   int strength, bright, volume;  /* 0..10 */
+  char name[16], bit[20];        /* the owner's name and the Bit's name (Settings app, USER page) */
+  int color;                     /* the owner's colour, a palette index */
+  char theme_look[16], theme_boot[12], boottext[24];   /* from the "Bit theme" save (docs/THEMES.md) */
 } bk_bit_settings;
 
 int  bk_host_init(const bk_host_config *cfg);       /* scan the games, read the settings, boot the home screen */
@@ -40,7 +44,7 @@ int  bk_host_backlight(void);                        /* 0..1000 duty per mille, 
 const bk_bit_settings *bk_host_settings(void);
 
 /* state, for tests and the serial console */
-const char *bk_host_playing(void);                   /* "home", a game's name, or "error" */
+const char *bk_host_playing(void);                   /* "boot", "home", a game's name, or "error" */
 int  bk_host_games(void);                            /* entries on the home screen (games then apps) */
 const char *bk_host_game_name(int i);
 int  bk_host_paused_count(void);

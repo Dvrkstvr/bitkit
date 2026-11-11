@@ -76,9 +76,10 @@ static int count_files(const char *dir, const char *ext) {
 static void write_file(const char *path, const char *text) { FILE *f = fopen(path, "wb"); if (f) { fputs(text, f); fclose(f); } }
 
 static bk_host_config cfg;
-static char p_home[512], p_carts[512], p_apps[512], p_saves[512], p_extra[512], p_caps[512];
+static char p_boot[512], p_home[512], p_carts[512], p_apps[512], p_saves[512], p_extra[512], p_caps[512];
 static void setup(const char *flash, const char *data) {
   snprintf(p_home, sizeof(p_home), "%s/sys/home.lua", flash);
+  snprintf(p_boot, sizeof(p_boot), "%s/sys/boot.lua", flash);
   snprintf(p_carts, sizeof(p_carts), "%s/carts", flash);
   snprintf(p_apps, sizeof(p_apps), "%s/apps", flash);
   snprintf(p_saves, sizeof(p_saves), "%s/saves", data);
@@ -87,6 +88,7 @@ static void setup(const char *flash, const char *data) {
   mkdir(data, 0755); mkdir(p_saves, 0755); mkdir(p_extra, 0755); mkdir(p_caps, 0755);
   memset(&cfg, 0, sizeof(cfg));
   cfg.home_lua = p_home;
+  cfg.boot_lua = p_boot;
   cfg.game_dirs[0] = p_extra; cfg.game_dirs[1] = p_carts;
   cfg.app_dirs[0] = p_apps;
   cfg.save_dir = p_saves;
@@ -125,8 +127,10 @@ int main(int argc, char **argv) {
     }
     snprintf(p, sizeof(p), "%s/zz-broken.bitkit", p_extra); remove(p); }
 
-  /* 1. boot: home screen with every game and app */
+  /* 1. boot: the theme's animation, then the home screen with every game and app */
   if (bk_host_init(&cfg)) { FAIL("host did not start"); return 1; }
+  if (strcmp(bk_host_playing(), "boot")) FAIL("did not start with the theme's boot animation (%s)", bk_host_playing());
+  for (int i = 0; i < 600 && !strcmp(bk_host_playing(), "boot"); i++) tick(0);
   const int ngames = count_files(p_carts, ".bitkit"), napps = count_files(p_apps, ".bitkit");
   if (strcmp(bk_host_playing(), "home")) FAIL("did not boot into the home screen (%s)", bk_host_playing());
   if (bk_host_games() != ngames + napps) FAIL("home screen lists %d entries, expected %d games + %d apps", bk_host_games(), ngames, napps);
@@ -210,18 +214,25 @@ int main(int argc, char **argv) {
   int settings = find_game("Settings");
   if (settings) {
     bk_host_launch(settings); ticks(2, 0);
-    bk_host_eval("save({look = 'sepia', strength = 10, bright = 4, volume = 5})"); ticks(2, 0);
+    bk_host_eval("save({look = 'sepia', strength = 10, bright = 4, volume = 5, name = 'Ada', color = 12, bit = 'Moss'})"); ticks(2, 0);
     const bk_bit_settings *s = bk_host_settings();
     if (strcmp(s->look, "sepia") || s->bright != 4 || s->volume != 5) FAIL("Bit settings not read after the Settings app saved them (%s %d %d)", s->look, s->bright, s->volume);
     if (bk_host_backlight() != 610) FAIL("backlight for brightness 4 is %d per mille, expected 610", bk_host_backlight());
     bk_host_go_home();
     bk_host_init(&cfg);
     if (strcmp(bk_host_settings()->look, "sepia")) FAIL("Bit settings were not kept after a restart");
+    for (int i = 0; i < 600 && !strcmp(bk_host_playing(), "boot"); i++) tick(0);   /* any button skips it; it ends by itself too */
+    /* the owner's name reaches games (player_name) */
+    bk_host_launch(1); ticks(2, 0);
+    bk_host_eval("print('who', player_name(1))");
+    const char *who = find_log("who");
+    if (!who || strcmp(who, "who\tAda")) FAIL("player_name(1) on the device: %s (expected Ada)", who ? who : "nothing");
     /* the look goes over the picture, not into the game's own display{} */
     ticks(5, 0);
     int32_t own = BK->display.sat;
     bk_host_present_begin(); uint16_t a[BK_W]; bk_present_rgb565(a, 120, 121);
     if (BK->display.sat != own) FAIL("the Bit's look changed the game's own display values");
+    bk_host_go_home(); bk_host_launch(settings); ticks(2, 0);
     bk_host_eval("save({look = 'game', strength = 10, bright = 10, volume = 10})");
   } else FAIL("the Settings app is not on the Bit");
 
@@ -229,6 +240,7 @@ int main(int argc, char **argv) {
   { char p[600]; snprintf(p, sizeof(p), "%s/zz-broken.bitkit", p_extra);
     write_file(p, "{\"format\":\"bitkit-cart\",\"version\":1,\"name\":\"Broken\",\"code\":\"function _update() if t() == 5 then error('boom') end end\",\"entities_lua\":\"\"}"); }
   bk_host_init(&cfg);
+  for (int i = 0; i < 600 && !strcmp(bk_host_playing(), "boot"); i++) tick(0);
   int broken = find_game("Broken");
   if (!broken) FAIL("a game from the second folder is not listed");
   else {

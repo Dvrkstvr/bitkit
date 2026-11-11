@@ -95,6 +95,7 @@ void app_main(void) {
 
   static bk_host_config cfg;
   cfg.home_lua = "/flash/sys/home.lua";
+  cfg.boot_lua = "/flash/sys/boot.lua";
   int g = 0;
   if (stor.sd) cfg.game_dirs[g++] = "/sdcard/games";   /* your games first: one with the same name as a built-in wins */
   cfg.game_dirs[g++] = "/flash/carts";

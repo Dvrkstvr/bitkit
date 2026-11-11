@@ -1,7 +1,8 @@
 // Exports everything the studio's Bit plays, as files the PocketBit firmware reads from its memory:
 //   carts/NN-name.bitkit   every built-in game, in the same format the studio saves (Save → Download)
 //   apps/NN-name.bitkit    the Bit's apps (Hexbeat, Loopbox, Settings...) with their icon, line and save file
-//   sys/home.lua           the home screen cart
+//   sys/home.lua           the home screen cart (with the theme code, studio/themes.js, in front)
+//   sys/boot.lua           the theme's power-on animation
 // Usage: node tools/export_device.cjs [out dir]   (default platform/esp32s3/flash, which the firmware build
 // packs into the internal flash). MIT License.
 const fs = require('fs'), path = require('path');
@@ -9,7 +10,7 @@ global.window = {};
 const ROOT = path.join(__dirname, '..');
 // the same files, in the same order, as studio/index.html (the ones that register games, apps and tools)
 for (const f of ['demo', 'windrow', 'harbour', 'sweep', 'tracks', 'kart', 'crossgate', 'tinwing', 'deepglow', 'music', 'hexbeat',
-  'loopbox', 'bitapps', 'puffball', 'hedgehogs', 'cauldron', 'entities', 'cutscenes', 'home', 'rules']) {
+  'loopbox', 'bitapps', 'themes', 'puffball', 'hedgehogs', 'cauldron', 'entities', 'cutscenes', 'home', 'rules']) {
   const file = path.join(ROOT, 'studio', f + '.js');
   if (fs.existsSync(file)) eval(fs.readFileSync(file, 'utf8'));
 }
@@ -58,7 +59,7 @@ require(path.join(ROOT, 'studio/runtime.js'))({ onLog: () => {} }).then(M => {
     d.buildGfx(c);
     if (!c.levels || !c.levels.length) c.levels = [{ name: 'Level 1', w: MAPW, h: MAPH, map: c.map, placed: c.entities.placed }];
     if (window.BKTracks && window.BKTracks.beforeRun) window.BKTracks.beforeRun(c);   // track carts: edge tiles from the road segments
-    write(`carts/${nn(i)}-${slug(d.name)}.bitkit`, JSON.stringify(serialize(c)));
+    write(`carts/${nn(i)}-${slug(d.name)}.bitkit`, JSON.stringify(Object.assign(serialize(c), { builtin: true })));   // builtin: the home screen shows no file name, as in the studio
   });
   (window.BK_APPS || []).forEach((a, i) => {
     const c = blank(a.name, a.code);
@@ -66,9 +67,12 @@ require(path.join(ROOT, 'studio/runtime.js'))({ onLog: () => {} }).then(M => {
     const icon = new Uint8Array(256);
     for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) icon[y * 16 + x] = (a.icon[y] || [])[x] || 0;
     const o = serialize(c);
+    o.builtin = true;
     o.app = { icon: b64(icon), sub: a.sub || '', saveKey: a.saveKey || a.name, settings: !!a.settings };
     write(`apps/${nn(i)}-${slug(a.name)}.bitkit`, JSON.stringify(o));
   });
-  write('sys/home.lua', window.BK_HOME);
+  const LIB = window.BKThemes ? window.BKThemes.LIB : '';
+  write('sys/home.lua', LIB + window.BK_HOME);
+  if (window.BKThemes && window.BKThemes.BOOT) write('sys/boot.lua', LIB + window.BKThemes.BOOT);
   console.log(`exported ${demos.length} games, ${(window.BK_APPS || []).length} apps and the home screen to ${path.relative(process.cwd(), out) || '.'} (${(bytes / 1024).toFixed(0)} KB)`);
 });

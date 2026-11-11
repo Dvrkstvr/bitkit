@@ -12,12 +12,12 @@
 
 #define MAXSLOT 12
 #define MAXGAMES 96
-enum { MODE_HOME, MODE_GAME, MODE_ERROR };
+enum { MODE_HOME, MODE_GAME, MODE_ERROR, MODE_BOOT };
 static const uint16_t START = 1u << BK_START, SELECT = 1u << BK_SELECT;
 
 typedef struct {
   char path[200], name[64], sub[48], save_key[64];
-  int is_app, has_icon;
+  int is_app, has_icon, builtin;
   uint8_t icon[256];
 } entry;
 
@@ -42,7 +42,9 @@ static int mode = MODE_HOME, sel = 1, combo_held, nslots;
 static uint32_t stamp;
 static char *home_code;
 static char errmsg[600];
-static bk_bit_settings bs = { "game", 10, 10, 10 };
+static bk_bit_settings bs;
+static char *theme_raw;   /* the "Bit theme" save, checked to be a Lua table, for the home screen and boot */
+static char *boot_code;
 static float abuf[2 * 2048];
 static uint16_t err_last;
 
@@ -154,6 +156,7 @@ static void put_save(const char *key) {
 }
 
 static void read_settings(const char *data, size_t len);
+static void read_theme(const char *data, size_t len);
 static void take_save(void) {
   if (!cur || !BK->save.dirty) return;
   BK->save.dirty = 0;
@@ -170,39 +173,74 @@ static void take_save(void) {
   if (ok) { remove(p); ok = rename(tmp, p) == 0; }   /* a half-written save never replaces a good one */
   if (!ok) say("could not write a save file", 1);
   if (!strcmp(cur->save_key, "Bit settings")) read_settings(BK->save.data, (size_t)BK->save.len);
+  if (!strcmp(cur->save_key, "Bit theme")) read_theme(BK->save.data, (size_t)BK->save.len);
 }
 
-/* ------------------------------------------------------------ the Bit's settings ("Bit settings" save file) */
+/* ------------------------------------------------------------ the Bit's settings ("Bit settings") and theme ("Bit theme") */
+static void str_field(lua_State *l, const char *k, char *out, size_t n) {
+  if (lua_getfield(l, -1, k) == LUA_TSTRING) snprintf(out, n, "%s", lua_tostring(l, -1));
+  lua_pop(l, 1);
+}
+/* a save file's text as a Lua table on top of l's stack; 0 when it isn't one */
+static int lua_table_of(lua_State *l, const char *data, size_t len) {
+  luaL_Buffer b;
+  luaL_buffinit(l, &b);
+  luaL_addstring(&b, "return ");
+  luaL_addlstring(&b, data, len);
+  luaL_pushresult(&b);
+  const char *src = lua_tostring(l, -1);
+  return luaL_loadbufferx(l, src, strlen(src), "=save", "t") == LUA_OK && lua_pcall(l, 0, 1, 0) == LUA_OK && lua_istable(l, -1);
+}
 static void read_settings(const char *data, size_t len) {
-  bk_bit_settings n = { "game", 10, 10, 10 };
+  bk_bit_settings n = bs;
+  snprintf(n.look, sizeof(n.look), "theme"); n.strength = n.bright = n.volume = 10; n.color = 27; n.name[0] = n.bit[0] = 0;
   lua_State *l = luaL_newstate();
-  if (l) {
-    luaL_Buffer b;
-    luaL_buffinit(l, &b);
-    luaL_addstring(&b, "return ");
-    luaL_addlstring(&b, data, len);
-    luaL_pushresult(&b);
-    const char *src = lua_tostring(l, -1);
-    if (luaL_loadbufferx(l, src, strlen(src), "=settings", "t") == LUA_OK && lua_pcall(l, 0, 1, 0) == LUA_OK && lua_istable(l, -1)) {
-      if (lua_getfield(l, -1, "look") == LUA_TSTRING) snprintf(n.look, sizeof(n.look), "%s", lua_tostring(l, -1));
+  if (l && data && lua_table_of(l, data, len)) {
+    str_field(l, "look", n.look, sizeof(n.look));
+    str_field(l, "name", n.name, sizeof(n.name));
+    str_field(l, "bit", n.bit, sizeof(n.bit));
+    const char *k[4] = { "strength", "bright", "volume", "color" };
+    int *v[4] = { &n.strength, &n.bright, &n.volume, &n.color };
+    for (int i = 0; i < 4; i++) {
+      if (lua_getfield(l, -1, k[i]) == LUA_TNUMBER) { int x = (int)lua_tointeger(l, -1); *v[i] = x < 0 ? 0 : x > (i == 3 ? 255 : 10) ? (i == 3 ? 255 : 10) : x; }
       lua_pop(l, 1);
-      const char *k[3] = { "strength", "bright", "volume" };
-      int *v[3] = { &n.strength, &n.bright, &n.volume };
-      for (int i = 0; i < 3; i++) {
-        if (lua_getfield(l, -1, k[i]) == LUA_TNUMBER) { int x = (int)lua_tointeger(l, -1); *v[i] = x < 0 ? 0 : x > 10 ? 10 : x; }
-        lua_pop(l, 1);
-      }
     }
-    lua_close(l);
+    if (!n.color) n.color = 27;
   }
+  if (l) lua_close(l);
   bs = n;
 }
-static void load_settings(void) {
-  char p[260]; size_t len = 0;
-  save_path(p, sizeof(p), "Bit settings");
-  char *d = read_file(p, &len);
-  if (d) { read_settings(d, len); free_(d); }
+static void read_theme(const char *data, size_t len) {
+  snprintf(bs.theme_look, sizeof(bs.theme_look), "game"); snprintf(bs.theme_boot, sizeof(bs.theme_boot), "rise"); bs.boottext[0] = 0;
+  free_(theme_raw); theme_raw = NULL;
+  lua_State *l = luaL_newstate();
+  if (l && data && lua_table_of(l, data, len)) {
+    if (lua_getfield(l, -1, "theme") == LUA_TTABLE) {
+      str_field(l, "look", bs.theme_look, sizeof(bs.theme_look));
+      str_field(l, "boot", bs.theme_boot, sizeof(bs.theme_boot));
+      str_field(l, "boottext", bs.boottext, sizeof(bs.boottext));
+      if ((theme_raw = malloc_(len + 1))) { memcpy(theme_raw, data, len); theme_raw[len] = 0; }
+    }
+  }
+  if (l) lua_close(l);
 }
+static void load_file_save(const char *key, void (*fn)(const char *, size_t)) {
+  char p[260]; size_t len = 0;
+  save_path(p, sizeof(p), key);
+  char *d = read_file(p, &len);
+  fn(d, d ? len : 0);
+  free_(d);
+}
+static void load_settings(void) { load_file_save("Bit settings", read_settings); load_file_save("Bit theme", read_theme); }
+
+/* `theme = ...` for the home screen and boot data: the saved theme (theme_fix() in the cart fills in the rest) */
+static void theme_lua(char *out, size_t n) {
+  if (!theme_raw) { snprintf(out, n, "nil"); return; }
+  snprintf(out, n, "(%s).theme", theme_raw);
+}
+/* the screen look the Bit puts over games: the Settings app's, or the theme's */
+static const char *bit_look(void) { return strcmp(bs.look, "theme") ? bs.look : bs.theme_look; }
+static void upper(char *s) { for (; *s; s++) if (*s >= 'a' && *s <= 'z') *s = (char)(*s - 32); }
 
 /* ------------------------------------------------------------ the library */
 static int cmp_str(const void *a, const void *b) { return strcmp(*(char *const *)a, *(char *const *)b); }
@@ -233,6 +271,7 @@ static void scan_dir(const char *dir, int apps) {
           snprintf(e->save_key, sizeof(e->save_key), "%s", c.save_key ? c.save_key : c.name);
           e->is_app = apps || c.is_app;
           e->has_icon = c.has_icon;
+          e->builtin = c.builtin;
           memcpy(e->icon, c.icon, 256);
           nE++;
         }
@@ -284,7 +323,7 @@ static void boot_home(void) {
   if (!s) { show_error("out of memory for the home screen"); return; }
   home_slot = s; cur = s; mode = MODE_HOME;
   static const int COLORS[8] = { 3, 8, 15, 20, 25, 4, 9, 16 };
-  size_t cap = 512 + (size_t)nE * 220, len = 0;
+  size_t cap = 1024 + (size_t)nE * 220 + (theme_raw ? strlen(theme_raw) : 0), len = 0;
   char *bit = malloc_(cap);
   if (!bit) { show_error("out of memory for the home screen"); return; }
   len += (size_t)snprintf(bit + len, cap - len, "BIT = { games = {");
@@ -297,7 +336,7 @@ static void boot_home(void) {
     char nm[140], file[220], sub[110];
     lua_str(nm, sizeof(nm), e->name);
     const char *base = strrchr(e->path, '/');
-    lua_str(file, sizeof(file), base ? base + 1 : e->path);
+    lua_str(file, sizeof(file), e->builtin ? "" : base ? base + 1 : e->path);
     lua_str(sub, sizeof(sub), e->sub);
     len += (size_t)snprintf(bit + len, cap - len, "%s{name=%s, file=%s, studio=false, paused=%s, ", i ? "," : "", nm, file, paused_slot(i + 1) ? "true" : "false");
     if (e->has_icon || e->is_app) len += (size_t)snprintf(bit + len, cap - len, "icon=%d", slotTile);
@@ -308,12 +347,40 @@ static void boot_home(void) {
   char src[80];
   lua_str(src, sizeof(src), C.source ? C.source : "");
   if (sel > nE) sel = 1;
-  snprintf(bit + len, cap - len, "}, sel = %d, studio = false, link = %s, source = %s }", sel < 1 ? 1 : sel, C.link ? "true" : "false", src);
+  char nm[40], bn[48];
+  lua_str(nm, sizeof(nm), bs.name); lua_str(bn, sizeof(bn), bs.bit);
+  len += (size_t)snprintf(bit + len, cap - len, "}, sel = %d, studio = false, link = %s, source = %s, me = {name = %s, color = %d, bit = %s}, theme = ",
+    sel < 1 ? 1 : sel, C.link ? "true" : "false", src, nm, bs.color, bn);
+  theme_lua(bit + len, cap - len);
+  len += strlen(bit + len);
+  snprintf(bit + len, cap - len, " }");
   bk_lua_set_alloc(lua_alloc, s);
   BK->players = 1; BK->me = 0;
   int rc = bk_lua_load_ex(bit, home_code ? home_code : "function _draw() cls(1) text(\"no home screen\", 8, 8, 7) end");
   free_(bit);
   if (rc) show_error(bk_lua_error());
+}
+
+/* the theme's power-on animation; it calls home() when it is done or a button is pressed */
+static void boot_anim(void) {
+  if (!boot_code || !strcmp(bs.theme_boot, "none")) { boot_home(); return; }
+  slot *s = new_slot(-1);
+  if (!s) { boot_home(); return; }
+  home_slot = s; cur = s; mode = MODE_BOOT;
+  char title[48], sub[48], t[64], u[64];
+  snprintf(t, sizeof(t), "%s", bs.boottext[0] ? bs.boottext : bs.bit[0] ? bs.bit : "PocketBit"); upper(t);
+  if (bs.name[0]) { snprintf(u, sizeof(u), "%s'S BIT", bs.name); upper(u); } else u[0] = 0;
+  lua_str(title, sizeof(title), t); lua_str(sub, sizeof(sub), u);
+  size_t cap = 256 + (theme_raw ? strlen(theme_raw) : 0);
+  char *data = malloc_(cap);
+  if (!data) { boot_home(); return; }
+  int n = snprintf(data, cap, "BOOT = { title = %s, sub = %s, theme = ", title, sub);
+  theme_lua(data + n, cap - (size_t)n);
+  strncat(data, " }", cap - strlen(data) - 1);
+  bk_lua_set_alloc(lua_alloc, s);
+  int rc = bk_lua_load_ex(data, boot_code);
+  free_(data);
+  if (rc) { say(bk_lua_error(), 1); slot_close(s); boot_home(); }
 }
 
 /* ------------------------------------------------------------ games */
@@ -333,10 +400,14 @@ static int start_game(int n, const char *extra) {
   BK->players = 1; BK->me = 0; BK->net.id = 0;
   snprintf(s->save_key, sizeof(s->save_key), "%s", e->save_key[0] ? e->save_key : s->cart.name);
   put_save(s->save_key);
-  size_t el = strlen(s->cart.entities_lua), xl = extra ? strlen(extra) : 0;
-  char *data = malloc_(el + xl + 1);
+  /* NAMES / NAME_COLORS (player_name()): on one Bit, player 1 is the owner */
+  char names[96], nm[40];
+  lua_str(nm, sizeof(nm), bs.name);
+  snprintf(names, sizeof(names), "NAMES = {%s}\nNAME_COLORS = {%d}\n", nm, bs.color);
+  size_t el = strlen(s->cart.entities_lua), xl = extra ? strlen(extra) : 0, nl = strlen(names);
+  char *data = malloc_(el + xl + nl + 1);
   if (!data) { show_error("not enough memory to start the game"); return 1; }
-  memcpy(data, extra ? extra : "", xl); memcpy(data + xl, s->cart.entities_lua, el + 1);
+  memcpy(data, names, nl); memcpy(data + nl, extra ? extra : "", xl); memcpy(data + nl + xl, s->cart.entities_lua, el + 1);
   bk_lua_set_alloc(lua_alloc, s);
   char m[100]; snprintf(m, sizeof(m), "playing \"%s\"", e->name); say(m, 0);
   int rc = bk_lua_load_ex(data, s->cart.code);
@@ -480,7 +551,7 @@ static void handle_requests(void) {
   BK->sys[0] = 0;
   switch (cmd) {
     case 1: if (mode == MODE_HOME) bk_host_launch(arg); break;
-    case 2: if (mode == MODE_GAME) bk_host_go_home(); break;
+    case 2: if (mode == MODE_GAME) bk_host_go_home(); else if (mode == MODE_BOOT) boot_home(); break;
     case 3: say("Y edits a game in the studio, not on the Bit", 0); break;
     case 4: if (mode == MODE_GAME && cur->has_cart && arg >= 1 && arg <= cur->cart.nlevels) { memcpy(BK->map, cur->cart.maps[arg - 1], sizeof(BK->map)); cur->level = arg - 1; } break;
     case 5: if (mode == MODE_GAME) restart_game(arg); break;
@@ -506,9 +577,9 @@ void bk_host_audio(int16_t *out, int frames) {
 }
 
 void bk_host_present_begin(void) {
-  if (strcmp(bs.look, "game") && mode != MODE_ERROR) {   /* the Bit's look goes over the game's own, only while drawing */
+  if (strcmp(bit_look(), "game") && mode != MODE_ERROR) {   /* the Bit's look goes over the game's own, only while drawing */
     __typeof__(BK->display) keep = BK->display;
-    if (bk_display_preset(bs.look)) {
+    if (bk_display_preset(bit_look())) {
       int32_t *v = &BK->display.scan;
       for (int i = 0; i < 10; i++) v[i] = (int32_t)lround(v[i] * (bs.strength / 10.0));
     }
@@ -522,7 +593,7 @@ void bk_host_present_begin(void) {
 void bk_host_restart(int how) { if (mode == MODE_GAME) restart_game(how); }
 int bk_host_backlight(void) { return (int)lround((0.35 + bs.bright * 0.065) * 1000); }
 const bk_bit_settings *bk_host_settings(void) { return &bs; }
-const char *bk_host_playing(void) { return mode == MODE_ERROR ? "error" : mode == MODE_HOME ? "home" : cur ? E[cur->game - 1].name : "?"; }
+const char *bk_host_playing(void) { return mode == MODE_BOOT ? "boot" : mode == MODE_ERROR ? "error" : mode == MODE_HOME ? "home" : cur ? E[cur->game - 1].name : "?"; }
 int bk_host_games(void) { return nE; }
 const char *bk_host_game_name(int i) { return i >= 1 && i <= nE ? E[i - 1].name : NULL; }
 int bk_host_paused_count(void) { return paused_count(); }
@@ -535,8 +606,8 @@ void bk_host_shutdown(void) {
   for (int i = 0; i < MAXSLOT; i++) if (S[i].used && &S[i] != cur) slot_close(&S[i]);
   if (cur) slot_close(cur);
   BK = sysm; bk_lua_close();
-  free_(E); free_(sysm); free_(home_code);
-  E = NULL; sysm = NULL; home_code = NULL; nE = 0; cur = home_slot = NULL;
+  free_(E); free_(sysm); free_(home_code); free_(boot_code); free_(theme_raw);
+  E = NULL; sysm = NULL; home_code = NULL; boot_code = NULL; theme_raw = NULL; nE = 0; cur = home_slot = NULL;
 }
 
 int bk_host_init(const bk_host_config *cfg) {
@@ -558,8 +629,9 @@ int bk_host_init(const bk_host_config *cfg) {
   for (int i = 0; i < 2 && C.app_dirs[i]; i++) scan_dir(C.app_dirs[i], 1);
   home_code = C.home_lua ? read_file(C.home_lua, NULL) : NULL;
   if (!home_code) say("no home screen cart (sys/home.lua)", 1);
+  boot_code = C.boot_lua ? read_file(C.boot_lua, NULL) : NULL;
   load_settings();
   char m[80]; snprintf(m, sizeof(m), "%d games and apps", nE); say(m, 0);
-  boot_home();
+  boot_anim();
   return 0;
 }

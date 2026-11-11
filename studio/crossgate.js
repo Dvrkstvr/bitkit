@@ -123,7 +123,7 @@ function sgn(v) return v > 0 and 1 or (v < 0 and -1 or 0) end
 function mid(a, v, b) return math.max(a, math.min(v, b)) end
 function label(n)
   if NP == 1 then return n == 1 and "YOU" or "ROOK" end
-  return "P" .. side_pl[n]
+  return player_name(side_pl[n], 8)
 end
 function banner(s, c, sub) msg, msg_c, msg_sub, msg_t = s, c or 13, sub, 100 end
 function pan(x) return mid(-1, (x - 160) / 160, 1) end

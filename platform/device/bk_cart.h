@@ -15,6 +15,7 @@ typedef struct {
   const char *sub, *save_key; /* app: its line under the name and its save file */
   uint8_t icon[256];          /* 16x16 palette indices for the home screen */
   int has_icon;
+  int builtin;                /* came with the firmware: the home screen shows no file name */
 } bk_cart;
 
 typedef struct {
