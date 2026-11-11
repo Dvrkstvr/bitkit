@@ -712,7 +712,7 @@ end
   // player 2 on the same keyboard: IJKL move, N = A, M = B, H = X, U = Y, Y = L, O = R, Backspace = Start, B = Select
   const KEYMAP2 = { KeyJ: 0, KeyL: 1, KeyI: 2, KeyK: 3, KeyN: 4, KeyM: 5, KeyH: 6, KeyU: 7, KeyY: 8, KeyO: 9, Backspace: 10, KeyB: 11 };
   const keys = new Uint8Array(12), keys2 = new Uint8Array(12);
-  const input = { mask: 0, press: new Uint8Array(12), pads: [] };
+  const input = { mask: 0, press: new Uint8Array(12), pads: [], mine: [] };
   const input2 = { mask: 0, press: new Uint8Array(12) };
   const IS_BIT2 = /[?&]bit=2\b/.test(location.search);   // a linked second Bit window: just the screen
   let playMode = IS_BIT2 ? 'link' : (lsGet('bitkit.players') || '1');
@@ -747,15 +747,33 @@ end
     }
     out.mask = mask;
   }
+  // which input drives each player in this tab: 'auto', 'kb' (keyboard only) or one controller.
+  // Kept per tab (sessionStorage), so two studio windows can each take their own controller, or one the keyboard.
+  const PICK_KEY = 'bitkit.inputPick.' + (IS_BIT2 ? 'bit2' : 'bit1');
+  const picks = [{ k: 'auto' }, { k: 'auto' }];
+  try { const v = JSON.parse(sessionStorage.getItem(PICK_KEY) || 'null'); if (Array.isArray(v)) v.slice(0, 2).forEach((o, i) => { if (o && o.k) picks[i] = o; }); } catch (e) { /* ignore */ }
+  function savePicks() { try { sessionStorage.setItem(PICK_KEY, JSON.stringify(picks)); } catch (e) { /* ignore */ } }
+  function pickedPad(pads, pk) { return pads.find(p => p.index === pk.i && p.id === pk.id) || pads.find(p => p.id === pk.id) || null; }
+  // pads and keyboard for player n (0 or 1) in this tab
+  function sourcesFor(n, pads) {
+    const pk = picks[n];
+    if (pk.k === 'pad') { const p = pickedPad(pads, pk); return { pads: p ? [p] : [], kb: false }; }
+    const kb = n === 0 ? keys : (picks[0].k === 'pad' ? orKeys() : keys2);   // player 2 gets the arrow keys too when player 1 is on a controller
+    if (pk.k === 'kb') return { pads: [], kb };
+    if (n === 1) return { pads: pads.slice(1, 2), kb };   // auto, player 2: the second controller + I J K L
+    if (playMode === '2') return { pads: pads.slice(0, 1), kb };
+    if (playMode === 'link' && pads.length > 1) return { pads: pads.slice(IS_BIT2 ? 1 : 0, IS_BIT2 ? 2 : 1), kb };   // two Bit windows: one controller each
+    return { pads, kb };
+  }
+  const keysBoth = new Uint8Array(12), noKeys = new Uint8Array(12);
+  function orKeys() { for (let i = 0; i < 12; i++) keysBoth[i] = keys[i] | keys2[i]; return keysBoth; }
   function pollInput() {
     const pads = navigator.getGamepads ? [...navigator.getGamepads()].filter(Boolean) : [];
     input.pads = pads;
-    if (playMode === '2') {             // same screen: first controller + left keys = player 1, second controller + IJKL = player 2
-      readInput(input, keys, pads.slice(0, 1));
-      readInput(input2, keys2, pads.slice(1, 2));
-    } else if (playMode === 'link' && IS_BIT2 && pads.length > 1) {
-      readInput(input, keys, pads.slice(1, 2));   // two Bit windows on one computer: the second window uses the second controller
-    } else readInput(input, keys, playMode === 'link' && pads.length > 1 ? pads.slice(0, 1) : pads);
+    const s1 = sourcesFor(0, pads);
+    input.mine = s1.pads;
+    readInput(input, s1.kb || noKeys, s1.pads);
+    if (playMode === '2') { const s2 = sourcesFor(1, pads); readInput(input2, s2.kb || noKeys, s2.pads); }
   }
 
   // controller tab UI
@@ -773,15 +791,15 @@ end
   function bindText(list) { return (list || []).map(s => s[0] === 'b' ? `button ${s[1]}` : `axis ${s[1]}${s[2] > 0 ? '+' : '-'}`).join(', ') || 'none'; }
   function refreshBindings() { rowEls.forEach((r, i) => { r.bind.textContent = bindText(padmap[BTN[i]]); r.btn.classList.toggle('listening', listening === i); r.btn.textContent = listening === i ? 'press…' : 'bind'; }); }
   function startListen(i) {
-    if (!input.pads.length) return toast('Connect a controller and press any button first');
+    if (!input.mine.length) return toast(input.pads.length ? 'Pick a controller for this tab first (next to the screen)' : 'Connect a controller and press any button first');
     listening = i;
-    const pad = input.pads[0];
+    const pad = input.mine[0];
     listenBase = { axes: pad.axes.slice(), buttons: pad.buttons.map(b => b.value) };
     refreshBindings();
   }
   function checkListen() {
-    if (listening < 0 || !input.pads.length) return;
-    const pad = input.pads[0];
+    if (listening < 0 || !input.mine.length) return;
+    const pad = input.mine[0];
     let found = null;
     pad.buttons.forEach((b, j) => { if (!found && b.value > .6 && listenBase.buttons[j] < .3) found = ['b', j]; });
     pad.axes.forEach((a, j) => { if (!found && Math.abs(a - listenBase.axes[j]) > .6) found = ['a', j, a > listenBase.axes[j] ? 1 : -1]; });
@@ -806,9 +824,7 @@ end
     const sig = pads.map(p => p.id + p.mapping).join('|');
     if (sig !== lastPadSig) {
       lastPadSig = sig;
-      const st = $('padStatus');
-      if (pads.length) { st.textContent = `Controller: ${pads[0].id.replace(/\s*\(.*?\)\s*/g, ' ').trim().slice(0, 40)}${pads.length > 1 ? ` +${pads.length - 1}` : ''}`; st.classList.add('on'); }
-      else { st.textContent = 'No controller (press any button on it)'; st.classList.remove('on'); }
+      buildPickers();
       $('padList').innerHTML = pads.length ? pads.map(p => `<div class="pad-card"><b>${escapeHtml(p.id)}</b><br><span class="dim">${p.buttons.length} buttons, ${p.axes.length} axes, mapping: ${p.mapping || 'none'}</span>${p.mapping !== 'standard' ? '<br><span class="warn">This controller has no standard mapping in this browser. Use "bind" below to set each button.</span>' : ''}</div>`).join('')
         : '<div class="pad-card">No controller found. Plug one in (or pair it) and <b>press any button</b>, browsers only show controllers after a press. Keyboard works too: arrows, Z=A, X=B, A=X, S=Y, Q=L, W=R, Enter=Start, Shift=Select.</div>';
     }
@@ -821,6 +837,34 @@ end
     $('padRaw').textContent = pads.map(p => `${p.id}\naxes: ${p.axes.map(a => a.toFixed(2)).join('  ')}\nbuttons: ${p.buttons.map((b, i) => `${i}:${b.value.toFixed(2)}`).join('  ')}`).join('\n\n') || 'none';
     checkListen();
   }
+  // the "Input" pickers next to the screen
+  function padName(id) { return id.replace(/\s*\(.*?\)\s*/g, ' ').trim().slice(0, 32) || 'Controller'; }
+  function buildPickers() {
+    const pads = input.pads;
+    [0, 1].forEach(n => {
+      const sel = $(n ? 'inputPick2' : 'inputPick'), pk = picks[n];
+      const autoTxt = n ? 'P2: auto (2nd controller + IJKL)' : (pads.length ? 'Auto: keyboard + controllers' : 'Auto: keyboard (no controller yet)');
+      let html = `<option value="auto">${escapeHtml(autoTxt)}</option><option value="kb">${n ? 'P2: ' : ''}Keyboard only</option>`;
+      html += pads.map(p => `<option value="pad:${p.index}">${n ? 'P2: ' : ''}🎮 ${p.index + 1}: ${escapeHtml(padName(p.id))}</option>`).join('');
+      const cur = pk.k === 'pad' ? pickedPad(pads, pk) : null;
+      if (pk.k === 'pad' && !cur) html += `<option value="missing">${n ? 'P2: ' : ''}🎮 ${escapeHtml(padName(pk.id))} (press a button on it)</option>`;
+      sel.innerHTML = html;
+      sel.value = pk.k === 'pad' ? (cur ? 'pad:' + cur.index : 'missing') : pk.k;
+      sel.classList.toggle('on', pk.k === 'pad' ? !!cur : pads.length > 0 || pk.k === 'kb');
+    });
+    $('inputPick2').hidden = playMode !== '2';
+  }
+  ['inputPick', 'inputPick2'].forEach((id, n) => {
+    $(id).onchange = e => {
+      const v = e.target.value;
+      if (v === 'missing') return;
+      if (v.startsWith('pad:')) { const p = input.pads.find(q => q.index === +v.slice(4)); if (p) picks[n] = { k: 'pad', i: p.index, id: p.id }; }
+      else picks[n] = { k: v };
+      savePicks(); buildPickers();
+      screen.focus();
+    };
+  });
+  buildPickers();
   function escapeHtml(s) { return s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
   window.addEventListener('gamepadconnected', e => log(`controller connected: ${e.gamepad.id}`, 'sys'));
   window.addEventListener('gamepaddisconnected', e => log(`controller disconnected: ${e.gamepad.id}`, 'sys'));
@@ -1099,7 +1143,7 @@ end
     if (running) stop(true);
     playMode = e.target.value; lsSet('bitkit.players', playMode);
     if (playMode === 'link') linkOpen(); else linkClose();
-    linkUI();
+    linkUI(); buildPickers();
     if (playMode === '2') log('2 players: player 2 uses the second controller, or I J K L to move, N to jump, M to throw.', 'sys');
   };
   $('linkOpen').onclick = () => {
@@ -1664,7 +1708,7 @@ end
   requestAnimationFrame(frame);
 
   // expose for tests / debugging
-  window.bkStudio = { cart, run, stop, input, input2, link, RT, isRunning: () => running, bit, setBitPower, showLibrary, saveToBit, BKStore };
+  window.bkStudio = { cart, run, stop, input, input2, picks, link, RT, isRunning: () => running, bit, setBitPower, showLibrary, saveToBit, BKStore };
 })().catch(e => {
   document.body.innerHTML = `<pre style="color:#ff6b5e;padding:20px">Studio failed to start: ${e && e.stack || e}</pre>`;
 });
