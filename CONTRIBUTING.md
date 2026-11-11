@@ -4,7 +4,7 @@ Thanks for wanting to help! BitKit is a small, friendly project, and every bug r
 
 ## Ways to help
 
-- **Make a game** with the [studio](https://dvrkstvr.github.io/bitkit/) and share it in an issue.
+- **Make a game** with the [studio](https://dvrkstvr.github.io/bitkit/) and share it in an issue. Games follow the [game rules](GAME_RULES.md): a main menu, one level you can finish, quick resume, a pause menu with settings and a clear goal. `game{}` does most of it, and the studio's **Rules** button checks it.
 - **Report a bug.** Include your browser, controller and, if you can, the `.bitkit` cart.
 - **Suggest a feature** with the idea template.
 - **Send a pull request.** Small and focused is best.
@@ -15,6 +15,7 @@ Thanks for wanting to help! BitKit is a small, friendly project, and every bug r
 cd studio && python3 -m http.server 8000   # studio dev server, no build step
 ./build.sh                                 # rebuild studio/runtime.js after changing C or runtime/*.lua (needs Emscripten)
 node tools/ci.cjs                          # the same check CI runs
+node tools/gametest.cjs                    # the game shell and the game rules in every demo
 node tools/aitest.cjs                      # AI chat in a real browser against fake Claude/Gemini APIs (needs Playwright)
 python3 tools/bundle.py dist/bitkit-studio.html   # refresh the offline single-file build
 ```

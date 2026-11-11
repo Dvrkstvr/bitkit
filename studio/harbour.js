@@ -15,6 +15,7 @@
 -- Day: a sea haze hides the rocks and the beam doesn't reach as far.
 -- Night: pirates hunt ships and loaded rowboats. Keep your light on them to scare them off;
 --   coast cannons (shop) fire at every pirate your beam reveals.
+-- Goal: guide 100 ships safely into the harbour (you can keep playing after that).
 -- The clockwork lens (shop) sweeps the light for you. With one player the game uses
 -- save(), saved() and clock(), so the harbour keeps earning while the Bit is off.
 
@@ -42,9 +43,25 @@ SHOP = {
   { key = "auto",    name = "Clockwork lens", max = 3, base = 120, info = "Sweeps the beam while you rest." },
 }
 
+GOAL = 100                                -- ships to bring home
+
 function _init()
+  -- title screen, pause menu (Start) and settings: the game shell (see GAME_RULES.md).
+  -- The harbour saves itself every few seconds, so Continue carries on right where you left it.
+  game{
+    title = "Beacon Keeper",
+    goal = "Guide " .. GOAL .. " ships safely into the harbour.",
+    help = {
+      "Left / right turns the beam. Squeeze R for a brighter beam, L for a narrow spotlight.",
+      "B: foghorn. X: harbour shop. Y: hop into your rowboat and fetch crates.",
+      "Ships only see the rocks in your light. At night, light up the pirates to scare them off.",
+      "Players 2-4 row boats: d-pad to row, R to row harder.",
+    },
+    can_continue = function() return PLAYERS == 1 and saved() ~= nil end,
+    new_game = function() save(nil); _init() end,
+  }
   G = { coins = 0, tank = 0, lens = 0, pump = 0, lantern = 0, cannon = 0, harbour = 0, auto = 0,
-        day = 1, clk = 300, docked = 0, lost = 0, best = 0 }
+        day = 1, clk = 300, docked = 0, lost = 0, best = 0, goal = false }
   local d = saved and saved()
   if type(d) == "table" then
     for k, v in pairs(d) do if G[k] ~= nil and type(v) == type(G[k]) then G[k] = v end end
@@ -356,6 +373,11 @@ function docked(s)
   local c = s.k.toll * mult()
   G.coins = G.coins + c
   G.docked = G.docked + 1
+  if G.docked >= GOAL and not G.goal then
+    G.goal = true
+    persist()
+    game_win(GOAL .. " ships made it home thanks to your light. The harbour keeps going: play on!")
+  end
   float(s.x - 8, s.y - 10, "+" .. c, 27)
   sfx("C6", 4, 0.3, 10) sfx("G6", 4, 0.2, 14)
 end
@@ -787,7 +809,11 @@ function hud(night)
   if p1_boat then text("Y LAMP", 4, 231, 12)
   else text(horn_cd == 0 and "B HORN" or "B ....", 4, 231, horn_cd == 0 and 12 or 30) text("Y BOAT", 64, 231, 12) end
   text("X SHOP", 268, 231, 12)
-  if auto_on() and t() // 30 % 2 == 0 then text("AUTO", 132, 231, 17) end
+  if auto_on() and t() // 30 % 2 == 0 then text("AUTO", 132, 231, 17)
+  else
+    local g = G.goal and ("HOME " .. G.docked) or ("HOME " .. G.docked .. "/" .. GOAL)
+    text(g, 196 - #g * 4, 231, G.goal and 17 or 13)
+  end
   if hint_t > 0 then
     rectfill(0, 13, 320, 11, 31)
     local h = PLAYERS > 1 and "P1 BEAM  P2-4 ROW: GET THE CRATES" or "<> AIM  R BRIGHT  L NARROW  Y ROW"

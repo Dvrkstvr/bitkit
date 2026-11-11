@@ -1,0 +1,393 @@
+
+-- ================================================================ game shell
+-- The menus every BitKit game shares (see GAME_RULES.md): a title screen, a pause menu with settings,
+-- quick resume from a checkpoint and a "goal complete" screen. A cart turns them on with one call
+-- in _init:
+--
+--   game{
+--     title = "Sprout Hop",
+--     goal  = "Reach the red flag at the end of Mossy Cave.",
+--     help  = {"D-pad: move", "A: jump"},          -- optional "How to play" page
+--     continue = function(cp) ... end,             -- put the player back at checkpoint cp (a checkpoint() table)
+--     new_game = function() ... end,               -- optional: reset a game that loaded its own save
+--     can_continue = function() return ... end,    -- optional: Continue for games that keep their own save
+--     pause = {{"Back to checkpoint", function() ... end}},   -- optional extra pause menu items
+--     settings = {{key = "laps", name = "Laps", min = 1, max = 5, value = 3},
+--                 {key = "ai", name = "Rivals", values = {"Easy", "Normal", "Hard"}, value = 2}},
+--     music = true,                                -- adds a Music level for notes played with mus()
+--   }
+--
+--   checkpoint(t)   remember where to carry on (a table save() can store); checkpoint(nil) forgets it
+--   game_win(text)  the goal is reached: shows the "goal complete" screen (after any cutscene ends)
+--   setting(key)    a value from the Settings screen (volume and music are 0..10)
+--   game_play()     skip the menus and go straight to gameplay
+--   GAME.state      "title", "play", "pause", "settings", "help", "confirm" or "won"
+--
+-- Start opens the pause menu (Start+Select still goes to the Bit's home screen). Volume scales every
+-- sfx() and tone(). The settings and the checkpoint are kept in the cart's save, next to (not inside)
+-- whatever the cart stores with save(), so save() and saved() work exactly as before.
+do
+  local CFG = nil                  -- the table given to game{}
+  local KIT = { vol = 10, music = 10, set = {} }   -- kept in the save: settings, checkpoint, won
+  local ST, BACK = "off", "title"  -- menu state, and where B goes back to
+  local SEL, ITEMS = 1, {}
+  local DIRTY = false              -- gameplay has run since the cart loaded
+  local CART_UPDATE, CART_DRAW = nil, nil
+  local START_DOWN, COMBO = false, false
+  local WIN_TEXT, WIN_PENDING = nil, false
+  local CONFIRM = nil
+  local raw_save, raw_saved, raw_sfx, raw_tone = save, saved, sfx, tone
+
+  GAME = { state = "off", won = false }
+
+  local function linked() return (ME or 0) > 0 end
+  local function players() return math.max(1, math.min(PLAYERS or 1, 4)) end
+  local function any_btnp(b)
+    for p = 1, players() do if btnp(b, p) then return true end end
+    return false
+  end
+
+  -- ------------------------------------------------ save: {_g = shell data, _c = the cart's own value}
+  local function unwrap(d)
+    if type(d) == "table" and d._bitkit_game then return d._c, d._g end
+    return d, nil
+  end
+  local function cart_value() return (unwrap(raw_saved())) end
+  local function persist()
+    if not CFG then return end
+    raw_save({ _bitkit_game = 1, _g = KIT, _c = cart_value() })
+  end
+  function save(v)
+    if not CFG then return raw_save(v) end
+    return raw_save({ _bitkit_game = 1, _g = KIT, _c = v })
+  end
+  function saved() return (unwrap(raw_saved())) end
+
+  -- ------------------------------------------------ audio levels
+  local function vol() return CFG and KIT.vol / 10 or 1 end
+  function sfx(n, w, v, ...) return raw_sfx(n, w, (v or 0.8) * vol(), ...) end
+  function tone(hz, w, v, ...) return raw_tone(hz, w, (v or 0.8) * vol(), ...) end
+  -- mus(): sfx() for music, so the Music level turns it down separately
+  function mus(n, w, v, ...) return raw_sfx(n, w, (v or 0.8) * vol() * (CFG and KIT.music / 10 or 1), ...) end
+
+  function setting(key)
+    if key == "volume" then return KIT.vol end
+    if key == "music" then return KIT.music end
+    return KIT.set[key]
+  end
+
+  local function set_state(s)
+    ST, GAME.state = s, s
+    SEL = 1
+  end
+
+  -- ------------------------------------------------ menus
+  local function can_continue()
+    if DIRTY then return true end
+    if KIT.cp ~= nil and not linked() then return true end
+    return CFG.can_continue and CFG.can_continue() and true or false
+  end
+
+  local function play()
+    DIRTY = true
+    set_state("play")
+  end
+
+  local function start_new()
+    KIT.cp = nil
+    persist()
+    if CFG.new_game then CFG.new_game() play()
+    elseif DIRTY then _restart(2)               -- the host loads the cart again, straight into play
+    else play() end
+  end
+
+  local function continue_game()
+    if not DIRTY and CFG.continue then CFG.continue(not linked() and KIT.cp or nil) end
+    play()
+  end
+
+  local function confirm(text, yes, fn)
+    CONFIRM = { text = text, fn = fn, from = ST }
+    set_state("confirm")
+    ITEMS = { { yes, fn }, { "Cancel", function() set_state(CONFIRM.from) end } }
+    SEL = 2
+  end
+
+  local function build()
+    ITEMS = {}
+    local add = function(name, fn) ITEMS[#ITEMS + 1] = { name, fn } end
+    if ST == "title" then
+      BACK = "title"
+      if can_continue() then add("Continue", continue_game) end
+      add("New game", function()
+        if KIT.cp ~= nil or DIRTY or (CFG.can_continue and CFG.can_continue()) then
+          confirm("Start over? Your progress here is lost.", "Start over", start_new)
+        else start_new() end
+      end)
+      add("Settings", function() BACK = "title"; set_state("settings") end)
+      if CFG.help then add("How to play", function() BACK = "title"; set_state("help") end) end
+    elseif ST == "pause" then
+      BACK = "pause"
+      add("Resume", function() set_state("play") end)
+      for _, it in ipairs(CFG.pause or {}) do add(it[1], function() set_state("play"); it[2]() end) end
+      add("Settings", function() set_state("settings") end)
+      if CFG.help then add("How to play", function() set_state("help") end) end
+      if not linked() then add("Quit to title", function() set_state("title") end) end
+    elseif ST == "won" then
+      add("Keep playing", function() set_state("play") end)
+      if not linked() then add("Back to title", function() set_state("title") end) end
+    elseif ST == "settings" then
+      add("Volume", nil)
+      if CFG.music then add("Music", nil) end
+      for _, s in ipairs(CFG.settings or {}) do add(s.name or s.key, nil) end
+      add("Back", function() set_state(BACK) end)
+    elseif ST == "help" then
+      add("Back", function() set_state(BACK) end)
+    end
+  end
+
+  -- the setting behind settings row i, as {get, set, min, max, label}
+  local function setting_row(i)
+    if i == 1 then return { key = "vol", min = 0, max = 10, kit = true } end
+    local n = i - 1
+    if CFG.music then
+      if n == 1 then return { key = "music", min = 0, max = 10, kit = true } end
+      n = n - 1
+    end
+    local s = (CFG.settings or {})[n]
+    if not s then return nil end
+    return { key = s.key, min = s.values and 1 or (s.min or 0), max = s.values and #s.values or (s.max or 10), values = s.values }
+  end
+  local function row_value(r) if r.kit then return KIT[r.key] end return KIT.set[r.key] end
+
+  local function menu_update()
+    if ST ~= "confirm" then build() end
+    if #ITEMS == 0 then return end
+    if SEL > #ITEMS then SEL = #ITEMS end
+    if any_btnp("up") then SEL = (SEL - 2) % #ITEMS + 1; raw_sfx("E5", 0, 0.15 * vol(), 3) end
+    if any_btnp("down") then SEL = SEL % #ITEMS + 1; raw_sfx("E5", 0, 0.15 * vol(), 3) end
+    if ST == "settings" then
+      local r = setting_row(SEL)
+      if r then
+        local d = (any_btnp("right") and 1 or 0) - (any_btnp("left") and 1 or 0)
+        if d ~= 0 then
+          local v = math.max(r.min, math.min(r.max, (row_value(r) or r.min) + d))
+          if r.kit then KIT[r.key] = v else KIT.set[r.key] = v end
+          persist()
+          raw_sfx("A5", 0, 0.2 * vol(), 4)
+        end
+      end
+    end
+    local it = ITEMS[SEL]
+    if any_btnp("a") and it and it[2] then
+      raw_sfx("C5", 4, 0.25 * vol(), 6)
+      it[2]()
+    elseif any_btnp("b") then
+      if ST == "pause" or ST == "won" then set_state("play")
+      elseif ST == "settings" or ST == "help" then set_state(BACK)
+      elseif ST == "confirm" then set_state(CONFIRM.from) end
+    end
+  end
+
+  -- ------------------------------------------------ drawing (screen space, over the game and its overlay)
+  local function center(s, y, c, sc)
+    sc = sc or 1
+    text(s, 160 - #s * 4 * sc, y, c, sc)
+  end
+  local function shadow(s, y, c, sc)
+    sc = sc or 1
+    text(s, 161 - #s * 4 * sc, y + sc, 1, sc)
+    center(s, y, c, sc)
+  end
+  local function wrap(s, w)
+    local lines, line = {}, ""
+    for word in tostring(s):gmatch("%S+") do
+      if #line + #word + 1 > w and #line > 0 then lines[#lines + 1] = line; line = word
+      else line = #line > 0 and (line .. " " .. word) or word end
+    end
+    if #line > 0 then lines[#lines + 1] = line end
+    return lines
+  end
+  local function dim(dense)      -- darken the game behind a menu (2 of 3 lines on the title screen)
+    for y = 0, 239 do
+      if y % 2 == 0 or (dense and y % 3 ~= 2) then rectfill(0, y, 320, 1, 1) end
+    end
+  end
+  local function panel(x, y, w, h)
+    rectfill(x, y, w, h, 1)
+    rect(x, y, w, h, 13)
+  end
+  local function bar(x, y, v, mx, on)
+    for i = 0, mx - 1 do rectfill(x + i * 7, y, 5, 7, i < v and (on and 27 or 13) or 2) end
+  end
+
+  local function draw_items(y0, w)
+    local x = 160 - w // 2
+    for i, it in ipairs(ITEMS) do
+      local y = y0 + (i - 1) * 14
+      local on = i == SEL
+      if on then rectfill(x + 4, y - 3, w - 8, 13, 2) end
+      local name = it[1]
+      if ST == "settings" then
+        local r = setting_row(i)
+        if r then
+          text(name, x + 14, y, on and 27 or 13)
+          local v = row_value(r) or r.min
+          if r.values then
+            local s = "< " .. tostring(r.values[v] or v) .. " >"
+            text(s, x + w - 14 - #s * 8, y, on and 27 or 13)
+          elseif r.max <= 10 then bar(x + w - 14 - r.max * 7, y, v - r.min, r.max - r.min, on)
+          else local s = "< " .. v .. " >"; text(s, x + w - 14 - #s * 8, y, on and 27 or 13) end
+        else
+          text(name, x + 14, y, on and 27 or 13)
+        end
+      else
+        text(name, x + 14, y, on and 27 or 13)
+      end
+      if on then text(">", x + 6, y, 27) end
+    end
+  end
+
+  local function footer(s) rectfill(0, 224, 320, 16, 1) center(s, 228, 29) end
+
+  local function draw_menu()
+    dim(ST == "title" or ST == "help")
+    if ST == "title" then
+      local t = CFG.title or "BitKit game"
+      local sc = #t <= 12 and 3 or (#t <= 19 and 2 or 1)
+      shadow(t, 30, 27, sc)
+      local g = wrap("Goal: " .. (CFG.goal or "?"), 34)
+      panel(16, 64, 288, #g * 10 + 10)
+      for i, l in ipairs(g) do center(l, 64 + 6 + (i - 1) * 10, 13) end
+      local h = #ITEMS * 14 + 10
+      panel(80, 236 - 22 - h, 160, h)
+      draw_items(236 - 22 - h + 8, 160)
+      if GAME.won then text("* goal done *", 8, 228, 17) end
+      footer("A: choose")
+    elseif ST == "pause" or ST == "won" then
+      local h = #ITEMS * 14 + 34
+      local extra = 0
+      local lines = {}
+      if ST == "won" then lines = wrap(WIN_TEXT or "", 30); extra = #lines * 10 end
+      local y = 120 - (h + extra) // 2
+      panel(70, y, 180, h + extra)
+      shadow(ST == "won" and "GOAL COMPLETE!" or "PAUSED", y + 8, ST == "won" and 17 or 27, ST == "won" and 1 or 2)
+      for i, l in ipairs(lines) do center(l, y + 22 + (i - 1) * 10, 13) end
+      draw_items(y + 28 + extra, 180)
+      footer("A: choose   B: back to the game")
+    elseif ST == "settings" then
+      local h = #ITEMS * 14 + 34
+      local y = 120 - h // 2
+      panel(50, y, 220, h)
+      shadow("SETTINGS", y + 8, 27, 2)
+      draw_items(y + 28, 220)
+      footer("left / right: change   B: back")
+    elseif ST == "help" then
+      local lines = {}
+      for _, l in ipairs(CFG.help or {}) do for _, w in ipairs(wrap(l, 34)) do lines[#lines + 1] = w end end
+      local g = wrap("Goal: " .. (CFG.goal or "?"), 34)
+      local h = (#lines + #g) * 10 + 60
+      local y = math.max(4, 120 - h // 2)
+      panel(16, y, 288, math.min(h, 232 - y))
+      shadow("HOW TO PLAY", y + 8, 27, 2)
+      for i, l in ipairs(g) do text(l, 24, y + 28 + (i - 1) * 10, 17) end
+      for i, l in ipairs(lines) do text(l, 24, y + 34 + (#g + i - 1) * 10, 13) end
+      footer("B: back")
+    elseif ST == "confirm" then
+      local lines = wrap(CONFIRM.text, 26)
+      local h = #lines * 10 + #ITEMS * 14 + 22
+      local y = 120 - h // 2
+      panel(60, y, 200, h)
+      for i, l in ipairs(lines) do center(l, y + 8 + (i - 1) * 10, 13) end
+      draw_items(y + 14 + #lines * 10, 200)
+    end
+  end
+
+  -- ------------------------------------------------ the wrapped _update / _draw / overlay
+  local function k_update() end
+  local function k_draw() end
+  local function adopt()        -- the cart may swap its own _update/_draw later: keep wrapping them
+    local u, d = rawget(_G, "_update"), rawget(_G, "_draw")
+    if u ~= k_update then CART_UPDATE = u; _G._update = k_update end
+    if d ~= k_draw then CART_DRAW = d; _G._draw = k_draw end
+  end
+  k_update = function()
+    if ST == "play" then
+      if WIN_PENDING and not (cutscene_playing and cutscene_playing()) then
+        WIN_PENDING = false; set_state("won")
+        adopt()
+        return
+      end
+      -- Start opens the pause menu when it's let go, unless it was part of Start+Select (home screen)
+      -- (during a cutscene Start skips it instead)
+      local down = false
+      for p = 1, players() do if btn("start", p) then down = true end; if btn("select", p) then COMBO = true end end
+      if down and cutscene_playing and cutscene_playing() then COMBO = true end
+      if down then START_DOWN = true
+      elseif START_DOWN then
+        START_DOWN = false
+        if not COMBO then set_state("pause"); adopt() return end
+        COMBO = false
+      else COMBO = false end
+      DIRTY = true
+      if CART_UPDATE then CART_UPDATE() end
+    else
+      menu_update()
+    end
+    adopt()
+  end
+  k_draw = function()
+    if CART_DRAW then CART_DRAW() end
+    adopt()
+  end
+  local overlay = _bk_overlay
+  function _bk_overlay()
+    if overlay then overlay() end
+    if CFG and ST ~= "play" then
+      if ST ~= "confirm" then build() end
+      draw_menu()
+    end
+  end
+
+  -- ------------------------------------------------ the cart's calls
+  function game(cfg)
+    local first = CFG == nil
+    CFG = cfg or {}
+    if first then
+      local _, g = unwrap(raw_saved())
+      if type(g) == "table" then
+        KIT.vol = tonumber(g.vol) or 10
+        KIT.music = tonumber(g.music) or 10
+        if not linked() then           -- linked Bits must start the same: their own saves stay out of the game
+          if type(g.set) == "table" then KIT.set = g.set end
+          KIT.cp = g.cp
+        end
+        KIT.won = g.won and true or false
+      end
+      GAME.won = KIT.won
+      for _, s in ipairs(CFG.settings or {}) do
+        if KIT.set[s.key] == nil then KIT.set[s.key] = s.value or (s.values and 1) or s.min or 0 end
+      end
+      adopt()
+      local boot = GAME_BOOT
+      GAME_BOOT = nil
+      if boot == 2 then KIT.cp = nil; persist(); play()
+      elseif boot then play()
+      else set_state("title") end
+    end
+  end
+
+  function game_play() if CFG then play() end end
+
+  function checkpoint(t)
+    KIT.cp = t
+    persist()
+  end
+
+  function game_win(s)
+    if not CFG then return end
+    WIN_TEXT = s
+    if not KIT.won then KIT.won = true; GAME.won = true; persist() end
+    WIN_PENDING = true
+  end
+end

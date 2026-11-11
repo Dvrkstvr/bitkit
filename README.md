@@ -84,6 +84,19 @@ end
 function _draw()   cls(1) circfill(x, y, 4 + press("r") / 32, 9) end
 ```
 
+## 📏 Game rules
+
+Every BitKit game, built-in or from the community, has a **main menu**, **one level you can play from start to end**, **quick resume** (Continue goes straight back into play or to your checkpoint), a **pause menu with settings** such as the volume, and **a clear goal**. One call gives your game all the menus:
+
+```lua
+function _init()
+  game{title = "my game", goal = "Catch 10 stars.", continue = function(cp) score = cp.score end}
+  -- ... call checkpoint({score = score}) as you go, and game_win("You did it!") at the end
+end
+```
+
+The studio's **Rules** button checks your cart. Read the details in **[GAME_RULES.md](GAME_RULES.md)**.
+
 ## 🌱 The demos
 
 Press **Demo** in the studio to pick one.
@@ -97,6 +110,7 @@ A small platformer that shows off most of the engine:
 - Stand next to a **sapling** while it grows and fight off the bees it attracts. Once it's a tree, it's your checkpoint.
 - Talking NPCs, and a pressure button that opens a gate.
 - Two levels, with cutscenes when each one starts and when you reach the gate.
+- **Goal:** reach the red flag at the end of Mossy Cave. Continue picks up at your last tree.
 - Two players: pick **2 players** under the screen (player 2 is the blue sprout), or **2 Bits, linked** to play from two windows.
 
 ### Beacon Keeper
@@ -111,6 +125,7 @@ An idle game for 1 to 4 players. Player 1 is the lighthouse in the middle of a s
 - Docked ships pay tolls. Spend them in the harbour shop (**X**) on oil, a better lens, ship lanterns, coast cannons, a bigger harbour, and a clockwork lens that aims the beam for you.
 - Players 2 to 4 row little boats (player 1 can hop into one with **Y**). They pick up the crates floating in the water, including the ones wrecks and sunk pirates drop, and bring them to the island. If a boat hits a rock, it spills its cargo.
 - With one player it uses `save()`, `saved()` and `clock()`, so the harbour keeps earning while the Bit is off.
+- **Goal:** guide 100 ships safely home (the harbour keeps going after that).
 
 ## 🏎️ The demo: Kart Lab (2.5D)
 
@@ -122,6 +137,7 @@ A kart racer drawn SNES-style: the map becomes a floor seen in perspective, with
 - **Items** from crates, used with X: Nitro, Oil Slick, Bolt, Drone (chases the kart in front) and Shield. Rivals use them too. Hold down to look back, and hold down while using a Bolt or Drone to fire it backwards.
 - **Race your friends** in the same match: pick **2 players** for split screen (up to 4 with controllers), or **2 Bits, linked** so each Bit shows its own kart. Everyone builds their own kart in the garage, player 1 picks the track, and rivals fill the grid up to 8 karts (`KARTS` at the top of the code).
 - **Hills and jumps**: the ground rises and falls, and fast karts leave the ground over crests.
+- **Goal:** finish 1st on every track. Continue drops you straight into a race with your saved kart; Rivals (Easy, Normal, Hard) is in the pause menu's Settings.
 - **Tracks are made on the Track tab.** The road is a smooth loop: drag its points, double-click the road to add one, and place boost pads, crate rows, hills, bumps, dips and ramps along it. Click a point to give it its own road and kerb width (the road blends to the next point). Hills, bumps, dips and ramps have height and size sliders and a shape curve you drag, with presets (round, dome, cone, flat top, spike, straight, kicker). Paint elevation with the height brush (raise, lower, flatten, smooth), set the road width, kerbs and laps, and press **▶ race it**. The road is built from a few segment tiles you paint right there (road, kerb A/B, grass, start line, boost pad); the edge tiles where they meet are generated. Two tracks are included: Pinewood Loop and Quarry Hills.
 
 <img src="docs/media/kart-lab-race.png" width="400" alt="Kart Lab race"> <img src="docs/media/kart-lab-garage.png" width="400" alt="Kart Lab garage">
@@ -143,6 +159,7 @@ A kart racer drawn SNES-style: the map becomes a floor seen in perspective, with
 | Area | Functions |
 |---|---|
 | Callbacks | `_init` `_update` `_draw` |
+| Game shell | `game{}` `checkpoint` `game_win` `setting` `mus` `game_play` `GAME.state` (title screen, pause menu, settings: see [GAME_RULES.md](GAME_RULES.md)) |
 | Graphics | `cls pset pget line rect rectfill circ circfill text spr map camera clip pal palt palette` |
 | Map | `mget mset fget fset` |
 | 2.5D | `floor floorh hset hget depth project sspr` (perspective floor from the map, hills, world-to-screen, scaled sprites) |

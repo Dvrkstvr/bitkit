@@ -15,14 +15,36 @@ function _init()
   spawn_x, spawn_y = PLAYER.x, PLAYER.y
   banner, banner_t = LEVELS[LEVEL].name, 120
 
+  -- title screen, pause menu (Start), settings and Continue: the game shell (see GAME_RULES.md)
+  game{
+    title = "Sprout Hop",
+    goal = "Hop through Sunny Meadow and Mossy Cave and reach the red flag.",
+    help = {
+      "D-pad or stick: move. A: jump (hold for higher). Squeeze R to run. B: throw a pebble.",
+      "Stand by a sapling until it grows into a tree: that's your checkpoint.",
+      "Water drops heal you, mud and sticky seeds slow you down.",
+    },
+    continue = function(cp)       -- carry on from the last checkpoint
+      if not cp then return end
+      resume = cp
+      if cp.level == LEVEL then place_at(cp) else level(cp.level) end
+    end,
+    pause = {{"Back to checkpoint", function() respawn(PLAYER) end}},
+  }
+
   -- a new level loaded (an Exit flag uses the "Go to level" step)
   on("level", function(n, name)
     spawn_x, spawn_y = PLAYER.x, PLAYER.y
     total = total + #ents_all("drop")
     banner, banner_t = name, 120
+    if resume then place_at(resume) end
+    save_checkpoint()
   end)
   on("win", function()
-    if not won then won = true; sfx("C6", 4, 0.4, 30); cutscene("ending") end
+    if not won then
+      won = true; sfx("C6", 4, 0.4, 30); cutscene("ending")
+      game_win("You reached the flag with " .. score .. "/" .. total .. " water drops.")
+    end
   end)
 
   -- events sent by entities (their behavior trees use "Send event")
@@ -34,22 +56,37 @@ function _init()
   on("checkpoint", function(sapling)
     spawn_x, spawn_y = sapling.x + 4, sapling.y + 8
     print("checkpoint! you will respawn at the tree")
+    save_checkpoint()
   end)
 
   -- the player is the "sprout" entity
   ents_on("sprout", "hurt", function(p) sfx("A2", 2, 0.6, 14, nil, 0, -300) end)
   ents_on("sprout", "death", function(p)
-    p.alive = true                 -- don't die: respawn at the last checkpoint
-    p.hp = stat(p, "hp")
-    p.x, p.y, p.vx, p.vy = spawn_x, spawn_y, 0, 0
+    respawn(p)                     -- don't die: respawn at the last checkpoint
     -- with a friend still standing, pop back in next to them instead
     for _, q in ipairs(ents_players()) do
       if q ~= p and q.alive and q.ground then p.x, p.y = q.x, q.y - 12 break end
     end
-    fx_clear(p)
-    p.inv = 60
-    sfx("C3", 2, 0.6, 20, nil, 0, -200)
   end)
+end
+
+function respawn(p)
+  p.alive = true
+  p.hp = stat(p, "hp")
+  p.x, p.y, p.vx, p.vy = spawn_x, spawn_y, 0, 0
+  fx_clear(p)
+  p.inv = 60
+  sfx("C3", 2, 0.6, 20, nil, 0, -200)
+end
+
+-- the title screen's Continue starts here: the level, the spot and the drops collected so far
+function save_checkpoint()
+  checkpoint({level = LEVEL, x = spawn_x, y = spawn_y, score = score})
+end
+function place_at(cp)
+  resume = nil
+  spawn_x, spawn_y, score = cp.x, cp.y, cp.score or score
+  for _, p in ipairs(ents_players()) do p.x, p.y, p.vx, p.vy = cp.x, cp.y, 0, 0 end
 end
 
 function _update()

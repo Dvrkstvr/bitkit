@@ -43,11 +43,22 @@
 
   /* ------------------------------------------------------------ cart */
   const NEW_CODE = `-- my game
--- _init runs once, _update and _draw run 60 times a second
+-- _init runs once, _update and _draw run 60 times a second.
+-- game{} adds the title screen, the pause menu (Start) and the settings every BitKit game has.
+-- See the Rules button and the Help tab.
 
 function _init()
-  x, y = 152, 112
+  game{
+    title = "my game",
+    goal = "Catch 10 stars.",
+    help = {"D-pad: move. A: beep."},
+    continue = function(cp) score = cp.score end,   -- Continue on the title screen
+  }
+  x, y, score = 152, 112, 0
+  new_star()
 end
+
+function new_star() sx, sy = rnd(16, 296), rnd(32, 216) end
 
 function _update()
   if btn("left") then x = x - 2 end
@@ -55,13 +66,20 @@ function _update()
   if btn("up") then y = y - 2 end
   if btn("down") then y = y + 2 end
   if btnp("a") then sfx("C5") end
+  if math.abs(x + 8 - sx) < 12 and math.abs(y + 8 - sy) < 12 then
+    score = score + 1
+    sfx("E6", 0, 0.5, 6)
+    new_star()
+    checkpoint({score = score})         -- remember the progress for Continue
+    if score == 10 then game_win("You caught all 10 stars!") end
+  end
 end
 
 function _draw()
   cls(1)
+  circfill(sx, sy, 4, 27)
   rectfill(x, y, 16, 16, 17)
-  text("hello world", 8, 8, 13)
-  text("L " .. press("l") .. "  R " .. press("r"), 8, 20, 29)
+  text("stars " .. score .. "/10", 8, 8, 13)
 end
 `;
   const cart = {
@@ -985,6 +1003,8 @@ end
   }
   function run(startLevel, extraLua) {
     const start = typeof startLevel === 'number' ? startLevel : 0;
+    // playing a level, a cutscene or a track from an editor skips the game's title screen (game shell, GAME_RULES.md)
+    if (typeof startLevel === 'number' && !/GAME_BOOT/.test(extraLua || '')) extraLua = 'GAME_BOOT = 3\n' + (extraLua || '');
     syncLevel();
     if (BKTracks.beforeRun(cart)) atlasDirty = true;   // track carts: edge tiles come from the road segment tiles
     newRouteSegment(start);
@@ -1410,18 +1430,37 @@ end
     acc = 0; last = performance.now();
     screen.focus();
   }
-  function playCart(c, label) {
+  let lastPlayed = null;
+  function playCart(c, label, extraLua) {
+    lastPlayed = { c, label };
     startAudio();
     overlay.classList.add('hidden');
     RT.HEAPU8.set(c.palette, ptr.pal); RT.HEAPU8.set(c.tiles, ptr.tiles); RT.HEAPU8.set(c.flags, ptr.flags);
     RT.HEAPU16.set(c.levels[0].map, ptr.map >> 1);
     gfxDirtyRT = true; playingEditor = false; bit.playing = label; playingLevels = c.levels; playingLevel = 0;
     log(`▶ Bit: playing "${c.name}"`, 'sys');
-    running = loadCode(c.code, BKEntities.toLua(c.entities, levelsMeta(c.levels), 0), c.name || label, playMode === '2' ? 2 : 1, 0) === 0;
+    running = loadCode(c.code, BKEntities.toLua(c.entities, levelsMeta(c.levels), 0, extraLua), c.name || label, playMode === '2' ? 2 : 1, 0) === 0;
     acc = 0; last = performance.now();
     screen.focus();
   }
+  // _restart(mode) from the game shell: load the playing game again (GAME_BOOT: 1 title, 2 new game, 3 play)
+  function restartGame(mode) {
+    if (link.running) return;
+    const extra = `GAME_BOOT = ${mode | 0}\n`;
+    const onBit = bit.on && bit.cur && bit.playing && bit.playing !== 'home' && bit.playing !== 'studio' && lastPlayed;
+    if (onBit) {
+      const key = bit.cur;
+      BKSnap.forget(key.id);
+      stop(true);
+      playCart(lastPlayed.c, lastPlayed.label, extra);
+      bit.cur = key;
+    } else if (playingEditor) {
+      stop(true);
+      run(undefined, extra);
+    }
+  }
   async function bitRequest(cmd, arg, fresh) {
+    if (cmd === 5) { restartGame(arg); return; }
     if (cmd === 4) {   // level(n): load that level's map before the next frame
       const L = playingLevels && playingLevels[arg - 1];
       if (L) { RT.HEAPU16.set(L.map, ptr.map >> 1); playingLevel = arg - 1; if (playingEditor) newRouteSegment(arg - 1); }
@@ -1546,6 +1585,27 @@ end
     });
   }
   $('btnLib').onclick = showLibrary;
+
+  /* ------------------------------------------------------------ game rules (GAME_RULES.md, studio/rules.js) */
+  const RULES_URL = 'https://github.com/Dvrkstvr/bitkit/blob/main/GAME_RULES.md';
+  let rulesSeen = null;
+  function updateRulesBadge() {
+    if (!window.BKRules) return;
+    const code = getCode();
+    if (code === rulesSeen) return;
+    rulesSeen = code;
+    const r = BKRules.check({ code }), ok = r.filter(x => x.ok).length;
+    $('btnRules').textContent = `Rules ${ok}/${r.length}`;
+    $('btnRules').classList.toggle('rules-ok', ok === r.length);
+  }
+  setInterval(updateRulesBadge, 1500);
+  $('btnRules').onclick = () => {
+    const r = BKRules.check({ code: getCode() });
+    const rows = r.map(x => `<li class="${x.ok ? 'ok' : 'todo'}"><b>${x.ok ? '✓' : '○'} ${escapeHtml(x.name)}</b><br><span class="dim">${escapeHtml(x.about)}</span></li>`).join('');
+    modal('Game rules', `<p>Every BitKit game, built-in or from the community, has these. <code>game{}</code> gives you most of them in one call (see the Help tab).</p>
+      <ul class="rules-list">${rows}</ul>
+      <p class="dim small">This is a quick look at your code. Play it through once to be sure. <a href="${RULES_URL}" target="_blank" rel="noopener">Read the rules</a></p>`, [['Close', closeModal, 'primary']]);
+  };
   BKStore.init().then(showCartFile, () => {});
 
   /* in-page dialogs (native confirm() is unavailable in some embeds) */
@@ -1576,6 +1636,14 @@ end
       ['_update()', 'Called 60 times a second. Put game logic here.'],
       ['_draw()', 'Called after every _update. Put drawing here.'],
       ['print(...)', 'Write to the studio console (for debugging).']]],
+    ['Game shell: menus every game has (GAME_RULES.md)', [
+      ['game{title=, goal=, help=, continue=, ...}', 'Call in _init. Adds the title screen (Continue, New game, Settings, How to play), the pause menu on Start (Resume, Settings, Quit to title) and volume settings. Fields: title, goal, help (list of lines), continue(cp), new_game(), can_continue(), pause ({{"name", fn}}), settings ({{key=, name=, min=, max=, value=} or {key=, name=, values={...}}}), music.'],
+      ['checkpoint(t)', 'Remember where to carry on: Continue on the title screen calls continue(t). checkpoint(nil) forgets it.'],
+      ['game_win(text)', 'The goal is reached: shows the "goal complete" screen (after any cutscene ends) and puts a star on the title screen.'],
+      ['setting(key)', 'A value from the Settings screen. "volume" and "music" are 0..10; volume already scales sfx() and tone().'],
+      ['mus(note, ...)', 'sfx() for music: also turned down by the Music level (game{music=true}).'],
+      ['game_play()', 'Skip the menus and go straight to gameplay.'],
+      ['GAME.state', '"title", "play", "pause", "settings", "help", "confirm" or "won".']]],
     ['Graphics (320x240, 256 colours)', [
       ['cls([c])', 'Clear the screen with colour c (default 0).'],
       ['pset(x,y,c) / pget(x,y)', 'Set or read a pixel.'],
@@ -1695,7 +1763,7 @@ end
       const start = Math.max(0, Math.min(opts.level | 0, c.levels.length - 1));
       RT.HEAPU8.set(c.palette, ptr.pal); RT.HEAPU8.set(c.tiles, ptr.tiles); RT.HEAPU8.set(c.flags, ptr.flags);
       RT.HEAPU16.set(c.levels[start].map, ptr.map >> 1);
-      ok = loadCode(c.code, BKEntities.toLua(c.entities, levelsMeta(c.levels), start), null, 1, 0) === 0;
+      ok = loadCode(c.code, BKEntities.toLua(c.entities, levelsMeta(c.levels), start, 'GAME_BOOT = 3\n'), null, 1, 0) === 0;   // tests skip the title screen
       const press = new Uint8Array(12);
       for (; ok && frames < opts.frames; frames++) {
         let mask = 0; press.fill(0);

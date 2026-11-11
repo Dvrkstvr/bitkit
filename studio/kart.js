@@ -834,13 +834,33 @@ end
 -- ------------------------------------------------------------------ game flow
 function _init()
   TRACKS = track_list()
+  -- title screen, pause menu (Start) and settings: the game shell (see GAME_RULES.md)
+  game{
+    title = "Kart Lab",
+    goal = "Build a kart and finish 1st on every track.",
+    help = {
+      "R or A: throttle (squeeze R harder to go faster). B: brake. D-pad: steer.",
+      "Hold L (or B on the throttle) and steer to drift; let go for a boost.",
+      "X: use your item. Hold down to look back; down + X fires backwards.",
+    },
+    -- Continue goes straight into a race on your last track with your saved kart
+    can_continue = function() local d = saved() return (PLAYERS or 1) == 1 and type(d) == "table" and d.sel ~= nil end,
+    continue = function() load_track() end,
+    new_game = function() save(nil); _init() end,
+    pause = {
+      {"Restart race", function() if mode == "count" or mode == "race" then start_race() end end},
+      {"Back to garage", function() mode, gt, ready = "garage", 0, {} end},
+    },
+    settings = {{key = "rivals", name = "Rivals", values = {"Easy", "Normal", "Hard"}, value = 2}},
+  }
   sel = {track=1, body=1, eng=2, tyre=1, paint=1}
-  best = {}
+  best, wins = {}, {}
   if saved then
     local d = saved()
     -- with friends every Bit must start the same, so your saved kart only comes back when you play alone
     if d and d.sel and (PLAYERS or 1) == 1 then for k, v in pairs(d.sel) do sel[k] = v end end
     if d and type(d.best) == "table" then best = d.best end
+    if d and type(d.wins) == "table" and (PLAYERS or 1) == 1 then wins = d.wins end
   end
   if sel.track > #TRACKS then sel.track = 1 end
   -- everyone playing gets a kart in the same race (rivals fill the grid up to KARTS).
@@ -852,12 +872,13 @@ function _init()
   shake, parts, pop_t = 0, {}, 0
   TREES, CRATES, hazards, shots = {}, {}, {}, {}
   if KART_QUICK then                   -- "race it" on the Track tab: straight onto that track
+    game_play()
     for i, tr in ipairs(TRACKS) do if tr.level == KART_QUICK then sel.track = i; load_track() end end
   end
 end
 
 function persist()
-  if save then save({sel = sel, best = best}) end
+  if save then save({sel = sel, best = best, wins = wins}) end
 end
 
 -- load the track's level (if it is one), then build its world a little each frame
@@ -902,7 +923,7 @@ function start_race()
   for i = 1, nr do
     local p = table.remove(paints, rnd(#paints))
     local k = new_kart(rnd(#BODIES), rnd(#ENGINES), rnd(#TYRES), p, true)
-    k.skill, k.lane, k.lane_want = 0.9 + 0.075 * i / nr, rnd(-14, 14), 0
+    k.skill, k.lane, k.lane_want = (0.9 + 0.075 * i / nr) * ({0.9, 1, 1.07})[setting("rivals") or 2], rnd(-14, 14), 0
     karts[#karts + 1] = k
   end
   for p = 1, NH do table.insert(karts, rnd(NH == 1 and 2 or 1, #karts + 1), humans[p]) end   -- start somewhere in the pack
@@ -1017,8 +1038,14 @@ function race_update()
     new_best = false
     for _, h in ipairs(humans) do
       if not best[key] or h.time < best[key] then best[key] = h.time; new_best = true end
+      if h.place == 1 then wins[key] = true end
     end
     persist()
+    local won_all = true
+    for _, tr in ipairs(TRACKS) do if not wins[tr.name] then won_all = false end end
+    if won_all and not GAME.won then
+      game_win("You won on every track! Try a harder Rivals setting, or build your own track on the Track tab.")
+    end
   end
   track(player.x, player.y)        -- the Map tab shows your racing line
   -- each player's camera swings behind their kart, lagging a little in turns and more in drifts.
@@ -1427,8 +1454,11 @@ function draw_garage_for(v)
   rectfill(158, 136, 156, 14, on and 25 or 2)
   text("RACE!", 214, 139, on and 27 or 13)
   local b = best[TRACKS[sel.track].name]
+  local nw = 0
+  for _, tr in ipairs(TRACKS) do if wins[tr.name] then nw = nw + 1 end end
+  text("WINS " .. nw .. "/" .. #TRACKS, 238, 10, nw == #TRACKS and 17 or 29)
   local about = row == 1 and v > 1 and "Player 1 picks the track."
-    or row == 1 and (b and ("Best time " .. tstr(b)) or "No time set yet.")
+    or row == 1 and (b and ("Best time " .. tstr(b) .. (wins[TRACKS[sel.track].name] and "  (won)" or "")) or "No time set yet.")
     or row == 2 and BODIES[sel.body].about or row == 3 and ENGINES[sel.eng].about
     or row == 4 and TYRES[sel.tyre].about or row == 5 and "Looks only. Rivals never copy it." or "3 laps. Crates hold items (X)."
   text(about, 12, 196, 29)
