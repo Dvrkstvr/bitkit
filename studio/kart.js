@@ -244,6 +244,7 @@ ARENAS = {
   {name = "Donut Ring",  kind = "ring", r1 = 150, r2 = 440},
 }
 ACX, ACY = 1024, 512
+ARENA_WALL = -4                      -- how far onto the kerb a kart's middle can go (the kerb is a wall)
 function arena_d(A, x, y)            -- distance to the arena's edge: below 0 is inside the paved area
   if A.kind == "ring" then
     local d = math.sqrt((x - ACX)^2 + (y - ACY)^2)
@@ -251,6 +252,23 @@ function arena_d(A, x, y)            -- distance to the arena's edge: below 0 is
   end
   local qx, qy = math.abs(x - ACX) - (A.w - A.r), math.abs(y - ACY) - (A.h - A.r)
   return math.sqrt(math.max(qx, 0)^2 + math.max(qy, 0)^2) + math.min(math.max(qx, qy), 0) - A.r
+end
+
+-- the arena's kerb is a wall: a kart that reaches it is put back and bounces off
+function arena_wall(k)
+  local d = arena_d(ARENA, k.x, k.y)
+  if d > ARENA_WALL then
+    local gx = arena_d(ARENA, k.x + 2, k.y) - arena_d(ARENA, k.x - 2, k.y)
+    local gy = arena_d(ARENA, k.x, k.y + 2) - arena_d(ARENA, k.x, k.y - 2)
+    local m = math.max(math.sqrt(gx*gx + gy*gy), 0.01)
+    gx, gy = gx / m, gy / m
+    k.x, k.y = k.x - gx * (d - ARENA_WALL), k.y - gy * (d - ARENA_WALL)
+    local out = k.vx * gx + k.vy * gy
+    if out > 0 then
+      k.vx, k.vy = (k.vx - gx * out * 1.6) * 0.85, (k.vy - gy * out * 1.6) * 0.85
+      if out > 0.8 and mine(k) then sfx("C2", 4, 0.12, 3, 2) end
+    end
+  end
 end
 
 -- builds an arena over several frames: banked ground, the paved floor, a ring of waypoints, crates
@@ -1362,21 +1380,11 @@ function race_update()
       end
     end
     drive(k, thr, brk, steer, drift)
-    if GMODE == "rumble" then                       -- the arena's banks turn you back in
-      local d = arena_d(ARENA, k.x, k.y)
-      if d > 10 then
-        local gx = arena_d(ARENA, k.x + 2, k.y) - arena_d(ARENA, k.x - 2, k.y)
-        local gy = arena_d(ARENA, k.x, k.y + 2) - arena_d(ARENA, k.x, k.y - 2)
-        local m = math.max(math.sqrt(gx*gx + gy*gy), 0.01)
-        gx, gy = gx / m, gy / m
-        k.x, k.y = k.x - gx * (d - 10), k.y - gy * (d - 10)
-        local out = k.vx * gx + k.vy * gy
-        if out > 0 then k.vx, k.vy = k.vx - gx * out * 1.5, k.vy - gy * out * 1.5 end
-      end
-    end
+    if GMODE == "rumble" then arena_wall(k) end
     track_kart(k)
   end
   collide()
+  if GMODE == "rumble" then for _, k in ipairs(karts) do arena_wall(k) end end   -- bumps can't push anyone through
   if racing then update_items() end
   -- the race ends once every player has crossed the line (finished players' karts drive themselves).
   -- A Rumble ends when one kart is left, every player is out, or the time runs out.
