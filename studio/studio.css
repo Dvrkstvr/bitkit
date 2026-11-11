@@ -542,3 +542,6 @@ li.CodeMirror-hint-active { background: #3a2e5c; color: #fff; }
 .lb-padbtns { display: flex; flex-direction: column; gap: 4px; justify-content: center; }
 .pick-list { display: flex; flex-direction: column; gap: 4px; }
 .lb-sub { text-transform: none; letter-spacing: 0; }
+
+/* ROM files dragged over the Bit */
+.game-wrap.drop { outline: 3px dashed #8ad35a; outline-offset: 4px; }

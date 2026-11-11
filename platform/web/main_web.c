@@ -1,5 +1,6 @@
 /* BitKit browser host: exposes the runtime to JavaScript. MIT License. */
 #include "../../runtime/bk.h"
+#include "../../runtime/bk_emu.h"
 #include <emscripten.h>
 #include <string.h>
 
@@ -13,7 +14,32 @@ EM_JS(void, js_log, (const char *msg, int is_err), {
 
 static void logger(const char *msg, int is_err) { js_log(msg, is_err); }
 
-EMSCRIPTEN_KEEPALIVE void bkw_init(void) { bk_machine_init(&machine); bk_set_logger(logger); }
+/* emulator apps: the studio keeps the ROMs and saves (studio/roms.js); these reach it through Module.emu* */
+EM_JS(char *, js_emu_roms, (const char *kind), {
+  var s = Module.emuRoms ? Module.emuRoms(UTF8ToString(kind)) : null;
+  return s ? Module.stringToNewUTF8(s) : 0;
+});
+EM_JS(void, js_emu_open, (int index), { if (Module.emuOpen) Module.emuOpen(index); });
+EM_JS(void, js_emu_sram, (const char *name, const uint8_t *data, uint32_t len), {
+  if (Module.emuSram) Module.emuSram(UTF8ToString(name), HEAPU8.slice(data, data + len));
+});
+EM_JS(void, js_emu_state_save, (const char *name, int slot, const uint8_t *data, uint32_t len), {
+  if (Module.emuStateSave) Module.emuStateSave(UTF8ToString(name), slot, HEAPU8.slice(data, data + len));
+});
+EM_JS(void, js_emu_state_load, (const char *name, int slot), { if (Module.emuStateLoad) Module.emuStateLoad(UTF8ToString(name), slot); });
+static const bk_emu_host web_emu = {js_emu_roms, js_emu_open, js_emu_sram, js_emu_state_save, js_emu_state_load};
+
+EMSCRIPTEN_KEEPALIVE void bkw_init(void) { bk_machine_init(&machine); bk_set_logger(logger); bk_emu_set_host(&web_emu); }
+EMSCRIPTEN_KEEPALIVE uint8_t *bkw_emu_rom_alloc(uint32_t len) { return bk_emu_rom_alloc(len); }
+EMSCRIPTEN_KEEPALIVE int bkw_emu_start(const char *name) { return bk_emu_start(name); }
+EMSCRIPTEN_KEEPALIVE const char *bkw_emu_error(void) { return bk_emu_error(); }
+/* the battery save: its pointer, and its size in *len (0 = this game has none) */
+EMSCRIPTEN_KEEPALIVE uint8_t *bkw_emu_sram(uint32_t *len) { return bk_emu_sram(len); }
+EMSCRIPTEN_KEEPALIVE void bkw_emu_sram_loaded(void) { bk_emu_sram_loaded(); }
+EMSCRIPTEN_KEEPALIVE int bkw_emu_state_load(const uint8_t *data, uint32_t len) { return bk_emu_state_load(data, len); }
+EMSCRIPTEN_KEEPALIVE void bkw_emu_notify(const char *what, int ok) { bk_emu_notify(what, ok); }
+EMSCRIPTEN_KEEPALIVE int bkw_emu_kind(void) { return bk_emu_kind(); }
+EMSCRIPTEN_KEEPALIVE void bkw_emu_close(void) { bk_emu_close(); }
 EMSCRIPTEN_KEEPALIVE int bkw_load(const char *code) { return bk_lua_load(code); }
 EMSCRIPTEN_KEEPALIVE int bkw_load_ex(const char *data, const char *code) { return bk_lua_load_ex(data, code); }
 EMSCRIPTEN_KEEPALIVE int bkw_eval(const char *code) { return bk_lua_eval(code); }

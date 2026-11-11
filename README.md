@@ -234,6 +234,22 @@ The Bit has no GPU, so shaders are small C routines that run on the 320x240 pict
 
 Colour shaders snap their results to the palette, so a smooth fade needs a ramp of colours in the palette.
 
+## 🎮 Emulators
+
+The Bit's Utilities row (press Down on the home screen) has three emulator apps: **Game Boy**, **Game Boy Color** and **NES**.
+They play games you own: in the studio, drop `.gb`, `.gbc` or `.nes` files on the Bit's screen or use the **ROMs** button
+under it; on a PocketBit, put them in `/roms` on the SD card (or in `/roms/gb`, `/roms/gbc`, `/roms/nes`).
+BitKit ships no games, only its own tiny test cards (`tools/make_test_roms.py`).
+
+- **L** opens the menu: save and load states (9 slots), screen size (1x up to full 320×240), Game Boy colours, buttons, reset, quit.
+- **R** fast-forwards, **X** and **Y** are turbo A and B. Every button can be remapped in the menu.
+- Battery saves are kept by themselves (in the browser, or as `.sav` next to the ROM on the SD card); states are `.st1` to `.st9`.
+- Leaving with Start+Select pauses the game like any other; picking the app again carries on.
+
+The emulators are native C inside the runtime, so the same code runs in the studio and on the ESP32-S3
+(`runtime/bk_emu.c`, `runtime/bk_emu_fs.c` for the SD card). Cores: [Walnut-CGB](https://github.com/Mr-PauI/Walnut-CGB)
+(Game Boy and Color, based on Peanut-GB), [agnes](https://github.com/kgabis/agnes) (NES: mappers 0, 1, 2 and 4) and BitKit's own NES sound chip.
+
 ## 🏎️ The demo: Kart Lab (2.5D)
 
 A kart racer drawn SNES-style: the map becomes a floor seen in perspective, with real hills, and karts, trees and items are scaled sprites.
@@ -312,7 +328,7 @@ cd studio && python3 -m http.server 8000       # dev server
 runtime/        C core shared by device and web (bk.h, bk_core.c, bk_lua.c, bk_entities.lua)
 platform/web/   Emscripten host glue
 studio/         Browser studio (plain HTML/JS, no build step)
-third_party/    Lua 5.4.7
+third_party/    Lua 5.4.7, Walnut-CGB + minigb_apu (Game Boy), agnes (NES)
 tools/          bundler and tests
 docs/media/     README images
 ```
@@ -330,7 +346,7 @@ docs/media/     README images
 - [ ] Animation timeline editor
 - [ ] ESP32-S3 host (PocketBit firmware)
 - [ ] Local multiplayer over ESP-NOW
-- [ ] Launcher, save states and utility apps
+- [x] Launcher and utility apps (music makers, settings, Game Boy / Game Boy Color / NES emulators with save states)
 
 ## 🤝 Contributing
 
@@ -339,6 +355,8 @@ Ideas, bug reports and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBU
 ## 📄 Credits and licences
 
 MIT (see [LICENSE](LICENSE)). Lua 5.4 (MIT, PUC-Rio). CodeMirror 5 (MIT). 8×8 font: font8x8 by Daniel Hepper (public domain).
+Emulators: Walnut-CGB by Mr-PauI and Peanut-GB by Mahyar Koshkouei (MIT, with parts from SameBoy by Lior Halphon, MIT),
+minigb_apu by Alex Baines and Mahyar Koshkouei (MIT), agnes by Krzysztof Gabis (MIT). See `third_party/`.
 Inspired by fantasy consoles such as TIC-80 and PICO-8. No code is copied from GPL projects.
 
 <div align="center"><sub>Made for tinkerers who want to hold their games in their hands.</sub></div>

@@ -1,5 +1,6 @@
 /* BitKit runtime: machine state, graphics, input, rng, audio. MIT License. */
 #include "bk.h"
+#include "bk_emu.h"
 #include "bk_font.h"
 #include <string.h>
 #include <math.h>
@@ -963,6 +964,7 @@ void bk_audio_render(float *out, int frames) {
       if (v->freq < 1) v->freq = 1;
     }
   }
+  bk_emu_audio_mix(out, frames);   /* the emulator apps' sound (bk_emu.c) */
   for (int i = 0; i < frames * 2; i++) {
     float s = out[i] * BK->master_vol * 2.f;
     out[i] = s > 1 ? 1 : s < -1 ? -1 : s;
