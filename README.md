@@ -321,9 +321,14 @@ python3 tools/bundle.py dist/bitkit-studio.html
 cd studio && python3 -m http.server 8000       # dev server
 ```
 
+**On the PocketBit:** see **[docs/DEVICE.md](docs/DEVICE.md)**: the ESP32-S3 firmware (ESP-IDF 5.3), how to flash it, and what runs there. CI builds it on every push (artifact *pocketbit-firmware*) and plays every game through the device code.
+
 ```
 runtime/        C core shared by device and web (bk.h, bk_core.c, bk_capture.c, bk_lua.c, bk_entities.lua)
 platform/web/   Emscripten host glue
+platform/device/ PocketBit host in portable C (home screen, saves, settings, paused games, cart files)
+platform/esp32s3/ ESP-IDF firmware: screen, sound, buttons, SD card, clock
+platform/sim/   the device host on Linux, for CI
 studio/         Browser studio (plain HTML/JS, no build step)
 third_party/    Lua 5.4.7
 tools/          bundler and tests
@@ -341,7 +346,7 @@ docs/media/     README images
 - [x] Multiplayer in the studio: two players on one screen, or up to 8 linked Bit windows in lockstep (home-screen lobby, pause together, rejoin after a reload)
 - [ ] Music tracker and SFX editor
 - [ ] Animation timeline editor
-- [ ] ESP32-S3 host (PocketBit firmware)
+- [x] ESP32-S3 host (PocketBit firmware): builds in CI, not yet tried on hardware ([docs/DEVICE.md](docs/DEVICE.md))
 - [ ] Local multiplayer over ESP-NOW
 - [ ] Launcher, save states and utility apps
 - [x] Share hub: photos, clips, play links, QR codes and a hub on GitHub

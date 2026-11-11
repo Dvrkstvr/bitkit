@@ -45,6 +45,51 @@ jobs:
       - name: Share hub publisher
         run: node tools/hubtest.cjs
 
+  device:
+    # the PocketBit host (platform/device) on Linux: plays every built-in game and app through the device code
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Export the games and apps for the device
+        run: node tools/export_device.cjs build/device-flash
+      - name: Build the headless PocketBit
+        run: platform/sim/build.sh
+      - name: Play every game and app on the device host
+        run: platform/sim/build/bitsim --test build/device-flash build/device-data --frames 1200 --report build/device-report.md
+      - name: Frame times on the CI machine
+        if: always()
+        run: cat build/device-report.md >> "$GITHUB_STEP_SUMMARY" || true
+
+  firmware:
+    # the real ESP32-S3 firmware, built with ESP-IDF 5.3; the flashable files are kept as a build artifact
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Export the games and apps into the firmware's flash disk
+        run: node tools/export_device.cjs
+      - name: Build the firmware (ESP-IDF 5.3, ESP32-S3)
+        run: |
+          docker run --rm -v "$PWD:/bitkit" -w /bitkit/platform/esp32s3 espressif/idf:v5.3.2 \
+            bash -c 'idf.py set-target esp32s3 && idf.py build && idf.py size | tee build/size.txt'
+      - name: Collect the files to flash
+        run: |
+          B=platform/esp32s3/build
+          mkdir -p pocketbit-firmware
+          cp $B/bootloader/bootloader.bin $B/partition_table/partition-table.bin $B/pocketbit.bin $B/storage.bin $B/flash_args pocketbit-firmware/
+          sed -i 's#bootloader/##; s#partition_table/##' pocketbit-firmware/flash_args
+          cp platform/esp32s3/FLASHING.txt pocketbit-firmware/
+          echo '```' >> "$GITHUB_STEP_SUMMARY"; grep -E "DIRAM|Flash Code|Flash Data|Total image" $B/size.txt >> "$GITHUB_STEP_SUMMARY" || true; echo '```' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pocketbit-firmware
+          path: pocketbit-firmware/
+
   linked-bits:
     runs-on: ubuntu-latest
     steps:

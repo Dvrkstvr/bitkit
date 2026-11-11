@@ -186,6 +186,10 @@ int  bk_clip_frame(int frames60);     /* add the screen; it stays frames60 sixti
 int  bk_clip_end(void);               /* finish the GIF: frames written, or -1 */
 int  bk_clip_recording(void);
 int  bk_clip_seconds(void);
+/* The same in bands, for a panel fed from small DMA buffers: bk_present_begin() once per frame (after any change to
+   BK->display or the palette), then bk_present_rgb565(out, y0, y1) for rows y0..y1-1 into out[0..]. */
+void bk_present_begin(void);
+void bk_present_rgb565(uint16_t *out, int y0, int y1);
 
 /* input: call once per frame before update */
 void bk_set_input(int player, uint16_t mask, const uint8_t *press);   /* player 0..3 */
@@ -210,3 +214,15 @@ int  bk_lua_frame(void);              /* runs _update + _draw. 0 ok */
 const char *bk_lua_error(void);
 int  bk_lua_eval(const char *code);    /* run a chunk in the loaded cart's state (editors talk to their player). 0 ok */
 void bk_lua_close(void);
+
+/* Several carts at once (the device keeps a paused game alive in PSRAM while the home screen runs).
+   bk_lua_set_alloc picks the allocator for Lua states made from now on (NULL = realloc/free).
+   bk_ctx_take moves the running cart out of the runtime (its Lua state stays alive) and leaves the runtime empty;
+   bk_ctx_put closes whatever runs now and brings a taken cart back. Point BK at the cart's own machine around these. */
+typedef void *(*bk_alloc_fn)(void *ud, void *ptr, size_t osize, size_t nsize);
+void bk_lua_set_alloc(bk_alloc_fn fn, void *ud);
+typedef struct { void *L; int sfx_ref; bk_sprfx_t sprfx; bk_floor_cam fcam; float depth_z; } bk_ctx;
+void bk_ctx_take(bk_ctx *c);
+void bk_ctx_put(const bk_ctx *c);
+void bk_core_ctx_take(bk_ctx *c);     /* the graphics part (bk_core.c); bk_ctx_take calls it */
+void bk_core_ctx_put(const bk_ctx *c);

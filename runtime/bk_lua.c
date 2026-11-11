@@ -14,6 +14,8 @@ static lua_State *L = 0;
 static char err_buf[1024];
 static bk_log_fn logger = 0;
 static int budget = 0;
+static bk_alloc_fn alloc_fn = 0;
+static void *alloc_ud = 0;
 
 #define HOOK_STEP 10000
 #define FRAME_BUDGET 3000  /* x HOOK_STEP instructions per call (~30M) */
@@ -528,6 +530,26 @@ static int pcall_budget(int nargs) {
 
 void bk_lua_close(void) { if (L) lua_close(L); L = 0; sfx_ref = LUA_NOREF; bk_sprfx_reset(); }
 
+void bk_lua_set_alloc(bk_alloc_fn fn, void *ud) { alloc_fn = fn; alloc_ud = ud; }
+
+void bk_ctx_take(bk_ctx *c) {
+  c->L = L; c->sfx_ref = sfx_ref;
+  bk_core_ctx_take(c);
+  L = 0; sfx_ref = LUA_NOREF; bk_sprfx_reset();
+}
+
+void bk_ctx_put(const bk_ctx *c) {
+  bk_lua_close();
+  L = (lua_State *)c->L; sfx_ref = c->sfx_ref;
+  bk_core_ctx_put(c);
+}
+
+static int at_panic(lua_State *l) {
+  snprintf(err_buf, sizeof(err_buf), "PANIC: %s", lua_tostring(l, -1));
+  log_msg(err_buf, 1);
+  return 0;
+}
+
 static int run_chunk(const char *src, const char *name) {
   if (luaL_loadbufferx(L, src, strlen(src), name, "t") != LUA_OK) {
     snprintf(err_buf, sizeof(err_buf), "%s", lua_tostring(L, -1));
@@ -542,7 +564,9 @@ int bk_lua_load(const char *code) { return bk_lua_load_ex(0, code); }
 int bk_lua_load_ex(const char *data, const char *code) {
   bk_lua_close();
   err_buf[0] = 0;
-  L = luaL_newstate();
+  L = alloc_fn ? lua_newstate((lua_Alloc)alloc_fn, alloc_ud) : luaL_newstate();
+  if (!L) { snprintf(err_buf, sizeof(err_buf), "not enough memory to start the game"); log_msg(err_buf, 1); return 1; }
+  if (alloc_fn) lua_atpanic(L, at_panic);
   /* Only safe, deterministic libs: no io/os/package/debug. */
   luaL_requiref(L, LUA_GNAME, luaopen_base, 1);
   luaL_requiref(L, LUA_TABLIBNAME, luaopen_table, 1);
