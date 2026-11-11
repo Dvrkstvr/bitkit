@@ -53,7 +53,7 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
   // host side of level(n): copy that level's map in before the next frame
   const frame = mask => { const r = M._bkw_frame(mask, 0); if (M.HEAP32[sys] === 4) M.HEAPU16.set(levels[M.HEAP32[sys + 1] - 1].map, M._bkw_map() >> 1); return r; };
   M.HEAPU8.set(cart.tiles, M._bkw_tiles()); M.HEAPU8.set(cart.flags, M._bkw_flags()); M.HEAPU16.set(levels[0].map, M._bkw_map() >> 1);
-  if (M._bkw_load_ex(s(window.BKEntities.toLua(cart.entities, meta, 0)), s(window.BK_DEMO.code)) !== 0) fail('demo did not load');
+  if (M._bkw_load_ex(s(window.BKEntities.toLua(cart.entities, meta, 0, 'GAME_BOOT = 3\n')), s(window.BK_DEMO.code)) !== 0) fail('demo did not load');
   for (let f = 0; f < 3000; f++) {
     const mask = (1 << 1) | ((f % 30) < 12 ? 1 << 4 : 0) | (f % 20 === 0 ? 1 << 5 : 0);
     if (frame(mask)) { fail('demo stopped at frame ' + f); break; }
@@ -62,7 +62,7 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
   // switching levels: level(2) loads the cave map and its entities, the player keeps its HP
   const probe = '\nlocal _u = _update\nfunction _update() if t() == 5 then PLAYER.hp = 2; level(2) end _u() if t() == 8 then print("probe", LEVEL, #ents_all("goal"), #ents_all("exit"), PLAYER.hp, mget(0, 0)) end end';
   M.HEAPU16.set(levels[0].map, M._bkw_map() >> 1);
-  if (M._bkw_load_ex(s(window.BKEntities.toLua(cart.entities, meta, 0)), s(window.BK_DEMO.code + probe)) !== 0) fail('demo with probe did not load');
+  if (M._bkw_load_ex(s(window.BKEntities.toLua(cart.entities, meta, 0, 'GAME_BOOT = 3\n')), s(window.BK_DEMO.code + probe)) !== 0) fail('demo with probe did not load');
   for (let f = 0; f < 12; f++) frame(0);
   const line = logs.find(l => l.startsWith('probe'));
   const v = line ? line.split(/\s+/).slice(1).map(Number) : [];
@@ -72,7 +72,7 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
   logs = [];
   const cutProbe = '\nlocal _u = _update\nfunction _update() _u() local on_, nm = cutscene_playing() if t() == 2 then x0 = PLAYER.x print("cut", on_ and 1 or 0, nm) end if t() == 60 then print("frozen", PLAYER.x == x0 and 1 or 0) end end\non("cutscene_end", function(n) print("cutend", n, t()) end)';
   M.HEAPU16.set(levels[0].map, M._bkw_map() >> 1);
-  if (M._bkw_load_ex(s(window.BKEntities.toLua(cart.entities, meta, 0)), s(window.BK_DEMO.code + cutProbe)) !== 0) fail('demo with cutscene probe did not load');
+  if (M._bkw_load_ex(s(window.BKEntities.toLua(cart.entities, meta, 0, 'GAME_BOOT = 3\n')), s(window.BK_DEMO.code + cutProbe)) !== 0) fail('demo with cutscene probe did not load');
   for (let f = 0; f < 1200 && !logs.some(l => l.startsWith('cutend')); f++) frame((1 << 1) | ((f % 20) < 2 ? 1 << 4 : 0));
   const cl = logs.find(l => /^cut\s/.test(l)), fz = logs.find(l => l.startsWith('frozen')), ce = logs.find(l => l.startsWith('cutend'));
   if (!cl || cl.split(/\s+/)[1] !== '1' || cl.split(/\s+/)[2] !== 'intro') fail('intro cutscene did not start: ' + cl);
@@ -81,7 +81,7 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
   // START skips; a trigger-only cutscene plays from code
   logs = [];
   M.HEAPU16.set(levels[0].map, M._bkw_map() >> 1);
-  M._bkw_load_ex(s(window.BKEntities.toLua(cart.entities, meta, 0)), s(window.BK_DEMO.code + '\non("cutscene_end", function(n) print("cutend", n, t()) end)\nlocal _u = _update\nfunction _update() _u() if t() == 30 then cutscene("gate") end end'));
+  M._bkw_load_ex(s(window.BKEntities.toLua(cart.entities, meta, 0, 'GAME_BOOT = 3\n')), s(window.BK_DEMO.code + '\non("cutscene_end", function(n) print("cutend", n, t()) end)\nlocal _u = _update\nfunction _update() _u() if t() == 30 then cutscene("gate") end end'));
   for (let f = 0; f < 40; f++) frame(f === 5 || f === 35 ? 1 << 10 : 0);
   const ends = logs.filter(l => l.startsWith('cutend')).map(l => l.split(/\s+/)[1]);
   if (ends.join() !== 'intro,gate') fail('START did not skip cutscenes: ' + ends.join());
@@ -97,7 +97,7 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
     ents.types.find(t => t.name === 'pebble').tree = window.BKEntities.PRESETS['Disappear after a while']();
     ents.types.find(t => t.name === 'pebble').tree.c[0].p.frames = 6;
     M.HEAPU16.set(levels[0].map, M._bkw_map() >> 1);
-    M._bkw_load_ex(s(window.BKEntities.toLua(ents, meta, 0)), s(window.BK_DEMO.code + '\nlocal _u = _update\nfunction _update() _u() if t() == 15 then print("peb", #ents_all("pebble")) end if t() == 22 then print("peb", #ents_all("pebble")) end end'));
+    M._bkw_load_ex(s(window.BKEntities.toLua(ents, meta, 0, 'GAME_BOOT = 3\n')), s(window.BK_DEMO.code + '\nlocal _u = _update\nfunction _update() _u() if t() == 15 then print("peb", #ents_all("pebble")) end if t() == 22 then print("peb", #ents_all("pebble")) end end'));
     for (let f = 0; f < 24; f++) frame(f === 3 ? 1 << 10 : f >= 8 && f <= 10 ? 1 << 0 : f === 12 ? 1 << 5 : 0);   // skip intro, face left (away from the sage), throw
     const pb = logs.filter(l => l.startsWith('peb')).map(l => +l.split(/\s+/)[1]);
     if (pb[0] !== 1 || pb[1] !== 0) fail('pebble with Wait + Remove self: ' + pb.join(',') + ' (expected 1 then 0)');
@@ -109,7 +109,7 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
     M._bkw_players(2, 0);
     M.HEAPU16.set(levels[0].map, M._bkw_map() >> 1);
     const probe2 = '\nlocal _u = _update\nfunction _update() _u() if t() == 200 then local p = ents_players() print("two", #p, p[1].pnum, p[2].pnum, math.floor(p[2].x - p[1].x)) end end';
-    M._bkw_load_ex(s(window.BKEntities.toLua(cart.entities, meta, 0)), s(window.BK_DEMO.code + probe2));
+    M._bkw_load_ex(s(window.BKEntities.toLua(cart.entities, meta, 0, 'GAME_BOOT = 3\n')), s(window.BK_DEMO.code + probe2));
     const pr = M._malloc(16);
     for (let f = 0; f < 210; f++) {
       M._bkw_input(2, f > 150 ? (1 << 1) : 0, 0);     // only player 2 walks right once the intro is skipped
@@ -130,7 +130,7 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
       R._bkw_players(2, me);
       R.HEAPU8.set(cart.tiles, R._bkw_tiles()); R.HEAPU8.set(cart.flags, R._bkw_flags()); R.HEAPU16.set(levels[0].map, R._bkw_map() >> 1);
       const probe = '\nlocal _u = _update\nfunction _update() _u() if t() % 300 == 0 then local h = LEVEL * 7 + #ents_all() for _, p in ipairs(ents_players()) do h = h + math.floor(p.x) * 3 + math.floor(p.y) * 5 + p.hp end print("sync", t(), h, rnd(1000)) end end';
-      return R._bkw_load_ex(R.stringToNewUTF8(window.BKEntities.toLua(cart.entities, meta, 0)), R.stringToNewUTF8(window.BK_DEMO.code + probe));
+      return R._bkw_load_ex(R.stringToNewUTF8(window.BKEntities.toLua(cart.entities, meta, 0, 'GAME_BOOT = 3\n')), R.stringToNewUTF8(window.BK_DEMO.code + probe));
     };
     logs = [];
     if (boot(M, 1) || boot(M2, 2)) fail('linked bits did not load');
@@ -174,7 +174,7 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
     kd.buildGfx(kc);
     M.HEAPU8.set(kc.tiles, M._bkw_tiles()); M.HEAPU8.set(kc.flags, M._bkw_flags()); M.HEAPU16.set(kc.map, M._bkw_map() >> 1);
     const auto = '\nlocal _sr = start_race\nfunction start_race() _sr() player.ai, player.skill, player.lane, player.lane_want = true, 1, 0, 0 end\nlocal _u = _update\nfunction _update() _u() if mode == "race" and gt % 150 == 0 then player.item, player.roll = (gt // 150) % #ITEMS + 1, 0 use_item(player) used = (used or 0) + 1 if #shots + #hazards > 0 then fired = true end end if t() == 2299 then print("kart", mode, player.lap, #karts, used, fired) end end';
-    if (M._bkw_load(s(kd.code + auto)) !== 0) fail('Kart Lab did not load');
+    if (M._bkw_load(s('GAME_BOOT = 3 ' + kd.code + auto)) !== 0) fail('Kart Lab did not load');
     for (let f = 0; f < 2300; f++) if (M._bkw_frame(f === 10 ? 1 << 4 : (f > 400 && f < 700 ? (1 << 8) | (f % 90 < 45 ? 1 : 2) : 0), 0)) { fail('Kart Lab stopped at frame ' + f); break; }
     const kl = (logs.find(x => x.startsWith('kart')) || '').split(/\s+/);
     if (kl[1] !== 'race' || !(+kl[2] >= 2) || kl[3] !== '8' || !(+kl[4] >= 5) || kl[5] !== 'true') fail('Kart Lab race: ' + kl.join(' ') + ' (expected racing on lap 2 with 8 karts, every item used)');
@@ -186,7 +186,7 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
     logs = [];
     const kd = window.BK_DEMOS.find(d => d.name === 'Kart Lab');
     const probe = '\nlocal _i = _init\nfunction _init() _i() sel.track = 2 end\nlocal _u = _update\nfunction _update() _u() if mode == "count" and gt == 1 then local lo, hi = 999, 0 for y = 0, 1016, 64 do for x = 0, 2040, 64 do local h = hget(x, y) lo, hi = math.min(lo, h), math.max(hi, h) end end print("track2", TRACKS[sel.track].name, NWP > 100, #CRATES, hi - lo > 20, mget(WP[1].x // 8, WP[1].y // 8)) end end';
-    if (M._bkw_load(s(kd.code + probe)) !== 0) fail('Kart Lab (track 2) did not load');
+    if (M._bkw_load(s('GAME_BOOT = 3 ' + kd.code + probe)) !== 0) fail('Kart Lab (track 2) did not load');
     for (let f = 0; f < 200; f++) if (M._bkw_frame(f === 10 ? 1 << 4 : 0, 0)) { fail('Kart Lab (track 2) stopped at frame ' + f); break; }
     const l = (logs.find(x => x.startsWith('track2')) || '').split('\t').slice(1).join(',');
     if (l !== 'Quarry Hills,true,12,true,5') fail('Kart Lab track 2: ' + l + ' (expected Quarry Hills,true,12,true,5)');
@@ -199,7 +199,7 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
     logs = [];
     const kd = window.BK_DEMOS.find(d => d.name === 'Kart Lab');
     const fin = '\nlocal _sr = start_race\nfunction start_race() _sr() player.lap = LAPS end\nlocal _u = _update\nfunction _update() local m = mode _u() if m ~= mode then print("mode", mode) end end';
-    if (M._bkw_load(s(kd.code + fin)) !== 0) fail('Kart Lab (finish) did not load');
+    if (M._bkw_load(s('GAME_BOOT = 3 ' + kd.code + fin)) !== 0) fail('Kart Lab (finish) did not load');
     for (let f = 0; f < 1500; f++) {
       const mask = f === 10 ? 1 << 4 : (f > 200 && f < 1000 ? 1 << 9 : 0) | (f === 1400 ? 1 << 4 : 0);
       if (M._bkw_frame(mask, 0)) { fail('Kart Lab (finish) stopped at frame ' + f); break; }
@@ -222,7 +222,7 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
     M.HEAPU8.set(kc.tiles, M._bkw_tiles()); M.HEAPU8.set(kc.flags, M._bkw_flags()); M.HEAPU16.set(kc.levels[1].map, M._bkw_map() >> 1);
     const probe = '\nlocal _u = _update\nfunction _update() _u() if mode == "count" and gt == 1 then print("trk", #TRACKS, TRACKS[sel.track].name, LAPS, #CRATES, math.floor(hget(1500, 120)), fget(5, "start"), fget(6, "boost"), fget(1, "boost")) end end';
     const lua = window.BKEntities.toLua(kc.entities, meta, 1, 'KART_QUICK = 2\n');
-    if (M._bkw_load_ex(s(lua), s(kd.code + probe)) !== 0) fail('Kart Lab (Track tab levels) did not load: ' + errors.join(' '));
+    if (M._bkw_load_ex(s(lua), s('GAME_BOOT = 3 ' + kd.code + probe)) !== 0) fail('Kart Lab (Track tab levels) did not load: ' + errors.join(' '));
     for (let f = 0; f < 200; f++) if (M._bkw_frame(0, 0)) { fail('Kart Lab (Track tab levels) stopped at frame ' + f); break; }
     const l = (logs.find(x => x.startsWith('trk')) || '').split('\t').slice(1).join(',');
     if (!/^2,Quarry Hills,3,12,(\d+),true,true,false$/.test(l) || +l.split(',')[4] < 70) fail('Kart Lab Track tab levels: ' + l + ' (expected 2 tracks, Quarry Hills straight away, 3 laps, 12 crates, raised ground near 1500,120, named behaviours)');
@@ -250,7 +250,7 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
       'for cy = 0, 128, 2 do for cx = 0, 256, 2 do h[#h + 1] = math.floor(hget(cx * 8, cy * 8)) end end ' +
       'print("tmap", table.concat(m, ",")) print("thgt", table.concat(h, ",")) end end';
     const lua = window.BKEntities.toLua(kc.entities, meta, 0, 'KART_QUICK = 1\n');
-    if (M._bkw_load_ex(s(lua), s(kd.code + probe)) !== 0) fail('Kart Lab (shapes) did not load: ' + errors.join(' '));
+    if (M._bkw_load_ex(s(lua), s('GAME_BOOT = 3 ' + kd.code + probe)) !== 0) fail('Kart Lab (shapes) did not load: ' + errors.join(' '));
     for (let f = 0; f < 200; f++) if (M._bkw_frame(0, 0)) { fail('Kart Lab (shapes) stopped at frame ' + f); break; }
     const gm = (logs.find(x => x.startsWith('tmap')) || '').split('\t')[1], gh = (logs.find(x => x.startsWith('thgt')) || '').split('\t')[1];
     if (!gm || !gh) fail('Kart Lab shapes: no map/height report');
@@ -281,7 +281,7 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
       R._bkw_players(2, me);
       R.HEAPU8.set(kg.tiles, R._bkw_tiles()); R.HEAPU8.set(kg.flags, R._bkw_flags()); R.HEAPU16.set(kg.map, R._bkw_map() >> 1);
       R.HEAP32[(R._bkw_save() >> 2)] = -1;              // no save data: every Bit starts the same
-      return R._bkw_load(R.stringToNewUTF8(kd.code + probe));
+      return R._bkw_load(R.stringToNewUTF8('GAME_BOOT = 3 ' + kd.code + probe));
     };
     const inputs = f => [f === 10 ? 1 << 4 : (f > 200 ? 1 << 9 : 0), f === 12 || f === 14 ? 1 << 4 : (f > 200 ? 1 << 4 : 0)];
     logs = [];

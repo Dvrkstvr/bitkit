@@ -7,7 +7,7 @@ require('../studio/runtime.js')({ onLog: (m, e) => console.log(e ? 'ERR' : 'LOG'
   const cart = { tiles: new Uint8Array(32768), flags: new Uint8Array(512), map: new Uint16Array(32768) };
   window.BK_DEMO.buildGfx(cart);
   M.HEAPU8.set(cart.tiles, M._bkw_tiles()); M.HEAPU8.set(cart.flags, M._bkw_flags()); M.HEAPU16.set(cart.map, M._bkw_map() >> 1);
-  const data = window.BKEntities.toLua(cart.entities);
+  const data = window.BKEntities.toLua(cart.entities, null, 0, 'GAME_BOOT = 3\n');
   const code = window.BK_DEMO.code.replace('function _update()\n  ents_update()', `function _update()
   local s = ents_all("sapling")[1]
   if t() == 1 then PLAYER.x, PLAYER.y = s.x + 20, s.y; PLAYER.invincible = true end

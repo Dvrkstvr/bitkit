@@ -110,6 +110,11 @@ BitKit basics
 - Maps: each level has its own map of up to 256x128 tiles (tile 0 = empty) and its own placed entities. One screen is 40x30 tiles.
 - Carts are deterministic: use rnd(), t(); no os/io.
 
+Game rules (GAME_RULES.md): every BitKit game has a main menu, one level you can play from start to end, quick resume, a pause menu with settings and a clear goal.
+- Call game{title=..., goal=..., help={...}, continue=function(cp) ... end} in _init: it adds the title screen, the pause menu on Start (so don't use Start for anything else) and the volume setting.
+- Call checkpoint({...}) at safe spots so Continue goes straight back there, and game_win("...") when the goal is reached.
+- test_game skips the title screen and starts in play.
+
 Entities (Entities tab)
 - Entity types have sprites (anims: name, frames = tile numbers, speed), size in tiles (sw, sh), gravity (grav), collide with solid tiles, hp (0 = can't be hurt), team (enemy, friend, neutral), damage on touch, player (is the player), stomp, hidden (invisible trigger), stats [{name, value}] and a behavior tree.
 - The code must call ents_update() in _update and ents_draw() in _draw (after camera()), usually with ents_camera() for scrolling.

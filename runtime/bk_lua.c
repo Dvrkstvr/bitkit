@@ -286,6 +286,9 @@ static int l_launch(lua_State *l) { BK->sys[0] = lua_toboolean(l, 2) ? 3 : 1; BK
 static int l_home(lua_State *l) { (void)l; BK->sys[0] = 2; BK->sys[1] = 0; return 0; }
 /* _level_map(n): ask the host to copy level n's map into map memory before the next frame (used by level()). */
 static int l_level_map(lua_State *l) { BK->sys[0] = 4; BK->sys[1] = ci(l, 1); return 0; }
+/* _restart(mode): ask the host to load this cart again (game shell "New game" after playing).
+   The host sets GAME_BOOT = mode before _init: 1 title, 2 new game, 3 straight into play. */
+static int l_restart(lua_State *l) { BK->sys[0] = 5; BK->sys[1] = ci(l, 1); return 0; }
 /* _save_raw(str or nil): the host persists BK->save when dirty is set */
 static int l_save_raw(lua_State *l) {
   size_t n = 0;
@@ -328,7 +331,7 @@ static const luaL_Reg API[] = {
   {"btn", l_btn}, {"btnp", l_btnp}, {"btnr", l_btnr}, {"press", l_press},
   {"t", l_t}, {"time", l_time}, {"rnd", l_rnd}, {"srand", l_srand},
   {"sfx", l_sfx}, {"tone", l_tone}, {"stop", l_stop},
-  {"print", l_print}, {"track", l_track}, {"launch", l_launch}, {"home", l_home}, {"_level_map", l_level_map},
+  {"print", l_print}, {"track", l_track}, {"launch", l_launch}, {"home", l_home}, {"_level_map", l_level_map}, {"_restart", l_restart},
   {"_save_raw", l_save_raw}, {"_load_raw", l_load_raw}, {"clock", l_clock},
   {NULL, NULL}
 };

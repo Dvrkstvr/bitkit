@@ -16,7 +16,7 @@ function _update()
   ents_update()
   if PLAYER.vy < -3 and before > -3 then jumps = jumps + 1 end
   if t() == 1999 then print("grounded presses", grounded_presses, "jumps", jumps) end`);
-  M._bkw_load_ex(M.stringToNewUTF8(window.BKEntities.toLua(cart.entities)), M.stringToNewUTF8(code));
+  M._bkw_load_ex(M.stringToNewUTF8(window.BKEntities.toLua(cart.entities, null, 0, 'GAME_BOOT = 3\n')), M.stringToNewUTF8(code));
   M.onLog = (m, e) => console.log(e ? 'ERR ' + m : m);
   for (let f = 0; f < 2000; f++) M._bkw_frame((1 << 1) | ((f % 47) < 2 ? 1 << 4 : 0), 0);
 });

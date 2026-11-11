@@ -15,7 +15,7 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
   const cart = { tiles: new Uint8Array(32768), flags: new Uint8Array(512), map: new Uint16Array(32768) };
   D.buildGfx(cart);
   M.HEAPU8.set(cart.tiles, M._bkw_tiles()); M.HEAPU8.set(cart.flags, M._bkw_flags());
-  const ents = s(window.BKEntities.toLua(cart.entities));
+  const ents = s(window.BKEntities.toLua(cart.entities, null, 0, 'GAME_BOOT = 3\n'));
   const press = M._malloc(16), sv = M._bkw_save() >> 2;
   const frame = (mask, analog) => {
     for (let i = 0; i < 12; i++) M.HEAPU8[press + i] = (mask >> i) & 1 ? 255 : 0;
@@ -111,7 +111,7 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
       R._bkw_players(2, me);
       R.HEAPU8.set(cart.tiles, R._bkw_tiles());
       R.HEAP32[R._bkw_save() >> 2] = -1;
-      return R._bkw_load_ex(R.stringToNewUTF8(window.BKEntities.toLua(cart.entities)), R.stringToNewUTF8(D.code + sync));
+      return R._bkw_load_ex(R.stringToNewUTF8(window.BKEntities.toLua(cart.entities, null, 0, 'GAME_BOOT = 3\n')), R.stringToNewUTF8(D.code + sync));
     };
     logs = [];
     if (boot(M, 1) || boot(M2, 2)) fail('linked Bits did not load');
