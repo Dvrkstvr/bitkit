@@ -11,6 +11,7 @@
 <header class="topbar">
   <div class="brand"><span class="logo"></span><span id="appName">BitKit</span> <span class="dim">Studio</span></div>
   <input id="cartName" class="cartname" spellcheck="false" title="Cart name">
+  <span id="cartFile" class="dim small cart-file"></span>
   <div class="actions">
     <button id="btnRun" class="primary" title="Run (Ctrl+Enter)">&#9654; Run</button>
     <button id="btnStop" title="Stop">&#9632; Stop</button>
@@ -19,6 +20,8 @@
     <button id="btnDemo" title="Load the demo cart">Demo</button>
     <button id="btnOpen" title="Open a .bitkit cart file">Open</button>
     <button id="btnSave" title="Download or copy this cart">Save / share</button>
+    <span class="sep"></span>
+    <button id="btnLib" title="Games on the Bit's memory card (a folder on your computer)">Library</button>
     <input type="file" id="fileOpen" accept=".bitkit,.mboi,.json" hidden>
   </div>
 </header>
@@ -33,6 +36,7 @@
       <span id="padStatus" class="pad-status">No controller (press any button on it)</span>
       <span class="grow"></span>
       <span id="fps" class="dim">&nbsp;</span>
+      <button id="btnBit" title="Turn on the emulated PocketBit: a home screen with the games on its memory card">⏻ Bit</button>
       <button id="btnMute" title="Mute">Sound on</button>
       <button id="btnFull" title="Fullscreen">Fullscreen</button>
     </div>
@@ -319,6 +323,8 @@
 <script src="runtime.js"></script>
 <script src="demo.js"></script>
 <script src="entities.js"></script>
+<script src="bitstore.js"></script>
+<script src="home.js"></script>
 <script src="studio.js"></script>
 </body>
 </html>
