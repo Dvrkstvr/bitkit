@@ -45,11 +45,70 @@ SHOP = {
 
 GOAL = tune("Ships to bring home", 100, 10, 300, 10)                                -- ships to bring home
 
+-- the title screen (game{title_draw = ...}): a night sea, the lighthouse turning its beam, and ships that
+-- only show up when the light reaches them
+function draw_title(t)
+  local HOR, LX0, LY0 = 132, 64, 104
+  cls(1)
+  for i = 0, 46 do                                            -- stars
+    local x, y = (i * 73 + i * i) % 320, (i * 37) % 128
+    if (i + t // 24) % 9 > 0 then pset(x, y, i % 3 == 0 and 13 or 29) end
+  end
+  circfill(262, 108, 11, 12) circfill(267, 104, 10, 1)       -- the moon
+  rectfill(0, HOR, 320, 108, 19)
+  for r = 0, 13 do                                            -- waves: nearer rows are bigger and faster
+    local y = HOR + 2 + r * r * 0.55
+    local gap = 16 + r * 4
+    for x = -(t * (0.15 + r * 0.06)) % gap - gap, 320, gap do line(x, y, x + 3 + r, y, r % 3 == 0 and 21 or 20) end
+  end
+  for k = 0, 5 do line(244 + (k * 7) % 13, 140 + k * 9, 258 + (k * 5) % 9, 140 + k * 9, 22) end   -- moonlight on the water
+  -- the beam turns round the tower: it reaches across the sea, and widens when it points at us
+  local a = t / 150
+  local reach, toward = math.cos(a) * 360, math.sin(a)
+  local spread = 4 + math.max(0, toward) * 26
+  local function beam(c1, c2)
+    for k = -spread, spread, 2 do line(LX0, LY0, LX0 + reach, LY0 + 26 + k, c1) end
+    for k = -spread * 0.3, spread * 0.3, 1 do line(LX0, LY0, LX0 + reach * 0.9, LY0 + 24 + k, c2) end
+  end
+  local function lit(x) return (reach > 0 and x > LX0 and x < LX0 + reach) or (reach < 0 and x < LX0 and x > LX0 + reach) end
+  if toward < 0 then beam(20, 21) end                         -- pointing away: dim, behind the tower
+  for i = 0, 2 do                                             -- ships: ghosts in the dark, in colour in the light
+    local x = (i * 150 + t * (0.2 + i * 0.07)) % 440 - 60
+    local y = HOR + 6 + i * 14
+    local on = lit(x) and toward > -0.6
+    local hull, sail = on and 8 or 31, on and 12 or 30
+    rectfill(x - 12, y - 4, 24, 4, hull) rectfill(x - 9, y, 18, 2, hull)
+    line(x, y - 22, x, y - 4, hull)
+    for s = 0, 14 do line(x + 1, y - 21 + s, x + 1 + s * 0.6, y - 21 + s, sail) end
+    if on then pset(x - 10, y - 6, 27) end
+  end
+  for i = 0, 3 do                                             -- rocks
+    local x, y = 120 + i * 53, HOR + 26 + (i * 17) % 40
+    circfill(x, y, 5 + i % 3, lit(x) and 28 or 31)
+  end
+  for k = 0, 9 do                                             -- the rock the lighthouse stands on
+    local w = 14 + k * 5
+    rectfill(LX0 - w + (k * 7) % 5, 140 + k * 2, w * 2, 2, k < 3 and 30 or 31)
+  end
+  for k = 0, 4 do pset(LX0 - 30 + k * 13, 146 + (k * 5) % 9, 28) end
+  for y = 112, 140 do                                         -- the tower, red and white
+    local hw = 6 + (y - 112) / 28 * 5
+    rectfill(LX0 - hw, y, hw * 2, 1, ((y - 112) // 7) % 2 == 0 and 25 or 13)
+  end
+  rectfill(LX0 - 9, 108, 18, 4, 31)                           -- gallery and lamp room
+  rectfill(LX0 - 5, 98, 10, 10, 27)
+  for k = 0, 6 do rectfill(LX0 - 7 + k, 97 - k, 14 - k * 2, 1, 25) end
+  circfill(LX0, LY0, 3 + (t // 10) % 2, 12)
+  if toward >= 0 then beam(11, 12) end                        -- pointing at us: bright, in front
+end
+
 function _init()
   -- title screen, pause menu (Start) and settings: the game shell (see GAME_RULES.md).
   -- The harbour saves itself every few seconds, so Continue carries on right where you left it.
   game{
     title = "Beacon Keeper",
+    title_draw = draw_title,          -- its own animated title screen (above)
+    look = { title = 27, shadow = 24, panel = 1, edge = 20, hi = 20, text = 23, pick = 27, goal = 22, footer = 22, menu = "right" },
     goal = "Guide " .. GOAL .. " ships safely into the harbour.",
     help = {
       "Left / right turns the beam. Squeeze R for a brighter beam, L for a narrow spotlight.",

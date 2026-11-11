@@ -1076,11 +1076,70 @@ function collide()
 end
 
 -- ------------------------------------------------------------------ game flow
+-- the title screen (game{title_draw = ...}): three karts race down a winding road into the sunset
+function draw_title(t)
+  local HOR = 112
+  local bands = { 3, 4, 5, 9, 10, 11 }
+  for i = 0, 5 do rectfill(0, i * 19, 320, 19, bands[i + 1]) end
+  circfill(236, HOR - 12, 26, 27) circfill(236, HOR - 12, 19, 11)   -- the sun
+  for k = 0, 2 do rectfill(208, HOR - 10 - k * 7, 56, 2, 10) end
+  for x = 0, 319, 2 do                                        -- mountains
+    local h = math.sin(x / 37 + t / 500) * 6 + math.sin(x / 13 + 1) * 3 + 11
+    rectfill(x, HOR - h, 2, h, 2)
+    local h2 = math.sin(x / 23 + 1 + t / 300) * 5 + 8
+    rectfill(x, HOR - h2, 2, h2, 14)
+  end
+  local curve = math.sin(t / 200) * 46
+  local function road(y)                                      -- centre and half width of the road on row y
+    local dy = y - HOR + 1
+    local f = 1 - dy / 128
+    return 104 + curve * f * f, dy * 1.2
+  end
+  for y = HOR, 239 do
+    local dy = y - HOR + 1
+    local z = 1200 / dy
+    local stripe = math.floor((z + t * 6) / 40) % 2 == 0
+    local cx, hw = road(y)
+    local rw = hw * 0.14
+    rectfill(0, y, 320, 1, stripe and 16 or 15)
+    rectfill(cx - hw - rw, y, (hw + rw) * 2, 1, stripe and 25 or 13)
+    rectfill(cx - hw, y, hw * 2, 1, stripe and 30 or 28)
+    if stripe and dy > 6 then rectfill(cx - hw * 0.03, y, hw * 0.06 + 1, 1, 12) end
+  end
+  local KARTS = {                                             -- body, paint, tyre, engine, distance, lane
+    { body = 2, paint = 2, tyre = 1, eng = 2, dy = 28, lane = -0.4 },
+    { body = 3, paint = 5, tyre = 3, eng = 1, dy = 52, lane = 0.45 },
+    { body = 1, paint = 1, tyre = 2, eng = 3, dy = 84, lane = -0.1 },
+  }
+  for i, k in ipairs(KARTS) do
+    local dy = k.dy + math.sin(t / 80 + i * 2) * (6 + i * 3)
+    local y = HOR + dy
+    local cx, hw = road(y)
+    local x = cx + (k.lane + math.sin(t / 60 + i) * 0.25) * hw
+    local sc = dy / 34
+    local idx = (k.body - 1) * 9
+    kart_pal(k)
+    sspr(176 + (idx // 5) * 48 + (idx % 5) * 3, x - 12 * sc, y - 21 * sc + ((t // 3 + i) % 2), 3, 3, sc)
+    pal()
+    for p = 0, 2 do                                            -- dust from the back wheels
+      local q = (t + p * 7 + i * 5) % 21
+      circfill(x + (p - 1) * 9 * sc, y + q * sc * 0.3, (1 + q / 6) * sc, q < 10 and 29 or 28)
+    end
+  end
+  for i = 0, 9 do                                             -- speed lines at the edges
+    local y = HOR + 20 + (i * 37) % 110
+    local x = (i * 61 + t * 9) % 60
+    if i % 2 == 0 then line(x, y, x + 12, y + 3, 13) else line(319 - x, y, 307 - x, y + 3, 13) end
+  end
+end
+
 function _init()
   TRACKS = track_list()
   -- title screen, pause menu (Start) and settings: the game shell (see GAME_RULES.md)
   game{
     title = "Kart Lab",
+    title_draw = draw_title,          -- its own animated title screen (above)
+    look = { title = 27, shadow = 24, panel = 1, edge = 25, hi = 25, text = 13, pick = 27, goal = 11, footer = 11, menu = "right", name_y = 10 },
     goal = "Build a kart and finish 1st on every track.",
     help = {
       "R or A: throttle (squeeze R harder to go faster). B: brake. D-pad: steer.",

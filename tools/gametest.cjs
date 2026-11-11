@@ -36,10 +36,10 @@ require('../studio/runtime.js')({ onLog: (m, e) => { if (e) errors.push(m); else
   const tap = (...names) => { frame(bit(...names)); frame(0); };
   const run = n => { for (let i = 0; i < n; i++) frame(0); };
   // the probe prints the shell state every frame from the cart's _draw
-  const PROBE = 'local _pd = _draw\nfunction _draw() if _pd then _pd() end print("gs", GAME.state, setting("volume"), PLAYER and math.floor(PLAYER.x) or -1, score or -1, LEVEL or -1) end';
+  const PROBE = 'local _pd = _bk_overlay\nfunction _bk_overlay() if _pd then _pd() end print("gs", GAME.state, setting("volume"), PLAYER and math.floor(PLAYER.x) or -1, score or -1, LEVEL or -1) end';
   const st = () => { const l = logs.filter(x => x.startsWith('gs')).pop(); return l ? l.split(/\s+/).slice(1) : []; };
   // the menu on screen (GAME.items), and moving the cursor to one of its items
-  const IP = '\nlocal _pd2 = _draw\nfunction _draw() if _pd2 then _pd2() end print("items|" .. table.concat(GAME.items or {}, "|")) end';
+  const IP = '\nlocal _pd2 = _bk_overlay\nfunction _bk_overlay() if _pd2 then _pd2() end print("items|" .. table.concat(GAME.items or {}, "|")) end';
   const items = () => { const l = logs.filter(x => x.startsWith('items|')).pop(); return l ? l.split('|').slice(1) : []; };
   const pick = name => {
     const i = items().indexOf(name);
@@ -144,7 +144,7 @@ require('../studio/runtime.js')({ onLog: (m, e) => { if (e) errors.push(m); else
 
   // 6. Beacon Keeper keeps its own save: Continue when there is one, Delete save wipes it
   M.HEAP32[sv] = -1;
-  const BP = 'local _pd = _draw\nfunction _draw() if _pd then _pd() end print("gs", GAME.state, G.docked, G.coins) end' + IP;
+  const BP = 'local _pd = _bk_overlay\nfunction _bk_overlay() if _pd then _pd() end print("gs", GAME.state, G.docked, G.coins) end' + IP;
   load('Beacon Keeper', BP);
   run(2);
   if (st()[0] !== 'title') fail('Beacon Keeper should start on the title screen, got ' + st()[0]);
@@ -164,7 +164,7 @@ require('../studio/runtime.js')({ onLog: (m, e) => { if (e) errors.push(m); else
 
   // 7. Kart Lab: Continue goes straight into a race with the saved kart
   M.HEAP32[sv] = -1;
-  const KP = 'local _pd = _draw\nfunction _draw() if _pd then _pd() end print("gs", GAME.state, mode) end';
+  const KP = 'local _pd = _bk_overlay\nfunction _bk_overlay() if _pd then _pd() end print("gs", GAME.state, mode) end';
   load('Kart Lab', KP);
   run(2);
   tap('a'); run(12);                              // New game -> the main menu
