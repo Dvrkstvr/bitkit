@@ -344,5 +344,8 @@ end
     ];
   }
 
-  window.BK_DEMO = { name: 'Sprout Hop', code, buildGfx };
+  window.BK_DEMO = { name: 'Sprout Hop', code, buildGfx, about: 'A small platformer with two levels and cutscenes.' };
+  // the studio's Demo button lists every entry; other demo files add themselves with window.BK_DEMOS.push(...)
+  window.BK_DEMOS = window.BK_DEMOS || [];
+  window.BK_DEMOS.unshift(window.BK_DEMO);
 })();

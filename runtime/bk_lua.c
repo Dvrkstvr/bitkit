@@ -5,6 +5,7 @@
 #include "lauxlib.h"
 #include "lualib.h"
 #include <string.h>
+#include <time.h>
 #include <stdio.h>
 #include <math.h>
 #include <stdlib.h>
@@ -239,6 +240,23 @@ static int l_launch(lua_State *l) { BK->sys[0] = lua_toboolean(l, 2) ? 3 : 1; BK
 static int l_home(lua_State *l) { (void)l; BK->sys[0] = 2; BK->sys[1] = 0; return 0; }
 /* _level_map(n): ask the host to copy level n's map into map memory before the next frame (used by level()). */
 static int l_level_map(lua_State *l) { BK->sys[0] = 4; BK->sys[1] = ci(l, 1); return 0; }
+/* _save_raw(str or nil): the host persists BK->save when dirty is set */
+static int l_save_raw(lua_State *l) {
+  size_t n = 0;
+  const char *s = lua_isnil(l, 1) ? NULL : luaL_checklstring(l, 1, &n);
+  if (n > BK_SAVE_MAX) return luaL_error(l, "save: %d bytes is too big (max %d)", (int)n, BK_SAVE_MAX);
+  if (s) memcpy(BK->save.data, s, n);
+  BK->save.len = s ? (int32_t)n : -1;
+  BK->save.dirty = 1;
+  return 0;
+}
+static int l_load_raw(lua_State *l) {
+  if (BK->save.len < 0) { lua_pushnil(l); return 1; }
+  lua_pushlstring(l, BK->save.data, (size_t)BK->save.len);
+  return 1;
+}
+/* clock(): wall-clock unix seconds (RTC on the device). Not deterministic: don't use it inside multiplayer game logic. */
+static int l_clock(lua_State *l) { lua_pushinteger(l, (lua_Integer)time(NULL)); return 1; }
 
 /* ---- print -> console ---- */
 static int l_print(lua_State *l) {
@@ -265,6 +283,7 @@ static const luaL_Reg API[] = {
   {"t", l_t}, {"time", l_time}, {"rnd", l_rnd}, {"srand", l_srand},
   {"sfx", l_sfx}, {"tone", l_tone}, {"stop", l_stop},
   {"print", l_print}, {"track", l_track}, {"launch", l_launch}, {"home", l_home}, {"_level_map", l_level_map},
+  {"_save_raw", l_save_raw}, {"_load_raw", l_load_raw}, {"clock", l_clock},
   {NULL, NULL}
 };
 

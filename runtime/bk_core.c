@@ -53,6 +53,7 @@ void bk_machine_init(bk_machine *m) {
   bk_reset_draw_state();
   m->rng = 0x9E3779B97F4A7C15ull;
   m->master_vol = 0.5f;
+  m->save.len = -1;
 }
 
 /* ---------------- graphics ---------------- */

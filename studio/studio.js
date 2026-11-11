@@ -36,7 +36,7 @@
   RT._bkw_init();
   const ptr = {
     pal: RT._bkw_palette(), tiles: RT._bkw_tiles(), flags: RT._bkw_flags(), map: RT._bkw_map(),
-    press: RT._malloc(16), track: RT._bkw_track() >> 2, sys: RT._bkw_sys() >> 2
+    press: RT._malloc(16), track: RT._bkw_track() >> 2, sys: RT._bkw_sys() >> 2, save: RT._bkw_save() >> 2
   };
   const DEFAULT_PAL = RT.HEAPU8.slice(ptr.pal, ptr.pal + 768);
 
@@ -840,7 +840,33 @@ end
     if (withMap) RT.HEAPU16.set(cart.levels[levelIdx || 0].map, ptr.map >> 1);
     gfxDirtyRT = false;
   }
-  function loadCode(code, data) {
+  // save data (save()/saved() in Lua): kept per cart in this browser under bitkit.save.<name>
+  const SAVE_MAX = 4096;
+  let saveKey = null;
+  function putSave(key) {
+    saveKey = key;
+    const H = RT.HEAP32, base = ptr.save;
+    H[base + 1] = 0;
+    const str = key ? lsGet('bitkit.save.' + key) : null;
+    if (str === null || str === undefined) { H[base] = -1; return; }
+    const n = Math.min(str.length, SAVE_MAX), off = (base + 2) << 2;
+    for (let i = 0; i < n; i++) RT.HEAPU8[off + i] = str.charCodeAt(i) & 255;
+    H[base] = n;
+  }
+  function takeSave() {
+    const H = RT.HEAP32, base = ptr.save;
+    if (!H[base + 1]) return;
+    H[base + 1] = 0;
+    if (!saveKey) return;
+    const n = H[base];
+    if (n < 0) { try { localStorage.removeItem('bitkit.save.' + saveKey); } catch (e) {} return; }
+    const off = (base + 2) << 2;
+    let str = '';
+    for (let i = 0; i < n; i++) str += String.fromCharCode(RT.HEAPU8[off + i]);
+    lsSet('bitkit.save.' + saveKey, str);
+  }
+  function loadCode(code, data, key) {
+    putSave(key || null);
     const p = RT.stringToNewUTF8(code), d = RT.stringToNewUTF8(data || '');
     const rc = RT._bkw_load_ex(d, p);
     RT._free(p); RT._free(d);
@@ -865,7 +891,7 @@ end
     log(`▶ running "${cart.name}"` + (start ? ` from ${cart.levels[start].name}` : ''), 'sys');
     playingEditor = true; playingLevels = cart.levels;
     if (bit.on) bit.playing = 'studio';
-    running = loadCode(getCode(), BKEntities.toLua(cart.entities, levelsMeta(cart.levels), start, extraLua)) === 0;
+    running = loadCode(getCode(), BKEntities.toLua(cart.entities, levelsMeta(cart.levels), start, extraLua), cart.name || 'untitled') === 0;
     acc = 0; last = performance.now();
     screen.focus();
   }
@@ -899,6 +925,7 @@ end
       while (acc >= STEP && running) {
         RT.HEAPU8.set(input.press, ptr.press);
         if (RT._bkw_frame(input.mask, ptr.press) !== 0) running = false;
+        takeSave();
         const tr = RT.HEAP32;
         if (playingEditor && tr[ptr.track + 2] && route.cur) route.cur.push(tr[ptr.track], tr[ptr.track + 1]);
         if (tr[ptr.sys]) { const cmd = tr[ptr.sys], arg = tr[ptr.sys + 1]; tr[ptr.sys] = 0; bitRequest(cmd, arg); break; }
@@ -934,10 +961,15 @@ end
     if (activeTab === 'map') { refreshLevels(); refreshEntSelect(); drawMap(); }
     if (activeTab === 'entities') entEd.render();
   }
-  function loadDemo() {
-    cart.name = BK_DEMO.name; cart.code = BK_DEMO.code; cart.palette.set(DEFAULT_PAL);
+  // built-in demos: each demo file pushes {name, code, buildGfx, about} onto window.BK_DEMOS
+  const DEMOS = () => (window.BK_DEMOS && window.BK_DEMOS.length ? window.BK_DEMOS : [BK_DEMO]);
+  function loadDemo(d) {
+    d = d || DEMOS()[0];
+    cart.name = d.name; cart.code = d.code; cart.palette.set(DEFAULT_PAL);
+    cart.tiles.fill(0); cart.flags.fill(0);
     cart.levels = null; cart.map = new Uint16Array(MAPW * MAPH);
-    BK_DEMO.buildGfx(cart); normalizeLevels();
+    cart.entities = { types: [], placed: [] };
+    d.buildGfx(cart); normalizeLevels();
     applyCart(); saveLocal();
   }
   $('cartName').addEventListener('input', e => { cart.name = e.target.value || 'untitled'; markDirty(); });
@@ -951,8 +983,15 @@ end
     setCartFile(null); applyCart(); saveLocal();
   };
   $('btnDemo').onclick = async () => {
-    if (!await ask('Load the demo cart?', 'This replaces the current cart with Sprout Hop. Use Save / share first if you want to keep a copy.', 'Load demo')) return;
-    setCartFile(null); loadDemo(); run();
+    const list = DEMOS();
+    if (list.length === 1) {
+      if (!await ask('Load the demo cart?', `This replaces the current cart with ${list[0].name}. Use Save / share first if you want to keep a copy.`, 'Load demo')) return;
+      setCartFile(null); loadDemo(list[0]); run();
+      return;
+    }
+    modal('Load a demo', '<p class="dim">This replaces the current cart. Use Save / share first if you want to keep a copy.</p>' +
+      list.map(d => `<p><b>${escapeHtml(d.name)}</b>${d.about ? ' <span class="dim">' + escapeHtml(d.about) + '</span>' : ''}</p>`).join(''),
+      list.map((d, i) => [d.name, () => { closeModal(); setCartFile(null); loadDemo(d); run(); }, i === 0 ? 'primary' : '']).concat([['Cancel', closeModal]]));
   };
   function cartFileName() { return (cart.name || 'cart').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').toLowerCase() + '.bitkit'; }
   $('btnSave').onclick = () => {
@@ -1058,7 +1097,7 @@ end
     RT.HEAPU16.set(c.levels[0].map, ptr.map >> 1);
     gfxDirtyRT = true; playingEditor = false; bit.playing = label; playingLevels = c.levels;
     log(`▶ Bit: playing "${c.name}"`, 'sys');
-    running = loadCode(c.code, BKEntities.toLua(c.entities, levelsMeta(c.levels), 0)) === 0;
+    running = loadCode(c.code, BKEntities.toLua(c.entities, levelsMeta(c.levels), 0), c.name || label) === 0;
     acc = 0; last = performance.now();
     screen.focus();
   }
@@ -1260,6 +1299,10 @@ end
       ['on("cutscene_end", fn)', 'Called with the name when a cutscene finishes or is skipped. on("cutscene", fn) is called when one starts.'],
       ['Trigger zones', 'An invisible entity with the "Play cutscene" step. "Place a trigger zone" on the Cutscenes tab makes one for you. Level intros play when their level starts.'],
       ['Needs', 'ents_update() in _update (it runs the cutscene) and ents_camera() if the camera should pan. The dialog box, bars and fades are drawn for you on top of _draw. START skips.']]],
+    ['Save data and clock', [
+      ['save(t)', 'Keep a table (numbers, strings, booleans, nested tables; up to 4 KB) for the next time the cart runs. save(nil) deletes it. The studio keeps it per cart name in this browser; PocketBit keeps it in flash.'],
+      ['saved()', 'The table from the last save(), or nil if there is none.'],
+      ['clock()', 'Real time in unix seconds (the RTC on PocketBit). Use it for idle games and offline progress. It is not deterministic, so keep it out of multiplayer game logic.']]],
     ['The Bit (emulated PocketBit)', [
       ['⏻ Bit button', 'Turns on the emulated PocketBit: a home screen with the studio cart and every game on its memory card. D-pad chooses, A plays, Y opens a game in the studio.'],
       ['Start + Select', 'Hold both in a game to go back to the home screen, like on the device.'],
@@ -1286,7 +1329,7 @@ end
   $('appName').textContent = APP;
   let restored = false;
   try { const s = lsGet(LS.cart); if (s) { deserialize(JSON.parse(s)); restored = true; } } catch (e) { log('Saved cart was unreadable, starting fresh', 'sys'); }
-  if (!restored) { cart.name = BK_DEMO.name; cart.code = BK_DEMO.code; BK_DEMO.buildGfx(cart); normalizeLevels(); }
+  if (!restored) { const d = DEMOS()[0]; cart.name = d.name; cart.code = d.code; d.buildGfx(cart); normalizeLevels(); }
   applyCart();
   log(`${APP} Studio ready. ${restored ? 'Restored your last cart.' : 'Loaded the demo cart.'} Press Run (Ctrl+Enter).`, 'sys');
   showTab(lsGet(LS.settings + '.tab') || 'code');
