@@ -22462,6 +22462,12 @@ CELLS = {
   {name = "Twin Cell", len = 4, h = 1.8, w = 4.0, cap = 2.2, weight = 0.8, cost = -1, about = "Twice the range, twice as wide."},
   {name = "Brick Cell", len = 6, h = 2.8, w = 2.8, cap = 1.6, weight = 1.0, cost = 10, about = "Long and tall. A bit more range."},
 }
+-- toy cannons, one on each wing: B fires them. weight is for the pair; rate = frames between shots
+CANNONS = {
+  {name = "No cannons", weight = 0, cost = 0, about = "Clean wings, nothing to carry."},
+  {name = "Cork Popper", weight = 0.25, cost = 4, rate = 12, speed = 4.5, r = 10, about = "Toy cannons for the wings. B: pop balloons!"},
+  {name = "Puff Mortar", weight = 0.55, cost = 9, rate = 28, speed = 3.5, r = 20, about = "Heavy, slow, and pops anything near it."},
+}
 PAINTS = {   -- main colour, shade, trim
   {name = "Tin", cost = 0, c = {29, 28, 25}},
   {name = "Sunrise", cost = 0, c = {10, 9, 13}},
@@ -22470,7 +22476,7 @@ PAINTS = {   -- main colour, shade, trim
   {name = "Cherry", cost = 3, c = {26, 25, 13}},
   {name = "Plum", cost = 4, c = {5, 4, 27}},
 }
-PARTS = {{"Motor", MOTORS, "m"}, {"Battery", CELLS, "c"}, {"Paint", PAINTS, "p"}}
+PARTS = {{"Motor", MOTORS, "m"}, {"Battery", CELLS, "c"}, {"Cannons", CANNONS, "g"}, {"Paint", PAINTS, "p"}}
 TABS = {"SIDE", "TOP", "PARTS", "FLY"}
 SNAME = {"Front", "Middle", "Back"}
 
@@ -22480,8 +22486,10 @@ DRAW = {
   tower = {t = 240, w = 3, h = 8}, wreck = {t = 243, w = 3, h = 5}, palm = {t = 246, w = 2, h = 3},
   boat = {t = 248, w = 4, h = 2}, buoy = {t = 252, w = 1, h = 2},
   crate = {t = 120, w = 2, h = 2}, coil = {t = 122, w = 2, h = 2}, satchel = {t = 124, w = 2, h = 2},
+  balloon = {t = 70, w = 2, h = 3},
 }
 PICK = {crate = true, coil = true, satchel = true, ring = true}
+FLOAT = {balloon = true}   -- drawn up in the air like the pickups, but you pop them with the cannons
 
 -- ------------------------------------------------------------------ the save
 -- the blueprint: body stations from front to back {x, top, bottom, half width}, the nose and tail points,
@@ -22490,10 +22498,20 @@ function default_shape()
   return {nose = 11, tail = -13, st = {{6, 1.5, -1.3, 1.5}, {1, 1.6, -1.4, 1.6}, {-5, 1.0, -0.6, 0.9}},
     rf = 3, rb = -1.5, tf = 1.8, tb = -0.6, span = 12}
 end
+-- where the parts sit: the middle of the motor and of the battery along the body, and how far out on each
+-- wing the cannons are
+function default_place() return {m = 5.7, c = 1, g = 6} end
 function new_state()
-  return {scrap = 0, own = {m1 = true, c1 = true, p1 = true, p2 = true, p3 = true}, sel = {m = 1, c = 1, p = 2},
-    shape = default_shape(), coil = false, coil_told = false, satchel = false, done = false,
+  return {scrap = 0, own = {m1 = true, c1 = true, g1 = true, p1 = true, p2 = true, p3 = true}, sel = {m = 1, c = 1, g = 1, p = 2},
+    shape = default_shape(), place = default_place(), coil = false, coil_told = false, satchel = false, done = false,
     got = {}, flights = 0, swims = 0}
+end
+-- saves from before parts could move or cannons existed
+function upgrade_save(s)
+  s.place = s.place or default_place()
+  s.sel.g = s.sel.g or 1
+  s.own.g1 = true
+  return s
 end
 function copy(t)
   if type(t) ~= "table" then return t end
@@ -22549,17 +22567,18 @@ function _init()
     goal = "Build an RC plane, find the mail satchel lost past the Drowned Belltower and fly it home to Perch.",
     help = {
       "Hangar: pick a corner with the D-pad, A grabs it, move it, A drops it. L / R or X: next page.",
-      "Make the body big enough for your motor and battery. More wing glides, short wings turn quick.",
+      "Make the body big enough for your motor and battery, and grab M or B to move them. The motor stays in the front.",
+      "More wing glides, short wings turn quick. Cannons go on the wings: B fires them at balloons.",
       "Flying: left / right turn, up / down climb and dive (Settings: Invert up/down). Hold A or squeeze R for the motor.",
       "Let go of the motor to glide for free. Fly low over the yellow pad at Perch to land.",
     },
     continue = function(cp)
-      if cp then S = copy(cp) end
+      if cp then S = upgrade_save(copy(cp)) end
       INTRO = false
       hangar_enter(nil)
     end,
     pause = {{"Back to the hangar", function() if MODE == "fly" then hangar_enter("menu") end end},
-      {"Reset the blueprint", function() if MODE == "hangar" then S.shape = default_shape(); H.hold = nil end end}},
+      {"Reset the blueprint", function() if MODE == "hangar" then S.shape, S.place = default_shape(), default_place(); H.hold = nil end end}},
     settings = {{key = "pitch", name = "Invert up/down", values = {"Off", "On"}, value = 1}},
   }
   S = new_state()
@@ -22609,22 +22628,45 @@ function section(s, x)
   end
   return 0, 0, 0
 end
--- where a part sits: the motor just behind the nose, the battery in the middle of the body
-function slot(s, key, part)
-  if key == "m" then local f = s.st[1][1] + 1.2 return f, f - part.len end
-  local m = s.st[2][1]
-  return m + part.len / 2, m - part.len / 2
+-- where a part's box is along the body: front and back x
+function slot(key, part, pl)
+  local c = (pl or S.place)[key]
+  return c + part.len / 2, c - part.len / 2
 end
--- does the part's box fit inside the body? returns ok, and the box's centre height
-function fits(s, key, part)
-  local x0, x1 = slot(s, key, part)
-  local mid = 0
-  for i = 0, 4 do local t, b = section(s, x0 + (x1 - x0) * i / 4) mid = mid + (t + b) / 10 end
-  for i = 0, 4 do
-    local t, b, w = section(s, x0 + (x1 - x0) * i / 4)
-    if t < mid + part.h / 2 or b > mid - part.h / 2 or w * 2 < part.w then return false, mid end
+-- does the part's box fit inside the body? returns ok, the box's centre height and, when it doesn't, why:
+-- "out" (past the nose or tail), "tall", "wide", "front" (a motor behind the middle) or "overlap".
+-- The body is straight lines between its corners, so checking both ends of the box and every corner in
+-- between is exact: what you see on the blueprint is what fits. The box sits as high or low as it needs to.
+function fits(s, key, part, pl)
+  pl = pl or S.place
+  local x0, x1 = slot(key, part, pl)
+  if x0 > s.nose - 0.01 or x1 < s.tail + 0.01 then return false, 0, "out" end
+  local lo, hi, wmin = -99, 99, 99
+  local function at(x)
+    local t, b, w = section(s, x)
+    lo, hi, wmin = math.max(lo, b), math.min(hi, t), math.min(wmin, w)
   end
+  at(x0); at(x1)
+  for _, p in ipairs(body_points(s)) do if p[1] < x0 and p[1] > x1 then at(p[1]) end end
+  local mid = (lo + hi) / 2
+  if hi - lo < part.h - 0.001 then return false, mid, "tall" end
+  if wmin * 2 < part.w - 0.001 then return false, mid, "wide" end
+  if key == "m" and x1 < s.st[2][1] - 0.001 then return false, mid, "front" end
+  local other = key == "m" and "c" or "m"
+  local o0, o1 = slot(other, other == "m" and MOTORS[S.sel.m] or CELLS[S.sel.c], pl)
+  if x1 < o0 - 0.001 and o1 < x0 - 0.001 then return false, mid, "overlap" end
   return true, mid
+end
+-- the cannons: on the wing, at u out from the middle. Returns the wing's front and back x there
+function wing_chord(s, u)
+  local r = wing_root(s)
+  local t = clamp((u - r) / math.max(0.1, s.span - r), 0, 1)
+  return s.rf + (s.tf - s.rf) * t, s.rb + (s.tb - s.rb) * t, 0.3 + s.span * 0.05 * t
+end
+function guns_fit(s, pl)
+  if S.sel.g == 1 then return true end
+  local u = (pl or S.place).g
+  return u >= wing_root(s) + 0.5 and u <= s.span - 0.5
 end
 function wing_root(s) local _, _, w = section(s, (s.rf + s.rb) / 2) return math.max(w, 0.5) end
 function wing_area(s)
@@ -22642,14 +22684,16 @@ end
 
 -- the numbers that make it fly
 function plane_stats(s, sel)
-  local m, c = MOTORS[sel.m], CELLS[sel.c]
+  local m, c, g = MOTORS[sel.m], CELLS[sel.c], CANNONS[sel.g or 1]
   local area = wing_area(s)
-  local weight = 1 + m.weight + c.weight + body_volume(s) * 0.004 + area * 0.004
+  local weight = 1 + m.weight + c.weight + g.weight + body_volume(s) * 0.004 + area * 0.004
+  -- cannons far out on the wings make her roll (and so turn) a little slower
+  local swing = 1 - g.weight * clamp((S.place.g or 0) / math.max(1, s.span), 0, 1) * 0.35
   local lift = area / weight / 25.6                   -- 1 is a plain, nice wing
   local sweep = ((s.rf + s.rb) - (s.tf + s.tb)) / 2  -- how far back the tips sit
   return {
     speed = (m.power / weight * 2.85) ^ 0.6,
-    turn = clamp((1.3 - (s.span - 12) * 0.045) * clamp(lift, 0.7, 1.15) * (1 + clamp(sweep, 0, 6) * 0.03), 0.5, 1.8),
+    turn = clamp((1.3 - (s.span - 12) * 0.045) * clamp(lift, 0.7, 1.15) * (1 + clamp(sweep, 0, 6) * 0.03) * swing, 0.5, 1.8),
     glide = clamp(lift, 0.3, 2.2),
     drain = m.power ^ 0.8 * weight / 2.85 / c.cap,
     cap = c.cap, lift = lift, weight = weight, prop = m.prop,
@@ -22658,8 +22702,16 @@ end
 -- what still stops the plane from flying
 function problems()
   local s, l = S.shape, {}
-  if not fits(s, "m", MOTORS[S.sel.m]) then l[#l + 1] = "The " .. MOTORS[S.sel.m].name .. " doesn't fit in the nose." end
-  if not fits(s, "c", CELLS[S.sel.c]) then l[#l + 1] = "The " .. CELLS[S.sel.c].name .. " doesn't fit in the body." end
+  local said = {}
+  for _, it in ipairs({{"m", MOTORS[S.sel.m]}, {"c", CELLS[S.sel.c]}}) do
+    local ok, _, why = fits(s, it[1], it[2])
+    local n = it[2].name
+    local t = ok and nil or ({out = n .. " sticks out of the body.", tall = n .. ": too tall. Raise it on SIDE.",
+      wide = n .. ": too wide. Widen it on TOP.", front = "The motor must sit in the front half.",
+      overlap = "Motor and battery overlap. Move one."})[why]
+    if t and not said[t] then said[t] = true; l[#l + 1] = t end
+  end
+  if not guns_fit(s) then l[#l + 1] = "Cannons must sit on the wings (TOP)." end
   if plane_stats(s, S.sel).lift < 0.55 then l[#l + 1] = "The wings are too small to lift her." end
   return l
 end
@@ -22727,6 +22779,18 @@ function plane_model(s)
     quad(v(s.tail + 3.5, 0.5 * side, 0.8), v(s.tail + 0.6, 0.5 * side, 0.8), v(s.tail + 0.2, 4.6 * side, 1), v(s.tail + 1.8, 4.6 * side, 1), 2)
   end
   F[#F + 1] = {v(s.tail + 4.5, 0, 1.0), v(s.tail + 0.5, 0, 0.8), v(s.tail - 0.1, 0, 5), 2}
+  local g = S and S.sel.g or 1
+  if g > 1 then
+    -- a barrel under each wing: a cross of two plates, so it shows from the side and from above
+    local u = S.place.g
+    local f, b, wz = wing_chord(s, u)
+    local len, fat = g == 2 and 1.0 or 1.6, g == 2 and 0.35 or 0.6
+    for side = -1, 1, 2 do
+      local y, z = u * side, wz - fat - 0.1
+      quad(v(f + len, y, z + fat), v(b, y, z + fat), v(b, y, z - fat), v(f + len, y, z - fat), 2)
+      quad(v(f + len, y - fat, z), v(b, y - fat, z), v(b, y + fat, z), v(f + len, y + fat, z), 2)
+    end
+  end
   return {v = V, f = F, nose = s.nose}
 end
 
@@ -22850,8 +22914,8 @@ end
 function hangar_enter(reason)
   MODE = "hangar"
   stop(7)
-  H = H or {tab = 1, sel = {1, 1}, hold = nil, rep = 0, view = {m = S.sel.m, c = S.sel.c, p = S.sel.p}, spin = 0.6, note = nil, note_t = 0}
-  H.view = {m = S.sel.m, c = S.sel.c, p = S.sel.p}
+  H = H or {tab = 1, sel = {1, 1}, hold = nil, rep = 0, view = {m = S.sel.m, c = S.sel.c, g = S.sel.g, p = S.sel.p}, spin = 0.6, note = nil, note_t = 0}
+  H.view = {m = S.sel.m, c = S.sel.c, g = S.sel.g, p = S.sel.p}
   H.hold = nil
   H.row = H.row or 1
   if reason == "land" then
@@ -22902,6 +22966,7 @@ function handles(view)
         function(du, dv) local lo, hi = limits(i) st[1] = clamp(st[1] + du, lo, hi); st[3] = clamp(st[3] + dv, -4.5, st[2] - 0.6) end)
     end
     add("Tail", function() return s.tail, 0.8 end, function(du) s.tail = clamp(s.tail + du, -18, s.st[3][1] - 2) end)
+    part_handles(add, function(du, dv) return du end, false)
   else
     for i, st in ipairs(s.st) do
       add(SNAME[i] .. " width", function() return st[4], st[1] end,
@@ -22913,8 +22978,31 @@ function handles(view)
       function(du, dv) s.span = clamp(s.span + du, 5, 20); s.tf = clamp(s.tf + dv, s.tb + 0.6, s.rf + 6) end)
     add("Wing tip, back", function() return s.span, s.tb end,
       function(du, dv) s.span = clamp(s.span + du, 5, 20); s.tb = clamp(s.tb + dv, s.rb - 9, s.tf - 0.6) end)
+    part_handles(add, function(du, dv) return dv end, true)
+    if S.sel.g > 1 then
+      add("Cannons", function() local f, b = wing_chord(s, S.place.g) return S.place.g, (f + b) / 2 end,
+        function(du) S.place.g = clamp(S.place.g + du, 0.5, s.span) end)
+    end
   end
   return L
+end
+-- the motor (M) and battery (B) slide along the body; along() picks the move along it from (du, dv).
+-- The motor can't go behind the middle of the plane: its back end stays ahead of the Middle corners.
+function part_handles(add, along, top)
+  local s = S.shape
+  for _, it in ipairs({{"m", "Motor", MOTORS[S.sel.m]}, {"c", "Battery", CELLS[S.sel.c]}}) do
+    local key, part = it[1], it[3]
+    add(it[2], function()
+      if top then return 0, S.place[key] end
+      local _, mid = fits(s, key, part) return S.place[key], mid end,
+      function(du, dv)
+        local hi = s.nose - part.len / 2
+        local lo = key == "m" and s.st[2][1] + part.len / 2 or s.tail + part.len / 2
+        local want = S.place[key] + along(du, dv)
+        S.place[key] = clamp(want, math.min(lo, hi), hi)
+        if key == "m" and want < lo - 0.01 then note("The motor has to stay in the front.", 90) end
+      end)
+  end
 end
 
 -- move the selection to the nearest corner in a direction on screen
@@ -22954,7 +23042,7 @@ function hangar_update()
   local next_tab = (btnp("r") or btnp("x")) and 1 or (btnp("l") and -1 or 0)
   if next_tab ~= 0 then
     H.tab, H.hold, H.note_t = (tab - 1 + next_tab) % #TABS + 1, nil, 0
-    H.view = {m = S.sel.m, c = S.sel.c, p = S.sel.p}
+    H.view = {m = S.sel.m, c = S.sel.c, g = S.sel.g, p = S.sel.p}
     sfx("E5", 4, 0.2, 4)
     return
   end
@@ -23057,25 +23145,46 @@ function draw_blueprint(view)
       line(arx, ay, brx, by, 13); line(alx, ay, blx, by, 13)
     end
   end
-  -- the parts' boxes: green when they fit, red when the body is too small
-  for _, it in ipairs({{"m", MOTORS[S.sel.m], "M"}, {"c", CELLS[S.sel.c], "B"}}) do
+  -- the parts' boxes: green when they fit, red when the body is too small (BOX: where each was drawn, by handle name)
+  BOX = {}
+  for _, it in ipairs({{"m", MOTORS[S.sel.m], "M", "Motor"}, {"c", CELLS[S.sel.c], "B", "Battery"}}) do
     local part = it[2]
     local ok, mid = fits(s, it[1], part)
-    local x0, x1 = slot(s, it[1], part)
+    local x0, x1 = slot(it[1], part)
     local col = ok and 17 or (gt % 20 < 12 and 26 or 25)
     local ax, ay, bx, by
     if view == 1 then ax, ay = bp_xy(1, x1, mid + part.h / 2) bx, by = bp_xy(1, x0, mid - part.h / 2)
     else ax, ay = bp_xy(2, -part.w / 2, x0) bx, by = bp_xy(2, part.w / 2, x1) end
     rect(ax, ay, bx - ax + 1, by - ay + 1, col)
     text(it[3], (ax + bx) / 2 - 3, (ay + by) / 2 - 3, col)
+    BOX[it[4]] = {ax, ay, bx, by}
+  end
+  if S.sel.g > 1 then
+    local u = S.place.g
+    local f, b, wz = wing_chord(s, u)
+    local col = guns_fit(s) and 13 or (gt % 20 < 12 and 26 or 25)
+    if view == 1 then
+      local ax, ay = bp_xy(1, b, wz - 0.2) local bx, by = bp_xy(1, f + 1, wz - 1)
+      rectfill(ax, ay, bx - ax + 1, by - ay + 1, col)
+    else
+      for side = -1, 1, 2 do
+        local ax, ay = bp_xy(2, u * side - 0.4, f + 1) local bx, by = bp_xy(2, u * side + 0.4, b)
+        rectfill(ax, ay, bx - ax + 1, by - ay + 1, col)
+        if side == 1 then BOX.Cannons = {ax, ay, bx, by} end
+      end
+    end
   end
   -- the corners
   local L = handles(view)
   for i, h in ipairs(L) do
     local x, y = bp_xy(view, h.get())
     local on = H.sel[view] == i
+    local box = BOX[h.name]
     if view == 2 and h.name:find("width") then local mx = bp_xy(2, -h.get(), 0) rect(mx - 1, y - 1, 3, 3, 29) end
-    if on then
+    if box then
+      -- a part: picked, its whole box gets a frame (blinking while you move it)
+      if on and not (H.hold and gt % 20 >= 10) then rect(box[1] - 2, box[2] - 2, box[3] - box[1] + 5, box[4] - box[2] + 5, H.hold and 27 or 13) end
+    elseif on then
       local c = H.hold and 27 or 13
       rect(x - 3, y - 3, 7, 7, c)
       if H.hold and gt % 20 < 10 then rect(x - 4, y - 4, 9, 9, 10) end
@@ -23121,7 +23230,7 @@ function hangar_draw()
     clip(BP.x, BP.y, BP.w, BP.h)
     setview(-48, 0, 0, 9, 44, 190, BP.cx)
     local P = {x = 0, y = 0, z = 0, h = H.spin, pitch = 0.1, bank = math.sin(H.spin * 2) * 0.12}
-    draw_model(plane_model(S.shape), P, PAINTS[(H.tab == 3 and H.row == 3) and H.view.p or S.sel.p].c, gt * 0.6, true, MOTORS[S.sel.m].prop)
+    draw_model(plane_model(S.shape), P, PAINTS[(H.tab == 3 and H.row == 4) and H.view.p or S.sel.p].c, gt * 0.6, true, MOTORS[S.sel.m].prop)
     clip()
     if H.tab == 3 then draw_parts() else draw_fly() end
   end
@@ -23138,7 +23247,7 @@ function hangar_draw()
     stat_bars(216, 128)
   end
   rectfill(0, 174, 320, 66, 1)
-  local hint = ({"Pick a corner: D-pad. A: grab / drop.", "Pick a corner: D-pad. A: grab / drop.",
+  local hint = ({"D-pad: pick a corner or part. A: grab.", "D-pad: pick a corner or part. A: grab.",
     "Up / down: part. Left / right: browse. A: fit.", "A: launch from the ramp!"})[H.tab]
   text(objective(), 6, 178, 27)
   if H.note and H.note_t > 0 then text(H.note, 6, 190, 13) else text(hint, 6, 190, 29) end
@@ -23151,52 +23260,55 @@ function hangar_draw()
 end
 
 function draw_parts()
-  local y = 34
+  local y = 32
   for i, r in ipairs(PARTS) do
     local key, list = r[3], r[2]
     local v = H.view[key]
     local part = list[v]
     local on = H.row == i
-    rectfill(214, y, 102, 34, on and 1 or 31)
-    if on then rect(214, y, 102, 34, 27) end
-    text(r[1], 218, y + 3, 29)
+    rectfill(214, y, 102, 28, on and 1 or 31)
+    if on then rect(214, y, 102, 28, 27) end
+    text(r[1], 218, y + 2, 29)
     local col = owned(key, v) and 13 or 28
-    text(part.name, 218, y + 13, S.sel[key] == v and 27 or col)
-    if key == "p" then rectfill(298, y + 3, 12, 7, part.c[1])
+    text(part.name, 218, y + 10, S.sel[key] == v and 27 or col)
+    if key == "p" then rectfill(298, y + 2, 12, 7, part.c[1])
+    elseif key == "g" then
+      if v > 1 then local ok = guns_fit(S.shape) text(ok and "fits" or "off!", 280, y + 2, ok and 17 or 26) end
     else
-      local ok = fits(S.shape, key, part)
-      text(ok and "fits" or "big!", 280, y + 3, ok and 17 or 26)
+      local ok, _, why = fits(S.shape, key, part)
+      text(ok and "fits" or ((why == "tall" or why == "wide" or why == "out") and "big!" or "move"), 280, y + 2, ok and 17 or 26)
     end
     local tag
     if S.sel[key] == v then tag = "fitted"
     elseif owned(key, v) then tag = "A: fit"
     elseif part.cost < 0 then tag = "find it"
     else tag = part.cost .. " scrap" end
-    text(tag, 218, y + 23, tag == "fitted" and 17 or (part.cost and part.cost > S.scrap and not owned(key, v) and 26 or 29))
-    y = y + 38
+    text(tag, 218, y + 18, tag == "fitted" and 17 or (part.cost and part.cost > S.scrap and not owned(key, v) and 26 or 29))
+    y = y + 31
   end
   local r = PARTS[H.row]
   local part = r[2][H.view[r[3]]]
-  if part.about then text(part.about, 10, 150, 13) end
-  if part.len then text(string.format("needs %.1f long, %.1f tall, %.1f wide", part.len, part.h, part.w), 10, 160, 29) end
+  if part.about then text(part.about, 10, 156, 13) end
+  if part.len then text(string.format("needs %.1f long, %.1f tall, %.1f wide", part.len, part.h, part.w), 10, 164, 29) end
 end
 
 function draw_fly()
   local p = problems()
   local y = 40
-  text("PRE-FLIGHT CHECK", 218, y, 27)
+  text("PRE-FLIGHT", 218, y, 27)
   local checks = {
-    {"Motor fits", fits(S.shape, "m", MOTORS[S.sel.m])}, {"Battery fits", fits(S.shape, "c", CELLS[S.sel.c])},
-    {"Wings lift", plane_stats(S.shape, S.sel).lift >= 0.55},
+    {"Motor", fits(S.shape, "m", MOTORS[S.sel.m])}, {"Battery", fits(S.shape, "c", CELLS[S.sel.c])},
+    {"Wings", plane_stats(S.shape, S.sel).lift >= 0.55},
   }
+  if S.sel.g > 1 then checks[#checks + 1] = {"Cannons", guns_fit(S.shape)} end
   for i, c in ipairs(checks) do
     text((c[2] and "+ " or "x ") .. c[1], 218, y + 6 + i * 12, c[2] and 17 or 26)
   end
   if #p == 0 then
-    rectfill(218, 110, 92, 16, gt % 30 < 20 and 27 or 10)
-    text("A: FLY!", 236, 114, 1)
+    rectfill(218, 106, 92, 16, gt % 30 < 20 and 27 or 10)
+    text("A: FLY!", 236, 110, 1)
   end
-  stat_bars(214, 136)
+  stat_bars(214, 128)
 end
 
 -- ------------------------------------------------------------------ flying
@@ -23205,6 +23317,7 @@ function pick_z(e)
   if e.name == "coil" then return 64 * K_FLY + 10 end           -- on top of the Belltower
   if e.name == "satchel" then return 40 * K_FLY + 4 end         -- snagged on the wreck's mast
   if e.name == "ring" then return 34 + (gx * 7 + gy * 3) % 46 end
+  if e.name == "balloon" then return 40 + (gx * 5 + gy * 3) % 50 + math.sin((gt + gx) * 0.03) * 3 end
   return hget(gx, gy) + 4 + math.sin((gt + gx) * 0.06) * 1.5
 end
 function key_of(e) return e.name .. math.floor(e.x) .. "," .. math.floor(e.y) end
@@ -23225,12 +23338,16 @@ function fly_start()
     st = st, armed = false, launch = 50, t = 0, flat = false, out = 0, spin = 0, swim = 0, camp = 0.3}
   P.cam, P.cz, P.foc = P.h, P.z + F_UP, F_FOC
   for _, e in ipairs(ents_all()) do
-    if PICK[e.name] and e.name ~= "ring" and S.got[key_of(e)] then e.alive = false end
+    if (PICK[e.name] or FLOAT[e.name]) and e.name ~= "ring" and S.got[key_of(e)] then e.alive = false end
     if e.name == "coil" and S.coil then e.alive = false end
     if e.name == "satchel" and S.satchel then e.alive = false end
   end
-  SPRAY, TRAIL = {}, {}
-  if S.flights == 0 and S.swims == 0 then msg("Hold A for the motor, let go to glide.", 240) else msg(objective(), 200) end
+  SPRAY, TRAIL, SHOTS, POPS = {}, {}, {}, {}
+  GUN = S.sel.g > 1 and CANNONS[S.sel.g] or nil
+  P.gun_cd = 0
+  if S.flights == 0 and S.swims == 0 then msg("Hold A for the motor, let go to glide.", 240)
+  elseif GUN and not S.shot_told then S.shot_told = true; msg("B fires the cannons. Pop the balloons!", 240)
+  else msg(objective(), 200) end
 end
 
 function spray(n)
@@ -23333,6 +23450,7 @@ function fly_update()
   end
   -- wingtip trails: a short ribbon of puffs that shows off every turn
   orient(P)
+  shoot_update()
   if P.t % 2 == 0 then
     local span = S.shape.span
     for side = -1, 1, 2 do
@@ -23349,6 +23467,53 @@ function fly_update()
     sfx("C5", 1, 0.3, 8); sfx("G5", 1, 0.3, 12)
     hangar_enter("land")
   end
+end
+
+-- the wing cannons: B fires a ball from each wing, straight ahead; balloons pop when one comes close
+function shoot_update()
+  if P.gun_cd > 0 then P.gun_cd = P.gun_cd - 1 end
+  if GUN and btn("b") and P.gun_cd == 0 and P.launch == 0 then
+    P.gun_cd = GUN.rate
+    local u = S.place.g
+    local f, _, wz = wing_chord(S.shape, u)
+    local fx, fy, fz = math.cos(P.h) * P.cp, math.sin(P.h) * P.cp, P.sp
+    local v = P.spd + GUN.speed
+    for side = -1, 1, 2 do
+      local x, y, z = body_to_world(P, f + 1, u * side, wz - 0.6)
+      SHOTS[#SHOTS + 1] = {x = x, y = y, z = z, vx = fx * v, vy = fy * v, vz = fz * v, t = 0}
+    end
+    sfx(S.sel.g == 2 and "C6" or "G3", 3, 0.25, 3, nil, 0, -200)
+  end
+  for i = #SHOTS, 1, -1 do
+    local b = SHOTS[i]
+    b.x, b.y, b.z, b.vz, b.t = b.x + b.vx, b.y + b.vy, b.z + b.vz, b.vz - 0.03, b.t + 1
+    local gone = b.t > 45 or b.z < hget(b.x, b.y)
+    for _, e in ipairs(ents_all("balloon")) do
+      local gx, gy = ground(e)
+      local dx, dy, dz = b.x - gx, b.y - gy, b.z - pick_z(e) - 20
+      if dx * dx + dy * dy + dz * dz < GUN.r * GUN.r + 100 then pop(e) gone = true end
+    end
+    if gone then table.remove(SHOTS, i) end
+  end
+  for i = #POPS, 1, -1 do
+    local p = POPS[i]
+    p.x, p.y, p.z, p.vz, p.t = p.x + p.vx, p.y + p.vy, p.z + p.vz, p.vz - 0.08, p.t + 1
+    if p.t > 30 then table.remove(POPS, i) end
+  end
+end
+function pop(e)
+  if not e.alive then return end
+  e.alive = false
+  S.got[key_of(e)] = true
+  S.scrap = S.scrap + 1
+  local gx, gy = ground(e)
+  local z = pick_z(e) + 20
+  for i = 1, 12 do
+    POPS[#POPS + 1] = {x = gx, y = gy, z = z, vx = math.cos(i * 0.52) * 1.2, vy = math.sin(i * 0.52) * 1.2, vz = 0.6 + (i % 3) * 0.4, t = 0,
+      c = ({26, 27, 13})[i % 3 + 1]}
+  end
+  msg("Pop! Scrap +1", 60)
+  sfx("E6", 3, 0.3, 4, nil, 0, -600); sfx("A5", 1, 0.3, 6)
 end
 
 function collect(e)
@@ -23409,7 +23574,7 @@ function fly_draw()
   for _, e in ipairs(ents_all()) do
     if DRAW[e.name] or e.name == "ring" or e.name == "pigeon" then
       local gx, gy = ground(e)
-      local z = PICK[e.name] and pick_z(e) or hget(gx, gy)
+      local z = (PICK[e.name] or FLOAT[e.name]) and pick_z(e) or hget(gx, gy)
       if e.name == "pigeon" then
         local a = gt * 0.02 + e.phase
         gx, gy, z = gx + math.cos(a) * 60, gy + math.sin(a) * 60, 50 + math.sin(a * 3) * 8
@@ -23428,6 +23593,14 @@ function fly_draw()
   for _, s in ipairs(SPRAY) do
     local x, y, k = proj(s.x, s.y, s.z)
     if x then circfill(x, y, math.max(1, k * 1.2), 23) end
+  end
+  for _, p in ipairs(POPS) do
+    local x, y, k = proj(p.x, p.y, p.z)
+    if x then rectfill(x, y, math.max(1, k * 1.5), math.max(1, k), p.c) end
+  end
+  for _, b in ipairs(SHOTS) do
+    local x, y, k = proj(b.x, b.y, b.z)
+    if x then circfill(x, y, math.max(1, k * (S.sel.g == 2 and 0.8 or 1.4)), 31); if k > 1 then pset(x - k * 0.3, y - k * 0.3, 29) end end
   end
   for i, t in ipairs(TRAIL) do
     local x, y, k = proj(t[1], t[2], t[3])
@@ -23474,7 +23647,7 @@ function draw_sky_thing(it)
     return
   end
   local d = DRAW[e.name]
-  local s = k * (PICK[e.name] and 1.3 or K_FLY)
+  local s = k * ((PICK[e.name] or FLOAT[e.name]) and 1.3 or K_FLY)
   if e.name == "coil" or e.name == "satchel" then         -- a glow so you can spot them from far away
     local r = 10 * k + math.sin(gt * 0.15) * 2 * k + 2
     circ(it.sx, it.sy - 8 * s, r, 27)
@@ -23700,6 +23873,21 @@ end
     return outline(g);
   }
 
+  // a party balloon with a little bag of scrap hanging under it: the cannons' targets
+  function balloon() {
+    const g = G(16, 24);
+    const R = (x, y, w, h, c) => fill(g, x, y, w, h, c);
+    for (let y = 0; y < 14; y++) for (let x = 0; x < 16; x++) {
+      const dx = (x - 7.5) / 6.5, dy = (y - 6.5) / 6.8;
+      if (dx * dx + dy * dy <= 1) g[y][x] = (dx > 0.35 || dy > 0.55) ? 25 : 26;
+    }
+    R(4, 3, 2, 3, 13); px(g, 6, 2, 13);
+    R(7, 13, 2, 2, 25);
+    for (let y = 15; y < 18; y++) px(g, 8 - (y & 1), y, 29);
+    R(5, 18, 6, 5, 7); R(5, 18, 6, 1, 6); R(7, 20, 2, 1, 28);
+    return outline(g);
+  }
+
   function buoy() {
     const g = G(8, 16);
     const R = (x, y, w, h, c) => fill(g, x, y, w, h, c);
@@ -23772,7 +23960,7 @@ end
     // people only appear in the story's speech boxes
     blit(64, person(pip, 'down', 0)); blit(66, person(mags, 'down', 0)); blit(68, person(tobin, 'down', 0));
     blit(76, planeIcon());
-    blit(120, crate()); blit(122, coil()); blit(124, satchel());
+    blit(120, crate()); blit(122, coil()); blit(124, satchel()); blit(70, balloon());
     blit(126, pigeon(0)); blit(127, pigeon(1)); blit(142, pigeon(2));
     blit(160, house({ wall: 7, wallDark: 6, roof: 25, roofDark: 24, chimney: true }));
     blit(164, house({ wall: 12, wallDark: 11, roof: 21, roofDark: 19 }));
@@ -23800,7 +23988,7 @@ end
         thing('boat', 248, 4, 2), thing('buoy', 252, 1, 2), thing('palm', 246, 2, 3),
         Object.assign({}, base, { name: 'pigeon', sw: 1, sh: 1, anims: [A('idle', [126]), A('fly', [127, 142], 4)], tree: null }),
         thing('tower', 240, 3, 8), thing('wreck', 243, 3, 5),
-        thing('crate', 120, 2, 2), thing('coil', 122, 2, 2), thing('satchel', 124, 2, 2),
+        thing('crate', 120, 2, 2), thing('coil', 122, 2, 2), thing('satchel', 124, 2, 2), thing('balloon', 70, 2, 3),
         thing('ring', 27, 2, 2),
       ],
       placed: [],
@@ -23897,6 +24085,8 @@ end
       [96, 62], [20, 26]].forEach(([x, y]) => at(splaced, 'crate', x * 8, y * 8));
     [[42, 96], [62, 86], [84, 74], [118, 62], [140, 48], [160, 36], [70, 40], [130, 96]].forEach(([x, y]) => at(splaced, 'ring', x * 8, y * 8));
     [[30, 98], [34, 100], [24, 100], [36, 104]].forEach(([x, y]) => at(splaced, 'pigeon', x * 8, y * 8));
+    // balloons for the wing cannons: a few near home, more out towards the reef
+    [[48, 92], [66, 100], [52, 70], [92, 90], [76, 50], [112, 70], [124, 50], [138, 74], [152, 44], [166, 80], [172, 34], [58, 30]].forEach(([x, y]) => at(splaced, 'balloon', x * 8, y * 8));
     [[40, 106], [58, 98], [88, 84], [150, 60]].forEach(([x, y]) => at(splaced, 'buoy', x * 8, y * 8));
     islands.forEach(([cx, cy, r], i) => {
       if (r < 5) return;
