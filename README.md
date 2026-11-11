@@ -73,7 +73,11 @@ end
 function _draw()   cls(1) circfill(x, y, 4 + press("r") / 32, 9) end
 ```
 
-## 🌱 The demo: Sprout Hop
+## 🌱 The demos
+
+Press **Demo** in the studio to pick one.
+
+### Sprout Hop
 
 A small platformer that shows off most of the engine:
 
@@ -82,6 +86,18 @@ A small platformer that shows off most of the engine:
 - Stand next to a **sapling** while it grows and fight off the bees it attracts. Once it's a tree, it's your checkpoint.
 - Talking NPCs, and a pressure button that opens a gate.
 - Two levels, with cutscenes when each one starts and when you reach the gate.
+
+### Beacon Keeper
+
+<img src="docs/media/beacon-keeper.png" width="480" alt="Beacon Keeper: a lighthouse beam guiding ships past rocks">
+
+An idle game where you are the lighthouse. Everything is drawn from code, without a map or entities.
+
+- Ships can't see the rocks. Aim your beam at them and they steer around the rocks into the harbour.
+- Squeeze **R** for a brighter beam that burns lamp oil. Squeeze **L** for a narrow, long spotlight. **B** sounds the foghorn.
+- Each day brings a sea haze that hides the rocks and shortens the beam. At night, pirates hunt the merchant ships, so keep your light on them until they flee.
+- Docked ships pay tolls. Spend them in the harbour shop (**X**) on oil, a better lens, ship lanterns, coast cannons, a bigger harbour, and a clockwork lens that aims the beam for you.
+- It uses `save()`, `saved()` and `clock()`, so the harbour keeps earning while the Bit is off.
 
 ## 🕹️ Controls
 
