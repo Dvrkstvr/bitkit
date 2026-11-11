@@ -66,8 +66,9 @@ The **AI** tab is a chat that can build your game with you: *"add coins the play
 
 1. Open **[dvrkstvr.github.io/bitkit](https://dvrkstvr.github.io/bitkit/)** in Chrome, Edge or Firefox.
 2. Plug in a controller and press any button on it.
-3. Press **Run** (or Ctrl+Enter). The *Sprout Hop* demo starts.
-4. Change something and press Run again.
+3. The studio starts on the Bit's home screen with every demo (Sprout Hop, Beacon Keeper, Kart Lab). Pick one with ← → and press A (Z on the keyboard). Hold Start+Select to come back.
+4. Press **Run** (or Ctrl+Enter) to play the cart that is open in the studio.
+5. Change something and press Run again.
 
 Want it offline? [`dist/bitkit-studio.html`](dist/bitkit-studio.html) is one self-contained file.
 
