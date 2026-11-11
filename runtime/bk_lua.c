@@ -324,7 +324,7 @@ static int l_text(lua_State *l) {
       int n1 = bk_text_len(t, &lines2);
       if (n1 != n0 && lines == 1 && lines2 == 1) {
         int sx = x - BK->cam_x, w0 = n0 * 8 * sc, mid = sx + w0 / 2;
-        if (sx > 8 && mid >= 156 && mid <= 164) x -= (n1 - n0) * 4 * sc;
+        if (sx > 8 && mid >= 158 && mid <= 162) x -= (n1 - n0) * 4 * sc;
         else if (sx >= 160 && sx + w0 >= 300) x -= (n1 - n0) * 8 * sc;
         if (x - BK->cam_x < 0 && sx >= 0) x = BK->cam_x;
       }

@@ -18,7 +18,8 @@ how to build and flash it, and what has and hasn't been tried on real hardware.
 | Emulator apps: Game Boy, Game Boy Color, NES | ROMs in the browser | ✅ same C cores; your ROMs in `/sdcard/roms`, battery saves and states next to them | `device` CI job (test cards) |
 | Bit themes: boot animation, themed home screen, owner's name in games (`player_name`) | ✅ | ✅ "Bit theme" save, same Lua (docs/THEMES.md) | `device` CI job |
 | Save files, Continue, Delete save | ✅ | ✅ `<card>/bitkit/saves/<game>.sav` (or the internal flash) | `device` CI job |
-| Bit settings: screen look, strength, brightness, volume | ✅ | ✅ look over every game, backlight PWM, volume | `device` CI job |
+| Bit settings: screen look, strength, brightness, volume, language | ✅ | ✅ look over every game, backlight PWM, volume, `lang` in the "Bit settings" save | `device` CI job |
+| Languages: English, Deutsch, Français, Español (`lang()`, `tr()`, `texts{}`), accented letters in the font | ✅ | ✅ same runtime and font; host screens ("THE GAME STOPPED") translated in `bk_host.c` | `device` CI job, `tools/langtest.cjs` |
 | Title screens, game shell, pause menu, `_restart()` | ✅ | ✅ (Lua, in the runtime) | `device` CI job |
 | `level()` maps, cutscenes, entities | ✅ | ✅ | `device` CI job |
 | Paused games (Start+Select, pick again to carry on) | heap snapshot | ✅ the game stays alive in PSRAM (up to 4; not kept through power off) | `device` CI job |

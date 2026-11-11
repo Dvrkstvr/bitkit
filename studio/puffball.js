@@ -52,8 +52,8 @@ end
 -- ---------------------------------------------------------------- helpers
 function sgn(v) return v > 0 and 1 or (v < 0 and -1 or 0) end
 function mid(a, v, b) return math.max(a, math.min(v, b)) end
-function ctext(s, y, c, sc) sc = sc or 1 text(s, 160 - #s * 4 * sc, y, c, sc) end
-function stext(s, y, c, sc) sc = sc or 1 text(s, 161 - #s * 4 * sc, y + sc, 1, sc) ctext(s, y, c, sc) end
+function ctext(s, y, c, sc) sc = sc or 1 s = tr(s) text(s, 160 - #s * 4 * sc, y, c, sc) end   -- (tr: texts{} at the end)
+function stext(s, y, c, sc) sc = sc or 1 s = tr(s) text(s, 161 - #s * 4 * sc, y + sc, 1, sc) ctext(s, y, c, sc) end
 function pan(x) return mid(-1, (x - 160) / 160, 1) end
 
 -- buttons going down this frame (btnp repeats while held, this does not)
@@ -205,7 +205,7 @@ function fault(side, why)
       state, state_t = "over", 0
       sfx("C5", 1, 0.4, 8) sfx("E5", 1, 0.4, 16) sfx("G5", 1, 0.4, 30)
       if NP > 1 or winner == 1 then
-        game_win(side_name(winner) .. " won the match " .. score[winner] .. " to " .. score[side] .. "!")
+        game_win(tr("%s won the match %d to %d!", tr(side_name(winner)), score[winner], score[side]))
       end
       checkpoint({ mode = 1, s1 = 0, s2 = 0, best = best })
       return
@@ -408,7 +408,7 @@ function draw_hud()
     rectfill(136, 31, 48, 11, 1) ctext("to " .. target, 33, 13)
   else
     stext(tostring(streak), 6, 13, 3)
-    local s = "passes  (best " .. best .. ", goal " .. RALLY_GOAL .. ")"
+    local s = tr("passes  (best %d, goal %d)", best, RALLY_GOAL)
     rectfill(156 - #s * 4, 31, #s * 8 + 8, 11, 1) ctext(s, 33, 13)
     for i = 1, 3 do circfill(12 + i * 14, 14, 5, i <= lives and 26 or 30) end
   end
@@ -427,7 +427,7 @@ function _draw()
       local x = 60 + (i - 1) * 104
       rectfill(x, 94, 96, 26, i == sel and 20 or 2)
       rect(x, 94, 96, 26, i == sel and 13 or 30)
-      text(m[1], x + 48 - #m[1] * 4, 103, i == sel and 27 or 29)
+      local mn = tr(m[1]) text(mn, x + 48 - #mn * 4, 103, i == sel and 27 or 29)
     end
     ctext(MODES[sel][2], 128, 13)
     ctext(NP == 1 and "1 player, with a crab" or NP .. " players", 140, 29)
@@ -441,7 +441,7 @@ function _draw()
     rectfill(40, 70, 240, 80, 1) rect(40, 70, 240, 80, 13)
     if mode == 1 then
       local n = side_name(winner)
-      local s = n .. ((n == "You" or n == "The crabs" or n:find("+", 1, true)) and " win!" or " wins!")
+      local s = (n == "You" and tr("You win!")) or (n == "The crabs" and tr("The crabs win!")) or tr(n:find("+", 1, true) and "%s win!" or "%s wins!", tr(n))
       stext(s, 80, 27, #s > 14 and 1 or 2)
       ctext(score[1] .. " : " .. score[2], 104, 13)
     else
@@ -487,6 +487,44 @@ function draw_title(t)
   draw_puffer(x, y, 9 + (n % 6), t / 12 * (to > from and 1 or -1), to > from and 1 or -1)
   if f < 0.12 then for i = 0, 5 do pset(from + math.cos(i) * f * 160, 168 + math.sin(i) * f * 120, 13) end end
 end
+-- this game's words in other languages (the Bit's language, LANGUAGE in Settings; runtime/bk_lang.lua)
+texts{
+  de = {
+    ["Win a Match before the other side does, or pass the puffer # times in a row in a Rally."] = "Gewinn ein Match vor der anderen Seite, oder spiel dir den Kugelfisch in einer Rally #-mal hintereinander zu.",
+    ["Left / right: run. A: jump. B: dive."] = "Links / rechts: laufen. A: springen. B: hechten.",
+    ["Match: if the puffer lands on your sand, the other side scores. A side may touch it 3 times in a row."] = "Match: Landet der Kugelfisch auf deinem Sand, punktet die andere Seite. Jede Seite darf ihn 3-mal hintereinander berühren.",
+    ["Rally: everyone plays together. Every pass over the net counts; 3 drops end the run."] = "Rally: Alle spielen zusammen. Jeder Pass übers Netz zählt; nach 3 Fehlern ist Schluss.",
+    ["Every touch puffs the puffer up and speeds it up."] = "Jede Berührung bläst den Kugelfisch auf und macht ihn schneller.",
+    ["Odd players are on the left, even players on the right. Crabs fill the empty spots."] = "Ungerade Spieler stehen links, gerade rechts. Krabben füllen freie Plätze.",
+    ["Crabs (CPU)"] = "Krabben (Computer)",
+    ["Points to win"] = "Punkte zum Sieg",
+    ["MATCH"] = "MATCH",
+    ["Two sides. Most points wins."] = "Zwei Seiten. Die meisten Punkte gewinnen.",
+    ["RALLY"] = "RALLY",
+    ["Together: keep it flying."] = "Zusammen: halt ihn in der Luft.",
+    ["%s won the match %d to %d!"] = "%s: Match gewonnen, %d zu %d!",
+    ["You"] = "Du",
+    ["The crab"] = "Die Krabbe",
+    ["The crabs"] = "Die Krabben",
+    ["# passes without dropping the puffer!"] = "# Pässe, ohne den Kugelfisch fallen zu lassen!",
+    ["to #"] = "bis #",
+    ["passes  (best %d, goal %d)"] = "Pässe  (Rekord %d, Ziel %d)",
+    ["PICK A GAME"] = "WÄHL EIN SPIEL",
+    ["1 player, with a crab"] = "1 Spieler, mit einer Krabbe",
+    ["# players"] = "# Spieler",
+    ["left / right: pick    A: play"] = "links / rechts: wählen    A: spielen",
+    ["READY"] = "BEREIT",
+    ["You win!"] = "Du gewinnst!",
+    ["The crabs win!"] = "Die Krabben gewinnen!",
+    ["%s win!"] = "%s gewinnen!",
+    ["%s wins!"] = "%s gewinnt!",
+    ["DROPPED!"] = "RUNTERGEFALLEN!",
+    ["# passes this run, best streak #"] = "# Pässe diesmal, beste Serie #",
+    ["A: again    B: pick a game"] = "A: nochmal    B: anderes Spiel",
+    ["4 TOUCHES!"] = "4 BERÜHRUNGEN!",
+    ["SPLAT!"] = "PLATSCH!",
+  },
+}
 `;
 
   // the icon: a puffed-up puffer

@@ -68,8 +68,8 @@ end
 -- ---------------------------------------------------------------- helpers
 function sgn(v) return v > 0 and 1 or (v < 0 and -1 or 0) end
 function mid(a, v, b) return math.max(a, math.min(v, b)) end
-function ctext(s, y, c, sc) sc = sc or 1 text(s, 160 - #s * 4 * sc, y, c, sc) end
-function stext(s, y, c, sc) sc = sc or 1 text(s, 161 - #s * 4 * sc, y + sc, 1, sc) ctext(s, y, c, sc) end
+function ctext(s, y, c, sc) sc = sc or 1 s = tr(s) text(s, 160 - #s * 4 * sc, y, c, sc) end   -- (tr: texts{} at the end)
+function stext(s, y, c, sc) sc = sc or 1 s = tr(s) text(s, 161 - #s * 4 * sc, y + sc, 1, sc) ctext(s, y, c, sc) end
 function pan(x) return mid(-1, (x - 160) / 160, 1) end
 
 function read_pads()
@@ -353,7 +353,7 @@ function _update()
       if score[1] >= target then game_win("The crew earned " .. score[1] .. " coins in one shift (target " .. target .. ")!") end
     else
       winner = score[1] > score[2] and 1 or (score[2] > score[1] and 2 or 0)
-      if winner ~= 0 then game_win(team_name(winner) .. " kitchen wins, " .. score[winner] .. " coins to " .. score[3 - winner] .. "!") end
+      if winner ~= 0 then game_win(tr(winner == 1 and "The left kitchen wins, %d coins to %d!" or "The right kitchen wins, %d coins to %d!", score[winner], score[3 - winner])) end
     end
     checkpoint({ mode = mode, best = best })
   end
@@ -499,7 +499,7 @@ function _draw()
       local x = 48 + (i - 1) * 116
       rectfill(x, 110, 108, 26, i == sel and 8 or 2)
       rect(x, 110, 108, 26, i == sel and 13 or 30)
-      text(m[1], x + 54 - #m[1] * 4, 119, i == sel and 27 or 29)
+      local mn = tr(m[1]) text(mn, x + 54 - #mn * 4, 119, i == sel and 27 or 29)
     end
     ctext(MODES[sel][2], 144, 13)
     ctext(NP .. " players", 156, 29)
@@ -555,6 +555,42 @@ function draw_title(t)
   spr(16, 110, 150 - (t // 20) % 2, 2, 2, true, false, 2)
   pal()
 end
+-- this game's words in other languages (the Bit's language, LANGUAGE in Settings; runtime/bk_lang.lua)
+texts{
+  de = {
+    ["Earn the shift's target in coins, or out-brew the other team's kitchen."] = "Verdien das Münzziel der Schicht, oder braue mehr als die Küche des anderen Teams.",
+    ["D-pad: walk. A: pick up, put down or use what you face. B: dash."] = "Steuerkreuz: laufen. A: aufheben, ablegen oder benutzen, was vor dir ist. B: sprinten.",
+    ["Put 3 ingredients in a cauldron. Hold X next to it to stir: it brews faster."] = "Leg 3 Zutaten in einen Kessel. Halt X daneben zum Umrühren: dann braut es schneller.",
+    ["Take the finished potion (A) to the window. It must match an order card."] = "Bring den fertigen Trank (A) zum Fenster. Er muss zu einer Bestellkarte passen.",
+    ["Potions left on the fire burn. Burnt or wrong potions go in the bin."] = "Tränke auf dem Feuer brennen an. Verbrannte oder falsche kommen in den Eimer.",
+    ["Fast service tips more, and a streak of right orders adds a bonus."] = "Schneller Service bringt mehr Trinkgeld, und eine Serie richtiger Bestellungen einen Bonus.",
+    ["Shift minutes"] = "Minuten pro Schicht",
+    ["ONE KITCHEN"] = "EINE KÜCHE",
+    ["Together: earn the target."] = "Zusammen: erreicht das Ziel.",
+    ["TEAMS"] = "TEAMS",
+    ["Two kitchens. Most coins wins."] = "Zwei Küchen. Die meisten Münzen gewinnen.",
+    ["The crew earned # coins in one shift (target #)!"] = "Die Crew hat in einer Schicht # Münzen verdient (Ziel #)!",
+    ["The left kitchen wins, %d coins to %d!"] = "Die linke Küche gewinnt, %d zu %d Münzen!",
+    ["The right kitchen wins, %d coins to %d!"] = "Die rechte Küche gewinnt, %d zu %d Münzen!",
+    ["coins"] = "Münzen",
+    ["PICK A GAME"] = "WÄHL EIN SPIEL",
+    ["# players"] = "# Spieler",
+    ["left / right: pick    A: play"] = "links / rechts: wählen    A: spielen",
+    ["SHIFT STARTS"] = "SCHICHTBEGINN",
+    ["KITCHEN DUEL"] = "KÜCHENDUELL",
+    ["Earn # coins!"] = "Verdient # Münzen!",
+    ["Most coins wins!"] = "Die meisten Münzen gewinnen!",
+    ["GREAT SHIFT!"] = "SUPER SCHICHT!",
+    ["SHIFT OVER"] = "SCHICHT VORBEI",
+    ["# coins (target #, best #)"] = "# Münzen (Ziel #, Rekord #)",
+    ["# potions served"] = "# Tränke serviert",
+    ["A DRAW!"] = "UNENTSCHIEDEN!",
+    ["LEFT KITCHEN WINS"] = "LINKE KÜCHE GEWINNT",
+    ["RIGHT KITCHEN WINS"] = "RECHTE KÜCHE GEWINNT",
+    ["A: again   B: pick a game"] = "A: nochmal   B: anderes Spiel",
+    ["A: another shift"] = "A: noch eine Schicht",
+  },
+}
 `;
 
   // ---- sprites: 1 mushroom, 2 herb, 3 berry, 4 flask (colour 5 = the potion), 16 the cook (4 / 3 = hat colours)

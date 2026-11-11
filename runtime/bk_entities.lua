@@ -1,6 +1,7 @@
 -- BitKit entity system. Built into the runtime and loaded before every cart.
 -- Entity types (sprites, animations, behavior trees) come from the studio's Entities tab.
 -- MIT License.
+local tr, lang, lang_nth = tr, lang, lang_nth   -- the Bit's language (bk_lang.lua): kept here so a cart's own tr = ... can't break the shell
 
 ENT_SOLID_FLAG = 0       -- map tiles with this sprite flag block entities
 ENT_GRAVITY = 0.25

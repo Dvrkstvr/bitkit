@@ -123,10 +123,10 @@ end
 function sgn(v) return v > 0 and 1 or (v < 0 and -1 or 0) end
 function mid(a, v, b) return math.max(a, math.min(v, b)) end
 function label(n)
-  if NP == 1 then return n == 1 and "YOU" or "ROOK" end
+  if NP == 1 then return n == 1 and tr("YOU") or "ROOK" end
   return player_name(side_pl[n], 8)
 end
-function banner(s, c, sub) msg, msg_c, msg_sub, msg_t = s, c or 13, sub, 100 end
+function banner(s, c, sub) msg, msg_c, msg_sub, msg_t = tr(s), c or 13, sub, 100 end   -- (tr: texts{} at the end)
 function pan(x) return mid(-1, (x - 160) / 160, 1) end
 
 function solid_at(x, y)
@@ -423,7 +423,7 @@ function kill(t, by, dir)
   sfx("C3", 3, 0.6, 16, nil, pan(t.x), -200)
   sfx("G2", 2, 0.4, 12, nil, pan(t.x), -150)
   if by and by.alive then
-    if runner ~= by.n then banner(SIDE[by.n] .. " HAS THE WAY", COL[by.n][1]) end
+    if runner ~= by.n then banner(tr("%s HAS THE WAY", SIDE[by.n]), COL[by.n][1]) end
     runner = by.n
   end
 end
@@ -542,10 +542,10 @@ function win(r)
   local gate = r.dir > 0 and "the Sea Gate" or "the Mill Gate"
   checkpoint(nil)
   if NP == 1 then
-    if r.n == 1 then game_win("You fought your way out of " .. gate .. " before the Rook got home.") end
+    if r.n == 1 then game_win(tr("You fought your way out of %s before the Rook got home.", tr(gate))) end
   elseif not shown_win then
     shown_win = true
-    game_win(label(r.n) .. " (" .. SIDE[r.n] .. ") fought out through " .. gate .. "!")
+    game_win(tr("%s (%s) fought out through %s!", label(r.n), SIDE[r.n], tr(gate)))
   end
 end
 
@@ -827,14 +827,47 @@ function hud()
     if mode_t < 40 then text("DUEL!", 101, 101, 1, 3) text("DUEL!", 100, 100, 27, 3) end
   elseif mode == "over" then
     local r = F[winner]
-    local l1 = label(winner) .. " WINS!"
-    local l2 = SIDE[winner] .. " got out through the " .. (r.dir > 0 and "Sea Gate" or "Mill Gate")
+    local l1 = tr("%s WINS!", label(winner))
+    local l2 = tr("%s got out through the %s", SIDE[winner], tr(r.dir > 0 and "Sea Gate" or "Mill Gate"))
     rectfill(30, 80, 260, 66, 31) rect(30, 80, 260, 66, COL[winner][1])
     text(l1, 160 - #l1 * 8, 88, COL[winner][1], 2)
     text(l2, 160 - #l2 * 4, 110, 13)
     if over_t > 60 then text("A: next duel", 112, 128, 29) end
   end
 end
+-- this game's words in other languages (the Bit's language, LANGUAGE in Settings; runtime/bk_lang.lua)
+texts{
+  de = {
+    ["Mill Gate"] = "Mühlentor",
+    ["Windmill"] = "Windmühle",
+    ["Orchard"] = "Obstgarten",
+    ["Market"] = "Markt",
+    ["Old Bridge"] = "Alte Brücke",
+    ["Rope Yard"] = "Seilerei",
+    ["Sea Gate"] = "Seetor",
+    ["the Sea Gate"] = "das Seetor",
+    ["the Mill Gate"] = "das Mühlentor",
+    ["Fight your way through the town and out of your gate before your rival gets out of theirs."] = "Kämpf dich durch die Stadt und aus deinem Tor, bevor dein Gegner aus seinem kommt.",
+    ["Left / right: walk. Hold down: crouch. A: jump. X: shoot."] = "Links / rechts: laufen. Unten halten: ducken. A: springen. X: schießen.",
+    ["Bolts drop as they fly and nothing stops them: jump over low ones, crouch under high ones."] = "Bolzen sinken im Flug und nichts hält sie auf: spring über tiefe, duck dich unter hohen.",
+    ["Walk into your rival with a bolt loaded to stab them."] = "Lauf mit geladenem Bolzen in deinen Gegner, um zuzustechen.",
+    ["You hold one bolt loaded and one spare. Walk over bolts to pick them up."] = "Du hast einen Bolzen geladen und einen in Reserve. Lauf über Bolzen, um sie aufzuheben.",
+    ["Win a fight to get the way, then run for your gate. Wren goes east, Rook goes west."] = "Gewinn einen Kampf, dann gehört dir der Weg: lauf zu deinem Tor. Wren läuft nach Osten, Rook nach Westen.",
+    ["Rook (CPU)"] = "Rook (Computer)",
+    ["%s HAS THE WAY"] = "%s HAT DEN WEG",
+    ["DOUBLE HIT!"] = "DOPPELTREFFER!",
+    ["YOU"] = "DU",
+    ["You fought your way out of %s before the Rook got home."] = "Du hast dich durch %s gekämpft, bevor Rook zu Hause war.",
+    ["%s (%s) fought out through %s!"] = "%s (%s) hat sich durch %s gekämpft!",
+    ["NEXT P#"] = "NÄCHSTER P#",
+    ["GO >"] = "LOS >",
+    ["< GO"] = "< LOS",
+    ["DUEL!"] = "DUELL!",
+    ["%s WINS!"] = "%s GEWINNT!",
+    ["%s got out through the %s"] = "%s ist durchs %s entkommen",
+    ["A: next duel"] = "A: nächstes Duell",
+  },
+}
 `;
 
   // Pixel art: one char per pixel, mapped to palette indices. c / C are the cloak colours (swapped per side).

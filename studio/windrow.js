@@ -387,7 +387,7 @@ function mine_hands(x, y)
     sfx(R.drop and "C4" or "A3", 3, 0.3, 5)
     if mine_hits >= R.hits then
       if R.drop and not give(R.drop, 1) then mine_hits = R.hits - 1 return end
-      if R.drop then float("+1 " .. FOUND_BY[R.drop].name)
+      if R.drop then float("+1 " .. tr(FOUND_BY[R.drop].name))
       elseif hash(x, y, G.day) < 350 then give("stone", 1) float("+1 Stone") end
       MINE[y][x] = (mine_down and mine_down.x == x and mine_down.y == y) and ">" or "."
       if MINE[y][x] == ">" then say("A ladder, leading down!") sfx("E5", 1, 0.3, 6) sfx("A5", 1, 0.3, 12) end
@@ -638,7 +638,7 @@ function auto_items()
   local L = { "Teach it a route" }
   if route_len() > 0 then
     L[#L + 1] = auto_i and "Stop it" or "Send it round now"
-    L[#L + 1] = "Every morning: " .. (G.daily == 1 and "yes" or "no")
+    L[#L + 1] = tr("Every morning: %s", tr(G.daily == 1 and "yes" or "no"))
     L[#L + 1] = "Forget the route"
   end
   return L
@@ -794,11 +794,11 @@ function tend(i)
   local a, m = G.an[i], ANIM[i]
   m.wait = math.max(m.wait, 90)
   if a.k == "g" and a.m == 1 then
-    if G.pail == 0 then say(animal_name(a) .. " has milk for you, but you need a pail. Marrow has one.") return end
+    if G.pail == 0 then say(tr("%s has milk for you, but you need a pail. Marrow has one.", animal_name(a))) return end
     local k = a.love >= 60 and "cream" or "milk"
     if give(k, 1) then
       a.m = 0
-      float("+1 " .. FOUND_BY[k].name)
+      float("+1 " .. tr(FOUND_BY[k].name))
       sfx("G4", 4, 0.25, 8) sfx("C5", 4, 0.25, 12)
       swing("pick")
     end
@@ -808,7 +808,7 @@ function tend(i)
     sfx(a.k == "h" and "A5" or "D4", a.k == "h" and 1 or 2, 0.2, 6)
     swing("pick")
   else
-    say(animal_name(a) .. " is content. " .. hearts(a) .. " of 10 hearts.")
+    say(tr("%s is content. %d of 10 hearts.", animal_name(a), hearts(a)))
   end
 end
 function hearts(a) return a.love // 10 end
@@ -843,7 +843,7 @@ function update_build()
   sfx("C5", 1, 0.3, 8) sfx("E5", 1, 0.3, 14) sfx("G5", 1, 0.3, 22)
   if ui_kind == "silo" then G.silo_b = 1 say("The silo stands! Marrow now has a clockwork driver for your tractor.")
   elseif ui_kind == "trac" then say("It runs! A climbs on, Y hops off. Marrow sells implements for it.")
-  else say("The " .. Bd.name:lower() .. " stands! Marrow can bring you " .. (ui_kind == "coop" and "hens." or "goats and a pail.")) end
+  else say(ui_kind == "coop" and "The hen house stands! Marrow can bring you hens." or "The goat shed stands! Marrow can bring you goats and a pail.") end
   persist()
 end
 
@@ -949,8 +949,9 @@ function _init()
 end
 
 -- ---------------------------------------------------------------- helpers
-function say(s) toast, toast_t = s, 60 + #s * 3 end
-function float(s, c) floats[#floats + 1] = { x = px, y = py - 20, s = s, c = c or 13, t = 45 } end
+function low(s) if lang() == "en" then return s:lower() end return s end
+function say(s) s = tr(s) toast, toast_t = s, 60 + #s * 3 end
+function float(s, c) s = tr(s) floats[#floats + 1] = { x = px, y = py - 20, s = s, c = c or 13, t = 45 } end
 function count_bag()
   local n = 0
   for k, v in pairs(G.inv) do
@@ -1037,7 +1038,7 @@ function use_hands()
     if give(o.k, 1) then
       table.remove(FORAGE, oi)
       G.picked = G.picked + 1
-      float("+1 " .. FOUND_BY[o.k].name)
+      float("+1 " .. tr(FOUND_BY[o.k].name))
       sfx("G5", 1, 0.25, 5)
       swing("pick")
     end
@@ -1084,12 +1085,12 @@ function use_hands()
     persist()
     return
   end
-  if ch == "~" then say("Water. Press B to fill your " .. CAN[G.can].name:lower() .. ".") return end
+  if ch == "~" then say(tr("Water. Press B to fill your %s.", low(tr(CAN[G.can].name)))) return end
   if ch == "T" then say("A tall pine.") return end
   if a ~= 1 then return end
   local f, p = cell(x, y)
   if not f then return end
-  if not G.plots[p] then say(PLOTS[p].name .. " is not yours yet. Marrow sells the deed.") return end
+  if not G.plots[p] then say(tr("%s is not yours yet. Marrow sells the deed.", tr(PLOTS[p].name))) return end
   if f.k == 1 then
     f.hits = f.hits + 1
     swing("pull")
@@ -1121,7 +1122,7 @@ function use_hands()
   elseif f.c == 0 then
     if G.seeds[G.sel] <= 0 then pick_seed(1) end
     if G.seeds[G.sel] <= 0 then say("No seeds. Marrow's wagon by the road sells them.") return end
-    if not in_season(G.sel) then say(CROPS[G.sel].name .. " does not grow in " .. SEASON[season()]:lower() .. ".") return end
+    if not in_season(G.sel) then say(tr("%s does not grow in %s.", tr(CROPS[G.sel].name), low(tr(SEASON[season()])))) return end
     G.seeds[G.sel] = G.seeds[G.sel] - 1
     f.c, f.age = G.sel, 0
     swing("plant")
@@ -1130,7 +1131,7 @@ function use_hands()
     local c = CROPS[f.c]
     if give(c.key, 1) then
       G.grown = G.grown + 1
-      float("+1 " .. c.name)
+      float("+1 " .. tr(c.name))
       sfx("C5", 1, 0.25, 4) sfx("E5", 1, 0.25, 8)
       swing("pick")
       if c.regrow then f.age = c.days - c.regrow else f.c, f.age = 0, 0 end
@@ -1153,7 +1154,7 @@ function use_water()
   if not f or not G.plots[p] or f.k ~= 4 then return end
   if f.wet then return end
   if G.water <= 0 then
-    say("Your " .. CAN[G.can].name:lower() .. " is empty. Fill it at the pond.")
+    say(tr("Your %s is empty. Fill it at the pond.", low(tr(CAN[G.can].name))))
     sfx("C3", 0, 0.2, 6)
     hold = -30
     return
@@ -1171,19 +1172,19 @@ function look()
   if G.area == 1 then f, p = cell(x, y) end
   if f and G.plots[p] and f.c > 0 then
     local c = CROPS[f.c]
-    if ripe(f) then say(c.name .. ": ready to pick.")
-    elseif not in_season(f.c) then say(c.name .. ": waiting for " .. SEASON[c.seasons[1]]:lower() .. ".")
+    if ripe(f) then say(tr("%s: ready to pick.", tr(c.name)))
+    elseif not in_season(f.c) then say(tr("%s: waiting for %s.", tr(c.name), low(tr(SEASON[c.seasons[1]]))))
     else
       local left = c.days - f.age
-      say(c.name .. ": " .. left .. (left == 1 and " more day" or " more days") .. (f.wet and "." or ". It needs water."))
+      say(tr((left == 1 and "%s: %d more day" or "%s: %d more days") .. (f.wet and "." or ". It needs water."), tr(c.name), left))
     end
   elseif f and G.plots[p] and f.k == 4 then say(f.wet and "Dug soil, watered." or "Dug soil. A plants a seed.")
   elseif G.area == 1 and animal_at(x, y) then
     local an = G.an[animal_at(x, y)]
-    say(animal_name(an) .. " the " .. (an.k == "h" and "hen" or "goat") .. ". " .. hearts(an) .. " of 10 hearts." .. (an.p == 0 and " Wants a pat." or ""))
+    say(tr(an.k == "h" and "%s the hen. %d of 10 hearts." or "%s the goat. %d of 10 hearts.", animal_name(an), hearts(an)) .. (an.p == 0 and tr(" Wants a pat.") or ""))
   elseif tile(G.area, x, y) == "r" then say("The trough holds " .. G.feed .. " helpings. Each animal eats one a night.")
-  elseif forage_at(G.area, x, y) then say(FOUND_BY[forage_at(G.area, x, y).k].name .. ". A picks it up.")
-  else say(AREAS[G.area].name .. ", " .. SEASON[season()]:lower() .. " " .. day_of() .. " of year " .. year() .. ".") end
+  elseif forage_at(G.area, x, y) then say(tr("%s. A picks it up.", tr(FOUND_BY[forage_at(G.area, x, y).k].name)))
+  else say(tr("%s, %s %d of year %d.", tr(AREAS[G.area].name), low(tr(SEASON[season()])), day_of(), year())) end
 end
 
 -- ---------------------------------------------------------------- Marrow's wagon
@@ -1191,7 +1192,7 @@ function shop_items()
   local L = {}
   for i, c in ipairs(CROPS) do
     if in_season(i) then
-      L[#L + 1] = { name = c.name .. " seed", cost = c.seed, own = G.seeds[i],
+      L[#L + 1] = { name = tr("%s seed", tr(c.name)), cost = c.seed, own = G.seeds[i],
         about = c.days .. " days. Sells for " .. c.sell .. (c.regrow and ", and keeps bearing." or "."),
         buy = function() G.seeds[i] = G.seeds[i] + 1 end }
     end
@@ -1215,7 +1216,7 @@ function shop_items()
   once("Goat", 350, "Gives milk every day when fed. Loved goats give creamy milk.", G.shed == 1 and herd("g") < 2, function() add_animal("g") end)
   once("Milk pail", 50, "You can't milk a goat into your hat.", G.shed == 1 and G.pail == 0, function() G.pail = 1 end)
   for p = 2, #PLOTS do
-    once("Deed: " .. PLOTS[p].name, PLOTS[p].cost, PLOTS[p].w * PLOTS[p].h .. " cells of wild land to clear.",
+    once(tr("Deed: %s", tr(PLOTS[p].name)), PLOTS[p].cost, PLOTS[p].w * PLOTS[p].h .. " cells of wild land to clear.",
       not G.plots[p] and G.plots[p - 1], function() G.plots[p] = true end)
   end
   return L
@@ -1237,7 +1238,7 @@ function update_shop()
       G.coins = G.coins - it.cost
       it.buy()
       sfx("E5", 1, 0.25, 4)
-      if it.once then say("Marrow: \\"" .. it.name .. ". Look after it.\\"") persist() end
+      if it.once then say(tr("Marrow: \\"%s. Look after it.\\"", tr(it.name))) persist() end
     else
       sfx("C3", 0, 0.2, 6)
     end
@@ -1800,6 +1801,7 @@ function panel(x, y, w, h, title)
   if title then rectfill(x + 2, y + 2, w - 4, 12, 7) text(title, x + 6, y + 4, 27) end
 end
 function wrap(s, n)
+  s = tr(s)
   local out, ln = {}, ""
   for w in s:gmatch("%S+") do
     if #ln + #w + 1 > n and ln ~= "" then out[#out + 1] = ln; ln = w else ln = ln == "" and w or ln .. " " .. w end
@@ -1833,7 +1835,7 @@ end
 
 function draw_hud()
   rectfill(0, 0, 320, 12, 6) line(0, 12, 320, 12, 7)
-  text(SEASON[season()] .. " " .. day_of(), 4, 2, 12)
+  text(tr(SEASON[season()]) .. " " .. day_of(), 4, 2, 12)
   local h = hour()
   text(string.format("%02d:%02d", fl(h), fl(h % 1 * 6) * 10), 92, 2, h > 20 and 26 or 13)
   if G.rain then text(season() == 4 and "snow" or "rain", 144, 2, 22) end
@@ -1850,14 +1852,14 @@ function draw_hud()
   local c = CROPS[G.sel]
   local n, w = CAN[G.can].n, G.water
   if riding then
-    local nm = IMPL[G.impsel] and IMPL[G.impsel].name or "No implement"
+    local nm = tr(IMPL[G.impsel] and IMPL[G.impsel].name or "No implement")
     text("L:" .. nm, 2, 229, 27)
     if teaching and t() % 40 < 28 then text("REC " .. route_len(), 140, 229, 26) end
-    if G.impsel == 2 then text(c.name:sub(1, 6) .. " x" .. G.seeds[G.sel], 2 + (#nm + 3) * 8, 229, G.seeds[G.sel] > 0 and 13 or 28) end
+    if G.impsel == 2 then text(tr(c.name):sub(1, 6) .. " x" .. G.seeds[G.sel], 2 + (#nm + 3) * 8, 229, G.seeds[G.sel] > 0 and 13 or 28) end
     n, w = TANK, G.impsel == 3 and G.tank or 0
   else
-    text("<L", 2, 229, 28) text(c.name .. " x" .. G.seeds[G.sel], 22, 229, G.seeds[G.sel] > 0 and (in_season(G.sel) and 13 or 26) or 28)
-    text("R>", 22 + (#c.name + 5) * 8, 229, 28)
+    text("<L", 2, 229, 28) text(tr(c.name) .. " x" .. G.seeds[G.sel], 22, 229, G.seeds[G.sel] > 0 and (in_season(G.sel) and 13 or 26) or 28)
+    text("R>", 22 + (#tr(c.name) + 5) * 8, 229, 28)
   end
   for i = 0, 9 do rectfill(196 + i * 4, 229, 3, 8, i < math.ceil(w / n * 10) and 21 or 30) end
   local b = count_bag()
@@ -1875,7 +1877,7 @@ function draw_shop()
   local L = shop_items()
   panel(20, 18, 280, 204, "Marrow's wagon")
   text(G.coins .. " coins", 292 - (#tostring(G.coins) + 6) * 8, 22, 12)
-  text("Paying extra today: " .. CROPS[G.demand].name, 28, 36, 17)
+  text(tr("Paying extra today: %s", tr(CROPS[G.demand].name)), 28, 36, 17)
   for i = 1, 8 do
     local it = L[i + ui_scroll]
     if it then
@@ -1894,13 +1896,13 @@ end
 
 function draw_bag()
   panel(20, 18, 280, 204, "Your bag")
-  text(SEASON[season()] .. " " .. day_of() .. ", year " .. year(), 28, 36, 12)
-  text(CAN[G.can].name .. ", " .. HOE[G.hoe].name:lower(), 28, 48, 12)
-  text((G.pick > 0 and "Pickaxe" or "No pickaxe") .. ", " .. (G.axe > 0 and "axe" or "no axe"), 28, 58, 12)
+  text(tr("%s %d, year %d", tr(SEASON[season()]), day_of(), year()), 28, 36, 12)
+  text(tr(CAN[G.can].name) .. ", " .. low(tr(HOE[G.hoe].name)), 28, 48, 12)
+  text(tr(G.pick > 0 and "Pickaxe" or "No pickaxe") .. ", " .. tr(G.axe > 0 and "axe" or "no axe"), 28, 58, 12)
   local x, y = 28, 74
   local function row(k, name, n, c)
     draw_icon(k, x, y - 4)
-    text(name:sub(1, 10), x + 20, y, c or 13) text("x" .. n, x + 104, y + 8 - 8, 27)
+    text(tr(name):sub(1, 10), x + 20, y, c or 13) text("x" .. n, x + 104, y + 8 - 8, 27)
     y = y + 16
     if y > 186 then x, y = 164, 74 end
   end
@@ -1908,14 +1910,14 @@ function draw_bag()
   for i, f in ipairs(FOUND) do if have(f.key) > 0 then row(f.key, f.name, have(f.key), f.mat and 11 or 13) end end
   if x == 28 and y == 74 then text("Nothing yet. Pick, pull and forage.", 28, 74, 28) end
   if #G.an > 0 then text(herd("h") .. " hens, " .. herd("g") .. " goats. Trough: " .. G.feed, 28, 196, 17) end
-  text("Mill: " .. (MILL[G.mill + 1] and MILL[G.mill + 1].name:lower() or "rebuilt") .. "   B: close", 28, 208, 11)
+  text(tr("Mill: %s   B: close", MILL[G.mill + 1] and low(tr(MILL[G.mill + 1].name)) or tr("rebuilt")), 28, 208, 11)
 end
 
 function draw_mill_ui()
   local M = MILL[G.mill + 1]
   panel(30, 40, 260, 160, "The old windmill")
   if not M then text("It turns again.", 40, 70, 13) return end
-  text("Step " .. (G.mill + 1) .. " of " .. #MILL .. ": " .. M.name, 40, 60, 13)
+  text(tr("Step %d of %d: %s", G.mill + 1, #MILL, tr(M.name)), 40, 60, 13)
   local y = 80
   local function need(name, got, n)
     text(name, 40, y, 12)
@@ -1935,7 +1937,7 @@ end
 
 function draw_build()
   local Bd = BUILD[ui_kind]
-  panel(30, 50, 260, 140, "Mend the " .. Bd.name:lower())
+  panel(30, 50, 260, 140, tr("Mend the %s", low(tr(Bd.name))))
   for i, l in ipairs(wrap(Bd.about, 29)) do text(l, 40, 60 + i * 10, 12) end
   local y, ok = 96, G.coins >= Bd.coins
   text("Coins", 40, y, 12) text(math.min(G.coins, Bd.coins) .. "/" .. Bd.coins, 200, y, ok and 17 or 26)
@@ -2043,6 +2045,268 @@ function draw_title(t)
     line(bx - 3, by - 2, bx, by, 1) line(bx, by, bx + 3, by - 2, 1)
   end
 end
+-- this game's words in other languages (the Bit's language, LANGUAGE in Settings; runtime/bk_lang.lua)
+texts{
+  de = {
+    ["Day length (minutes)"] = "Tageslänge (Minuten)",
+    ["Away: minutes per farm day"] = "Weg: Minuten pro Farmtag",
+    ["Away: most days that pass"] = "Weg: höchstens vergehende Tage",
+    ["Walking speed"] = "Lauftempo",
+    ["Spring"] = "Frühling",
+    ["Summer"] = "Sommer",
+    ["Autumn"] = "Herbst",
+    ["Winter"] = "Winter",
+    ["Radish"] = "Radieschen",
+    ["Barley"] = "Gerste",
+    ["Sweet pea"] = "Zuckererbse",
+    ["Tomato"] = "Tomate",
+    ["Corn"] = "Mais",
+    ["Sunmelon"] = "Sonnenmelone",
+    ["Pumpkin"] = "Kürbis",
+    ["Snowleek"] = "Schneelauch",
+    ["Frostcap"] = "Frosthut",
+    ["Wild garlic"] = "Bärlauch",
+    ["Brambleberry"] = "Brombeere",
+    ["Pennybun"] = "Steinpilz",
+    ["Pine cone"] = "Kiefernzapfen",
+    ["Egg"] = "Ei",
+    ["Big egg"] = "Großes Ei",
+    ["Goat milk"] = "Ziegenmilch",
+    ["Creamy milk"] = "Rahmmilch",
+    ["Copper ore"] = "Kupfererz",
+    ["Iron ore"] = "Eisenerz",
+    ["Glowstone"] = "Glühstein",
+    ["Gloom dust"] = "Dämmerstaub",
+    ["Millstone"] = "Mühlstein",
+    ["Wood"] = "Holz",
+    ["Stone"] = "Stein",
+    ["Fibre"] = "Faser",
+    ["Digging stick"] = "Grabstock",
+    ["Hoe"] = "Hacke",
+    ["Leaky bucket"] = "Löchriger Eimer",
+    ["Watering can"] = "Gießkanne",
+    ["Big can"] = "Große Kanne",
+    ["Raise the frame"] = "Gerüst aufstellen",
+    ["Sew the sails"] = "Segel nähen",
+    ["Set the millstone"] = "Mühlstein einsetzen",
+    ["Silo"] = "Silo",
+    ["Holds 600 crops. A tractor on a route unloads here as it passes."] = "Fasst 600 Ernten. Ein Traktor auf seiner Route lädt hier im Vorbeifahren ab.",
+    ["Tractor"] = "Traktor",
+    ["Rusted solid, but all there. Iron and copper come from the mine."] = "Festgerostet, aber vollständig. Eisen und Kupfer gibt's in der Mine.",
+    ["Hen house"] = "Hühnerstall",
+    ["Room for 4 hens. Fed hens lay an egg a day."] = "Platz für 4 Hühner. Satte Hühner legen ein Ei am Tag.",
+    ["Goat shed"] = "Ziegenstall",
+    ["Room for 2 goats. Milk them by hand."] = "Platz für 2 Ziegen. Gemolken wird von Hand.",
+    ["Plough"] = "Pflug",
+    ["Turns grass and weeds into dug soil, three cells wide."] = "Macht aus Gras und Unkraut umgegrabene Erde, drei Felder breit.",
+    ["Seed drill"] = "Sämaschine",
+    ["Sows the seed you picked (R) into dug soil as you drive."] = "Sät beim Fahren das gewählte Saatgut (R) in umgegrabene Erde.",
+    ["Water tank"] = "Wassertank",
+    ["Waters three cells at once. 90 splashes; fill it at the pond with B."] = "Gießt drei Felder auf einmal. 90 Güsse; am Teich mit B füllen.",
+    ["Reaper"] = "Mähwerk",
+    ["Picks every ripe crop you drive across."] = "Erntet alles Reife, über das du fährst.",
+    ["Tractor speed"] = "Traktortempo",
+    ["Friend"] = "Freund",
+    ["Bramble Woods"] = "Brombeerwald",
+    ["The Old Mine"] = "Die alte Mine",
+    ["Home plot"] = "Hausbeet",
+    ["East meadow"] = "Ostwiese",
+    ["Long acre"] = "Langer Acker",
+    ["+# Gloom dust"] = "+# Dämmerstaub",
+    ["+# Stone"] = "+# Stein",
+    ["+# Wood"] = "+# Holz",
+    ["+# Fibre"] = "+# Faser",
+    ["A ladder, leading down!"] = "Eine Leiter nach unten!",
+    ["The chest is empty. You already carried the millstone home."] = "Die Truhe ist leer. Den Mühlstein hast du schon heimgetragen.",
+    ["The old millstone of Windrow! And two glowstones beside it. Take it to the mill."] = "Der alte Mühlstein von Windrow! Und zwei Glühsteine daneben. Bring ihn zur Mühle.",
+    ["Solid rock. No pickaxe gets through this."] = "Massiver Fels. Da kommt keine Spitzhacke durch.",
+    ["ouch!"] = "autsch!",
+    ["Everything went dark. Marrow carried you home. Half your ore is gone."] = "Alles wurde dunkel. Marrow hat dich heimgetragen. Dein halbes Erz ist weg.",
+    ["The old mine. Boarded up, and the boards are nailed fast. A pickaxe might pry them off."] = "Die alte Mine. Mit Brettern vernagelt. Eine Spitzhacke könnte sie aufhebeln.",
+    ["You pry the boards off with the pickaxe. Cold air blows out of the dark."] = "Du hebelst die Bretter mit der Spitzhacke ab. Kalte Luft weht aus dem Dunkel.",
+    ["The engine coughs and catches. Y hops off. Marrow sells implements for it."] = "Der Motor hustet und springt an. Y steigt ab. Marrow verkauft Anbaugeräte dafür.",
+    ["The tractor remembers the route: # cells. Press Y beside it to send it round."] = "Der Traktor merkt sich die Route: # Felder. Drück Y neben ihm, um ihn loszuschicken.",
+    ["Too short to be a route."] = "Zu kurz für eine Route.",
+    ["Drive the route once, working as you go. Y hops off and the tractor remembers it."] = "Fahr die Route einmal ab und arbeite dabei. Y steigt ab, und der Traktor merkt sie sich.",
+    ["That is as long a route as the clockwork can hold: # cells."] = "Länger kann sich das Uhrwerk keine Route merken: # Felder.",
+    ["The tractor has finished its round."] = "Der Traktor hat seine Runde beendet.",
+    ["Teach it a route"] = "Route beibringen",
+    ["Stop it"] = "Anhalten",
+    ["Send it round now"] = "Jetzt losschicken",
+    ["Every morning: %s"] = "Jeden Morgen: %s",
+    ["yes"] = "ja",
+    ["no"] = "nein",
+    ["Forget the route"] = "Route vergessen",
+    ["Marrow's cart takes # crops from the silo for # coins."] = "Marrows Karren holt # Ernten aus dem Silo, für # Münzen.",
+    ["No implement on the hitch. Marrow sells a plough, a seed drill, a water tank and a reaper."] = "Kein Gerät angehängt. Marrow verkauft Pflug, Sämaschine, Wassertank und Mähwerk.",
+    ["The water tank is empty. Drive up to the pond and press B."] = "Der Wassertank ist leer. Fahr zum Teich und drück B.",
+    ["The seed drill is empty: no seeds."] = "Die Sämaschine ist leer: kein Saatgut.",
+    ["tank full"] = "Tank voll",
+    ["%s has milk for you, but you need a pail. Marrow has one."] = "%s hat Milch für dich, aber du brauchst einen Melkeimer. Marrow hat einen.",
+    ["%s is content. %d of 10 hearts."] = "%s ist zufrieden. %d von 10 Herzen.",
+    ["The trough holds # helpings. Crops and wild food from your bag go in here."] = "Im Trog sind # Portionen. Ernte und Wildes aus deiner Tasche kommen hier rein.",
+    ["The trough is full."] = "Der Trog ist voll.",
+    ["trough #"] = "Trog #",
+    ["The silo stands! Marrow now has a clockwork driver for your tractor."] = "Das Silo steht! Marrow hat jetzt einen Uhrwerk-Fahrer für deinen Traktor.",
+    ["It runs! A climbs on, Y hops off. Marrow sells implements for it."] = "Er läuft! A steigt auf, Y steigt ab. Marrow verkauft Anbaugeräte dafür.",
+    ["The hen house stands! Marrow can bring you hens."] = "Der Hühnerstall steht! Marrow kann dir Hühner bringen.",
+    ["The goat shed stands! Marrow can bring you goats and a pail."] = "Der Ziegenstall steht! Marrow kann dir Ziegen und einen Melkeimer bringen.",
+    ["Rebuild the old windmill of Windrow."] = "Bau die alte Windmühle von Windrow wieder auf.",
+    ["A: use your hands on what is in front of you. Pull weeds, dig, plant, pick and talk."] = "A: Hand anlegen an das, was vor dir ist. Unkraut ziehen, graben, pflanzen, ernten und reden.",
+    ["B: water. Fill up at a pond. L / R: pick seeds. X: your bag. Y: look closer."] = "B: gießen. Am Teich auffüllen. L / R: Saatgut wählen. X: deine Tasche. Y: genauer ansehen.",
+    ["Watered crops grow overnight. Sleep in the hut, sell at the crate, shop at the wagon."] = "Gegossenes wächst über Nacht. Schlaf in der Hütte, verkauf an der Kiste, kauf am Wagen.",
+    ["Bramble Woods lies west along the road. Bring what the mill needs to the ruin."] = "Der Brombeerwald liegt westlich die Straße entlang. Bring, was die Mühle braucht, zur Ruine.",
+    ["The mine in the woods opens with a pickaxe. Break rocks for ore, find the ladder down. A also hits."] = "Die Mine im Wald öffnet sich mit einer Spitzhacke. Brich Felsen für Erz, finde die Leiter nach unten. A schlägt auch zu.",
+    ["After the mill: build the silo, buy the clockwork driver, press Y by the tractor and teach it a route."] = "Nach der Mühle: Bau das Silo, kauf den Uhrwerk-Fahrer, drück Y am Traktor und bring ihm eine Route bei.",
+    ["The rusted tractor by the Long acre can be mended. On it: hold A to work, L changes implement, Y hops off."] = "Der rostige Traktor am Langen Acker lässt sich reparieren. Darauf: A halten zum Arbeiten, L wechselt das Gerät, Y steigt ab.",
+    ["The pasture is south of the fields. Fill the trough from your bag, pet your animals every day."] = "Die Weide liegt südlich der Felder. Füll den Trog aus deiner Tasche und streichle deine Tiere jeden Tag.",
+    ["Your bag is full. Sell at the crate by the hut."] = "Deine Tasche ist voll. Verkauf an der Kiste bei der Hütte.",
+    ["The crate is for crops and wild food. Your bag is empty."] = "Die Kiste ist für Ernte und Wildes. Deine Tasche ist leer.",
+    ["Sold # thing for # coins."] = "# Sache für # Münzen verkauft.",
+    ["Sold # things for # coins."] = "# Sachen für # Münzen verkauft.",
+    ["Snow is falling: the soil is wet."] = "Es schneit: Der Boden ist nass.",
+    ["It is raining: the soil is wet."] = "Es regnet: Der Boden ist nass.",
+    ["A clear morning."] = "Ein klarer Morgen.",
+    ["Footings for a silo. The builders will not start before the mill turns again."] = "Fundament für ein Silo. Die Bauleute fangen erst an, wenn sich die Mühle wieder dreht.",
+    ["The hen house. # of # hens live here."] = "Der Hühnerstall. # von # Hühnern wohnen hier.",
+    ["The goat shed. # of # goats live here."] = "Der Ziegenstall. # von # Ziegen wohnen hier.",
+    ["The road to Tallow Bridge is washed out. Maybe one day."] = "Die Straße nach Tallow Bridge ist weggespült. Vielleicht eines Tages.",
+    ["A fallen pine blocks the path down to the shore."] = "Eine umgestürzte Kiefer versperrt den Weg zum Ufer.",
+    ["A standing stone, older than the valley. It hums a little."] = "Ein Menhir, älter als das Tal. Er summt ein wenig.",
+    ["An empty tin box."] = "Eine leere Blechdose.",
+    ["A rusty tin box! Inside: # coins and # barley seeds."] = "Eine rostige Blechdose! Darin: # Münzen und # Gerstensamen.",
+    ["Water. Press B to fill your %s."] = "Wasser. Drück B, um deine %s zu füllen.",
+    ["A tall pine."] = "Eine hohe Kiefer.",
+    ["%s is not yours yet. Marrow sells the deed."] = "%s gehört dir noch nicht. Marrow verkauft die Urkunde.",
+    ["A stone, too heavy to move. A pickaxe would break it."] = "Ein Stein, zu schwer zum Bewegen. Eine Spitzhacke würde ihn zerbrechen.",
+    ["An old stump. You would need an axe."] = "Ein alter Baumstumpf. Du bräuchtest eine Axt.",
+    ["No seeds. Marrow's wagon by the road sells them."] = "Kein Saatgut. Marrows Wagen an der Straße verkauft welches.",
+    ["%s does not grow in %s."] = "%s wächst nicht im %s.",
+    ["Your %s is empty. Fill it at the pond."] = "Deine %s ist leer. Füll sie am Teich.",
+    ["%s: ready to pick."] = "%s: reif zum Ernten.",
+    ["%s: waiting for %s."] = "%s: wartet auf den %s.",
+    ["Dug soil, watered."] = "Umgegrabene Erde, gegossen.",
+    ["Dug soil. A plants a seed."] = "Umgegrabene Erde. A pflanzt einen Samen.",
+    ["%s the hen. %d of 10 hearts."] = "%s, das Huhn. %d von 10 Herzen.",
+    ["%s the goat. %d of 10 hearts."] = "%s, die Ziege. %d von 10 Herzen.",
+    [" Wants a pat."] = " Will gestreichelt werden.",
+    ["The trough holds # helpings. Each animal eats one a night."] = "Im Trog sind # Portionen. Jedes Tier frisst eine pro Nacht.",
+    ["%s. A picks it up."] = "%s. A hebt es auf.",
+    ["%s, %s %d of year %d."] = "%s, %s, Tag %d von Jahr %d.",
+    ["%s seed"] = "%s-Samen",
+    ["# days. Sells for #."] = "# Tage. Bringt #.",
+    ["# days. Sells for #, and keeps bearing."] = "# Tage. Bringt #, und trägt weiter.",
+    ["Digs a cell in one go, not three."] = "Gräbt ein Feld in einem Zug, nicht in drei.",
+    ["Holds 14 splashes. The bucket holds 5."] = "Fasst 14 Güsse. Der Eimer fasst 5.",
+    ["Holds 36 splashes."] = "Fasst 36 Güsse.",
+    ["Basket"] = "Korb",
+    ["Carry 40 things, not 16."] = "Trag 40 Sachen statt 16.",
+    ["Pack"] = "Rucksack",
+    ["Carry 100 things."] = "Trag 100 Sachen.",
+    ["Pickaxe"] = "Spitzhacke",
+    ["Breaks the stones on your land."] = "Zerbricht die Steine auf deinem Land.",
+    ["Axe"] = "Axt",
+    ["Splits the old stumps on your land."] = "Spaltet die alten Stümpfe auf deinem Land.",
+    ["Clockwork driver"] = "Uhrwerk-Fahrer",
+    ["Drives the tractor along a route you teach it, and unloads at the silo."] = "Fährt den Traktor auf einer Route, die du ihm beibringst, und lädt am Silo ab.",
+    ["Lantern"] = "Laterne",
+    ["Lights more of the mine around you."] = "Leuchtet mehr von der Mine um dich aus.",
+    ["Hen"] = "Huhn",
+    ["Lays an egg a day when fed. Pet her for bigger eggs."] = "Legt satt ein Ei am Tag. Streichle es für größere Eier.",
+    ["Goat"] = "Ziege",
+    ["Gives milk every day when fed. Loved goats give creamy milk."] = "Gibt satt jeden Tag Milch. Geliebte Ziegen geben Rahmmilch.",
+    ["Milk pail"] = "Melkeimer",
+    ["You can't milk a goat into your hat."] = "In deinen Hut kannst du keine Ziege melken.",
+    ["Deed: %s"] = "Urkunde: %s",
+    ["# cells of wild land to clear."] = "# Felder wildes Land zum Roden.",
+    ['Marrow: "%s. Look after it."'] = 'Marrow: "%s. Pass gut darauf auf."',
+    ["You hand over # crop for the builders."] = "Du gibst # Ernte an die Bauleute.",
+    ["You hand over # crops for the builders."] = "Du gibst # Ernten an die Bauleute.",
+    ["The sails of Windrow turn again!"] = "Die Flügel von Windrow drehen sich wieder!",
+    ["The frame stands! Next: the sails."] = "Das Gerüst steht! Als Nächstes: die Segel.",
+    ["The sails are up! Grain now sells for double. Next: the millstone."] = "Die Segel hängen! Getreide bringt jetzt das Doppelte. Als Nächstes: der Mühlstein.",
+    ["You fell asleep on your feet."] = "Du bist im Stehen eingeschlafen.",
+    ["The tractor stays on the farm. Hop off with Y."] = "Der Traktor bleibt auf der Farm. Mit Y absteigen.",
+    ["Pick what is ripe (A) and sell it at the crate."] = "Ernte Reifes (A) und verkauf es an der Kiste.",
+    ["Sell what you carry at the crate by the hut."] = "Verkauf, was du trägst, an der Kiste bei der Hütte.",
+    ["Dig a cell on your plot: press A three times."] = "Grab ein Feld auf deinem Beet: dreimal A.",
+    ["Stand at dug soil: A plants a seed."] = "Vor umgegrabener Erde: A pflanzt einen Samen.",
+    ["B waters. Wet crops grow overnight."] = "B gießt. Nasses wächst über Nacht.",
+    ["Fill the bucket at the pond: face it, press B."] = "Füll den Eimer am Teich: hinschauen, B drücken.",
+    ["Buy seeds from Marrow's wagon on the road."] = "Kauf Saatgut an Marrows Wagen an der Straße.",
+    ["Forage in the woods: follow the road west."] = "Sammle im Wald: folge der Straße nach Westen.",
+    ["All done? Sleep in the hut (A at the door)."] = "Alles erledigt? Schlaf in der Hütte (A an der Tür).",
+    ["Pull weeds (A) to clear more of your plot."] = "Zieh Unkraut (A), um mehr Beet freizumachen.",
+    ["Woods"] = "Wald",
+    ["Mine #"] = "Mine #",
+    ["No implement"] = "Kein Gerät",
+    ["REC #"] = "AUFN #",
+    ["bag #/#"] = "Sack #/#",
+    ["Marrow's wagon"] = "Marrows Wagen",
+    ["# coins"] = "# Münzen",
+    ["Paying extra today: %s"] = "Heute extra gefragt: %s",
+    ["more below"] = "mehr unten",
+    ["more above"] = "mehr oben",
+    ["A: buy   B: leave"] = "A: kaufen   B: gehen",
+    ["Your bag"] = "Deine Tasche",
+    ["%s %d, year %d"] = "%s %d, Jahr %d",
+    ["No pickaxe"] = "Keine Spitzhacke",
+    ["no axe"] = "keine Axt",
+    ["Nothing yet. Pick, pull and forage."] = "Noch nichts. Ernten und sammeln!",
+    ["# hens, # goats. Trough: #"] = "# Hühner, # Ziegen. Trog: #",
+    ["Mill: %s   B: close"] = "Mühle: %s   B: zu",
+    ["rebuilt"] = "wieder aufgebaut",
+    ["The old windmill"] = "Die alte Windmühle",
+    ["It turns again."] = "Sie dreht sich wieder.",
+    ["Step %d of %d: %s"] = "Schritt %d von %d: %s",
+    ["Coins"] = "Münzen",
+    ["Crops for the builders"] = "Ernte für die Bauleute",
+    ["B: back"] = "B: zurück",
+    ["A: hand over crops   B: back"] = "A: Ernte abgeben   B: zurück",
+    ["A: build it!   B: back"] = "A: bauen!   B: zurück",
+    ["The millstone is lost somewhere"] = "Der Mühlstein liegt irgendwo",
+    ["at the bottom of the old mine."] = "ganz unten in der alten Mine.",
+    ["Wood: stumps and sticks."] = "Holz: Stümpfe und Stöcke.",
+    ["Stone: stones and pebbles."] = "Stein: Steine und Kiesel.",
+    ["Mend the %s"] = "%s reparieren",
+    ["While you were away"] = "Während du weg warst",
+    ["# min went by."] = "# Min vergingen.",
+    ["# h # min went by."] = "# Std # Min vergingen.",
+    ["# day passed on the farm."] = "# Tag verging auf der Farm.",
+    ["# days passed on the farm."] = "# Tage vergingen auf der Farm.",
+    ["It rained on # of them."] = "An # davon hat es geregnet.",
+    ["No rain fell."] = "Es fiel kein Regen.",
+    ["Your watered crops grew."] = "Deine gegossene Ernte ist gewachsen.",
+    ["Nothing grew: dry soil."] = "Nichts wuchs: trockener Boden.",
+    ["# crop is ready to pick."] = "# Ernte ist reif.",
+    ["# crops are ready to pick."] = "# Ernten sind reif.",
+    ["A: good morning"] = "A: guten Morgen",
+    ["The clockwork driver"] = "Der Uhrwerk-Fahrer",
+    ["Route: # cells"] = "Route: # Felder",
+    ["It knows no route yet."] = "Er kennt noch keine Route.",
+    ["In its hopper: # crops"] = "Im Behälter: # Ernten",
+    ["A: choose   B: back"] = "A: wählen   B: zurück",
+    ["The silo"] = "Das Silo",
+    ["Empty. A tractor on a route unloads"] = "Leer. Ein Traktor auf seiner Route",
+    ["here when it drives past."] = "lädt hier im Vorbeifahren ab.",
+    ["# of # crops"] = "# von # Ernten",
+    ["A: sell it all for #   B: back"] = "A: alles für # verkaufen   B: zurück",
+    ["The old mine"] = "Die alte Mine",
+    ["The winch still works."] = "Die Winde geht noch.",
+    ["Floor #"] = "Ebene #",
+    ["A: go down   B: back"] = "A: runter   B: zurück",
+    ["The hut"] = "Die Hütte",
+    ["Sleep until morning?"] = "Bis zum Morgen schlafen?",
+    ["A: sleep   B: not yet"] = "A: schlafen   B: noch nicht",
+    ["%s: %d more day."] = "%s: noch %d Tag.",
+    ["%s: %d more days."] = "%s: noch %d Tage.",
+    ["%s: %d more day. It needs water."] = "%s: noch %d Tag. Braucht Wasser.",
+    ["%s: %d more days. It needs water."] = "%s: noch %d Tage. Braucht Wasser.",
+    ["axe"] = "Axt",
+    ["snow"] = "Schnee",
+    ["rain"] = "Regen",
+  },
+}
 `;
 
   /* ---- art ---- */
