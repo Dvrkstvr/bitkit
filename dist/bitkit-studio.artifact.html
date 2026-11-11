@@ -23850,6 +23850,1811 @@ end
 
 </script>
 <script>
+/* Demo cart "Puffball": beach volleyball with a pufferfish for 1-8 players. Original art and code. MIT License. */
+(function () {
+  const code = `-- Puffball: keep the puffer off your sand (1-8 players, on one screen or on linked Bits)
+--   Left / right: run. A: jump. B: dive (a quick lunge along the sand).
+--   Match: two sides, the puffer lands on your sand and the other side scores. 3 touches a side at most.
+--   Rally: everyone works together and passes the puffer over the net as often as they can.
+-- Every touch puffs the puffer up: it gets bigger and faster until somebody misses.
+-- Odd players start on the left, even players on the right; crabs (CPU) fill the empty spots.
+-- Linked Bits run in lockstep: the game only uses rnd() and the frame count, and drawing never calls rnd().
+
+GROUND, NETX, NET_TOP, NET_W = 204, 160, 150, 3
+GRAV, JUMP = tune("Gravity", 0.3, 0.1, 0.6, 0.01), -tune("Jump power", 5.6, 3, 8, 0.1)
+SPEED, DIVE = tune("Run speed", 2.3, 1, 4, 0.1), tune("Dive speed", 5, 3, 8, 0.5)
+BALL_G, HIT = tune("Puffer gravity", 0.14, 0.05, 0.3, 0.01), tune("Hit power", 4.7, 3, 7, 0.1)
+HEAT = tune("Speed-up per touch", 0.07, 0, 0.2, 0.01)
+RALLY_GOAL = 30
+PR = 12                                     -- body radius of a player
+PC = { 10, 21, 17, 5, 27, 26, 22, 13 }      -- player colours
+PD = { 9, 20, 16, 4, 10, 25, 21, 29 }       -- and their shades
+MODES = { { "MATCH", "Two sides. Most points wins." }, { "RALLY", "Together: keep it flying." } }
+KEYS = { "left", "right", "up", "down", "a", "b" }
+
+function _init()
+  game{
+    title = "Puffball",
+    goal = "Win a Match before the other side does, or pass the puffer " .. RALLY_GOAL .. " times in a row in a Rally.",
+    help = {
+      "Left / right: run. A: jump. B: dive.",
+      "Match: if the puffer lands on your sand, the other side scores. A side may touch it 3 times in a row.",
+      "Rally: everyone plays together. Every pass over the net counts; 3 drops end the run.",
+      "Every touch puffs the puffer up and speeds it up.",
+      "Odd players are on the left, even players on the right. Crabs fill the empty spots.",
+    },
+    continue = function(cp) if cp and cp.mode then start(cp.mode, cp) end end,
+    settings = {
+      { key = "cpu", name = "Crabs (CPU)", values = { "Easy", "Normal", "Hard" }, value = 2 },
+      { key = "points", name = "Points to win", min = 3, max = 15, value = 7 },
+    },
+    title_draw = function(t) draw_title(t) end,   -- its own animated title screen (at the end of the code)
+    look = { title = 13, shadow = 24, panel = 24, edge = 10, hi = 25, text = 12, pick = 27, goal = 12, footer = 11 },
+  }
+  NP = math.max(1, math.min(PLAYERS or 1, 8))
+  gt, last_t, pick_t = 0, -9, 0
+  pad, edge = {}, {}
+  fx, best, won_rally = {}, 0, false
+  sel = 1
+  start(1)
+  state = "pick"
+end
+
+-- ---------------------------------------------------------------- helpers
+function sgn(v) return v > 0 and 1 or (v < 0 and -1 or 0) end
+function mid(a, v, b) return math.max(a, math.min(v, b)) end
+function ctext(s, y, c, sc) sc = sc or 1 text(s, 160 - #s * 4 * sc, y, c, sc) end
+function stext(s, y, c, sc) sc = sc or 1 text(s, 161 - #s * 4 * sc, y + sc, 1, sc) ctext(s, y, c, sc) end
+function pan(x) return mid(-1, (x - 160) / 160, 1) end
+
+-- buttons going down this frame (btnp repeats while held, this does not)
+function read_pads()
+  local fresh = t() ~= last_t + 1          -- back from a menu: what is held now doesn't count as a new press
+  last_t = t()
+  for p = 1, NP do
+    local now, was = {}, pad[p] or {}
+    edge[p] = {}
+    for _, k in ipairs(KEYS) do
+      now[k] = btn(k, p)
+      edge[p][k] = now[k] and not was[k] and not fresh
+    end
+    pad[p] = now
+  end
+end
+function any_edge(k) for p = 1, NP do if edge[p][k] then return p end end end
+
+function burst(x, y, c, n, sp)
+  for i = 1, n do
+    fx[#fx + 1] = { x = x, y = y, vx = (rnd() * 2 - 1) * (sp or 1.5), vy = -rnd() * 2.4, t = 18 + rnd(20), c = c }
+  end
+end
+
+-- ---------------------------------------------------------------- setting up
+function start(m, cp)
+  mode = m
+  local k = math.max(1, (NP + 1) // 2)            -- players on each side
+  P = {}
+  for side = 1, 2 do
+    local n = 0
+    for p = 1, NP do
+      if (p - 1) % 2 + 1 == side then n = n + 1; P[#P + 1] = new_player(side, n, k, p) end
+    end
+    while n < k do n = n + 1; P[#P + 1] = new_player(side, n, k, 0) end
+  end
+  score = { cp and cp.s1 or 0, cp and cp.s2 or 0 }
+  best = cp and cp.best or best
+  lives, streak, passes_total = 3, 0, 0
+  target = setting("points") or 7
+  if score[1] >= target or score[2] >= target then score = { 0, 0 } end
+  state, state_t, winner = "play", 0, 0
+  serve(1)
+end
+
+function new_player(side, n, k, pl)
+  local hx = 22 + (n - 0.5) / k * 120
+  if side == 2 then hx = 320 - hx end
+  return { side = side, pl = pl, home = hx, x = hx, y = GROUND, vx = 0, vy = 0, ground = true, face = side == 1 and 1 or -1,
+           dive_t = 0, cd = 0, hit_cd = 0, err = 0, jump_ok = true, squash = 0 }
+end
+
+function serve(side)
+  ball = { x = side == 1 and 84 or 236, y = 84, vx = 0, vy = 0, r = 8, hold = 50, spin = 0 }
+  touches, last_side, hits = 0, 0, 0
+  for _, p in ipairs(P) do p.err, p.jump_ok = 0, true end
+end
+
+-- ---------------------------------------------------------------- the crabs (CPU)
+-- where the puffer comes down to height y, and in how many frames
+function predict(y)
+  local x, by, vx, vy = ball.x, ball.y, ball.vx, ball.vy
+  if ball.hold > 0 then return x, 60 end
+  for n = 1, 240 do
+    vy = vy + BALL_G
+    x, by = x + vx, by + vy
+    if x < ball.r then x, vx = ball.r, -vx elseif x > 320 - ball.r then x, vx = 320 - ball.r, -vx end
+    if vy > 0 and by >= y then return x, n end
+  end
+  return x, 240
+end
+
+function cpu(p)
+  local I = { mx = 0, jump = false, dive = false }
+  local sk = setting("cpu") or 2
+  local lx, lt = predict(GROUND - 34)
+  local mine = (lx < NETX) == (p.side == 1)
+  local tx = p.home
+  if mine then
+    -- the one closest to the landing spot goes for it
+    local go = true
+    for _, o in ipairs(P) do
+      if o ~= p and o.side == p.side and math.abs(o.x - lx) < math.abs(p.x - lx) - 4 then go = false end
+    end
+    if go then
+      tx = lx + (p.side == 1 and -7 or 7) + p.err
+      local bx = ball.x - p.x
+      if p.ground and p.jump_ok and ball.vy > 0 and math.abs(bx) < 24 and ball.y > p.y - 84 and ball.y < p.y - 46 then I.jump = true end
+      if sk > 1 and p.ground and lt < 22 and math.abs(tx - p.x) > 46 then I.dive = true end
+    end
+  end
+  local dx = tx - p.x
+  if math.abs(dx) > 3 then I.mx = sgn(dx) end
+  if sk == 1 and gt % 4 == 0 then I.mx = 0 end      -- easy crabs are slower
+  return I
+end
+
+function human(p)
+  local n = p.pl
+  return { mx = (pad[n].right and 1 or 0) - (pad[n].left and 1 or 0), jump = edge[n].a or edge[n].up, dive = edge[n].b }
+end
+
+-- ---------------------------------------------------------------- update
+function move(p, I)
+  if p.dive_t > 0 then p.dive_t = p.dive_t - 1 else p.vx = I.mx * SPEED end
+  if p.cd > 0 then p.cd = p.cd - 1 end
+  if p.hit_cd > 0 then p.hit_cd = p.hit_cd - 1 end
+  if p.squash > 0 then p.squash = p.squash - 1 end
+  if I.mx ~= 0 then p.face = I.mx end
+  if I.dive and p.cd == 0 then
+    p.vx, p.dive_t, p.cd = p.face * DIVE, 12, 45
+    if p.ground then p.vy = -2.4; p.ground = false end
+    sfx("C3", 3, 0.25, 6, nil, pan(p.x))
+    burst(p.x, GROUND, 11, 5, 1.2)
+  end
+  if I.jump and p.ground then p.vy, p.ground = JUMP, false; sfx("C4", 1, 0.2, 5, nil, pan(p.x), 500) end
+  p.vy = p.vy + GRAV
+  p.x, p.y = p.x + p.vx, p.y + p.vy
+  if p.y >= GROUND then
+    if not p.ground and p.vy > 2 then p.squash = 6 end
+    p.y, p.vy, p.ground = GROUND, 0, true
+  end
+  if p.side == 1 then p.x = mid(PR, p.x, NETX - NET_W - PR) else p.x = mid(NETX + NET_W + PR, p.x, 320 - PR) end
+end
+
+function touch(p)
+  if last_side == p.side then touches = touches + 1 else touches, last_side = 1, p.side end
+  hits = hits + 1
+  ball.r = math.min(15, 8 + hits * 0.35)
+  -- crabs get sloppier the longer a match rally lasts; in a Rally your crab partner is always a good one
+  local sk = mode == 2 and 3 or (setting("cpu") or 2)
+  local e = ({ 22, 12, 5 })[sk]
+  if mode == 1 then e = math.floor(e * (1 + hits / 10)) end
+  local jo = ({ 40, 70, 92 })[sk]
+  for _, o in ipairs(P) do o.err, o.jump_ok = rnd(-e, e), rnd(100) <= jo end
+  sfx(60 + math.min(hits, 24), 4, 0.45, 6, nil, pan(ball.x))
+  burst(ball.x, ball.y, 27, 4, 1.4)
+  if touches > 3 then fault(p.side, "4 TOUCHES!") end
+end
+
+function fault(side, why)
+  why_text = why
+  sfx("C3", 2, 0.4, 14, nil, 0, -60)
+  if mode == 1 then
+    score[3 - side] = score[3 - side] + 1
+    checkpoint({ mode = 1, s1 = score[1], s2 = score[2], best = best })
+    if score[3 - side] >= target then
+      winner = 3 - side
+      state, state_t = "over", 0
+      sfx("C5", 1, 0.4, 8) sfx("E5", 1, 0.4, 16) sfx("G5", 1, 0.4, 30)
+      if NP > 1 or winner == 1 then
+        game_win(side_name(winner) .. " won the match " .. score[winner] .. " to " .. score[side] .. "!")
+      end
+      checkpoint({ mode = 1, s1 = 0, s2 = 0, best = best })
+      return
+    end
+  else
+    lives = lives - 1
+    streak = 0
+    if lives <= 0 then state, state_t = "over", 0 return end
+  end
+  state, state_t, serve_to = "point", 0, side
+end
+
+function side_name(s)
+  if NP == 1 then return s == 1 and "You" or "The crab" end
+  local names = {}
+  for _, p in ipairs(P) do if p.side == s and p.pl > 0 then names[#names + 1] = "P" .. p.pl end end
+  if #names == 0 then return "The crabs" end
+  return table.concat(names, " + ")
+end
+
+function ball_step()
+  local b = ball
+  if b.hold > 0 then b.hold = b.hold - 1
+  else
+    b.vy = b.vy + BALL_G
+    local ox = b.x
+    b.x, b.y = b.x + b.vx, b.y + b.vy
+    b.spin = b.spin + b.vx * 0.04
+    if b.x < b.r then b.x, b.vx = b.r, math.abs(b.vx) elseif b.x > 320 - b.r then b.x, b.vx = 320 - b.r, -math.abs(b.vx) end
+    if b.y < b.r - 60 then b.y, b.vy = b.r - 60, math.abs(b.vy) * 0.6 end
+    -- the net: the closest point of its box pushes the puffer out
+    local qx, qy = mid(NETX - NET_W, b.x, NETX + NET_W), mid(NET_TOP, b.y, GROUND)
+    local dx, dy = b.x - qx, b.y - qy
+    local d = math.sqrt(dx * dx + dy * dy)
+    if d < b.r then
+      if d < 0.01 then dx, dy, d = sgn(ox - NETX), 0, 1; if dx == 0 then dx = 1 end end
+      local nx, ny = dx / d, dy / d
+      b.x, b.y = qx + nx * b.r, qy + ny * b.r
+      local dot = b.vx * nx + b.vy * ny
+      if dot < 0 then b.vx, b.vy = (b.vx - 2 * dot * nx) * 0.8, (b.vy - 2 * dot * ny) * 0.8 end
+      if gt % 6 == 0 then sfx("A2", 3, 0.15, 3) end
+    end
+    -- a pass over the net
+    if (ox < NETX) ~= (b.x < NETX) and last_side ~= 0 then
+      touches, last_side = 0, 0
+      if mode == 2 then
+        streak, passes_total = streak + 1, passes_total + 1
+        if streak > best then best = streak; checkpoint({ mode = 2, best = best }) end
+        if streak == RALLY_GOAL and not won_rally then
+          won_rally = true
+          game_win(RALLY_GOAL .. " passes without dropping the puffer!")
+        end
+      end
+    end
+  end
+  for _, p in ipairs(P) do
+    local cx, cy = p.x, p.y - PR
+    local dx, dy = b.x - cx, b.y - cy
+    local d = math.sqrt(dx * dx + dy * dy)
+    local R = PR + b.r
+    if d < R and p.hit_cd == 0 and state == "play" then
+      if d < 0.01 then dx, dy, d = 0, -1, 1 end
+      local nx, ny = dx / d, dy / d
+      b.x, b.y = cx + nx * R, cy + ny * R
+      local sp = HIT + math.min(hits, 24) * HEAT
+      b.vx = nx * sp + p.vx * 0.45
+      b.vy = math.min(ny * sp + p.vy * 0.3, -1.6)
+      b.hold = 0
+      p.hit_cd = 10
+      touch(p)
+      if state ~= "play" then return end
+    end
+  end
+  if b.y + b.r >= GROUND and state == "play" then
+    b.y = GROUND - b.r
+    burst(b.x, GROUND, 11, 10, 2)
+    fault(b.x < NETX and 1 or 2, "SPLAT!")
+  end
+end
+
+function _update()
+  gt = gt + 1
+  read_pads()
+  for i = #fx, 1, -1 do
+    local p = fx[i]
+    p.x, p.y, p.vy, p.t = p.x + p.vx, p.y + p.vy, p.vy + 0.12, p.t - 1
+    if p.t <= 0 then table.remove(fx, i) end
+  end
+  if state == "pick" then
+    pick_t = pick_t + 1
+    if any_edge("left") or any_edge("up") then sel = sel == 1 and #MODES or sel - 1; sfx("E5", 0, 0.15, 3) end
+    if any_edge("right") or any_edge("down") then sel = sel % #MODES + 1; sfx("E5", 0, 0.15, 3) end
+    if any_edge("a") and pick_t > 10 then
+      sfx("C5", 4, 0.3, 6)
+      start(sel)
+      checkpoint({ mode = sel, s1 = 0, s2 = 0, best = best })
+    end
+    return
+  end
+  state_t = state_t + 1
+  if state == "over" then
+    if state_t > 50 then
+      if any_edge("a") then start(mode) elseif any_edge("b") then state, pick_t = "pick", 0 end
+    end
+    return
+  end
+  if state == "point" then
+    if state_t > 70 then state = "play"; serve(serve_to) end
+    ball.vx, ball.vy = ball.vx * 0.9, 0
+  end
+  for _, p in ipairs(P) do
+    move(p, state == "play" and (p.pl > 0 and human(p) or cpu(p)) or { mx = 0 })
+  end
+  if state == "play" then ball_step() end
+end
+
+-- ---------------------------------------------------------------- drawing (never calls rnd)
+function draw_beach()
+  cls(22)
+  rectfill(0, 0, 320, 40, 21)
+  rectfill(0, 40, 320, 30, 22)
+  rectfill(0, 70, 320, 60, 23)
+  circfill(258, 46, 20, 12) circfill(258, 46, 17, 27)
+  for i = 0, 2 do                                   -- clouds drift
+    local x = (i * 130 + gt // 8) % 380 - 40
+    local y = 20 + i * 17
+    circfill(x, y, 7, 13) circfill(x + 9, y - 3, 9, 13) circfill(x + 20, y, 7, 13) rectfill(x, y, 20, 7, 13)
+  end
+  rectfill(0, 130, 320, 40, 21)                     -- sea
+  for i = 0, 9 do
+    local x = (i * 37 + (gt // 5)) % 340 - 20
+    line(x, 136 + (i * 7) % 28, x + 12, 136 + (i * 7) % 28, 22)
+  end
+  rectfill(0, 166, 320, 2, 13)
+  rectfill(0, 168, 320, 72, 11)                     -- sand
+  rectfill(0, GROUND, 320, 36, 10)
+  for i = 0, 15 do pset((i * 53) % 320, 172 + (i * 29) % 30, 10) pset((i * 71 + 20) % 320, 210 + (i * 13) % 26, 9) end
+  -- the net
+  rectfill(NETX - NET_W, NET_TOP, NET_W * 2, GROUND - NET_TOP, 29)
+  rectfill(NETX - NET_W, NET_TOP, NET_W * 2, 3, 13)
+  for y = NET_TOP + 8, GROUND - 4, 8 do line(NETX - NET_W, y, NETX + NET_W - 1, y, 30) end
+  rectfill(NETX - 5, GROUND - 3, 10, 4, 30)
+end
+
+function draw_player(p, i)
+  local c, d = 29, 30
+  if p.pl > 0 then c, d = PC[p.pl], PD[p.pl] end
+  local sq = p.squash > 0 and 2 or 0
+  local cy = p.y - PR + sq
+  rectfill(p.x - 10, GROUND + 1, 20, 3, 9)                          -- shadow
+  rectfill(p.x - 8, p.y - 3, 5, 3, d) rectfill(p.x + 3, p.y - 3, 5, 3, d)   -- feet
+  if p.pl == 0 then                                                 -- crab claws
+    circfill(p.x - 13, cy - 4, 4, d) circfill(p.x + 13, cy - 4, 4, d)
+  end
+  circfill(p.x, cy, PR, d)
+  circfill(p.x, cy - 1, PR - 1, c)
+  circfill(p.x - 3, cy + 3, 6, c)
+  -- eyes follow the puffer
+  local ex, ey = sgn(ball.x - p.x), ball.y < cy - 10 and -1 or 0
+  for s = -1, 1, 2 do
+    circfill(p.x + s * 5, cy - 4, 3, 13)
+    circfill(p.x + s * 5 + ex, cy - 4 + ey, 1, 1)
+  end
+  if p.dive_t > 0 then line(p.x - p.face * 14, cy, p.x - p.face * 22, cy, 13) line(p.x - p.face * 14, cy + 5, p.x - p.face * 19, cy + 5, 13) end
+  if p.pl > 0 and (ME or 0) == p.pl then text("v", p.x - 4, cy - 26 + (gt // 12) % 2, 13) end
+  if p.pl > 0 and NP > 1 then text("P" .. p.pl, p.x - 7, GROUND + 9, 8) text("P" .. p.pl, p.x - 8, GROUND + 8, 13) end
+end
+
+function draw_puffer(x, y, r, spin, face)
+  for i = 0, 9 do                                                   -- spikes
+    local a = spin + i * 0.628
+    line(x + math.cos(a) * (r - 1), y + math.sin(a) * (r - 1), x + math.cos(a) * (r + 3), y + math.sin(a) * (r + 3), 9)
+  end
+  circfill(x, y, r, 10)
+  circfill(x, y - 1, r - 1, 27)
+  circfill(x, y + r * 0.35, r * 0.6, 12)
+  local e = math.max(2, r // 4)
+  circfill(x - r * 0.4, y - r * 0.25, e, 13) circfill(x + r * 0.4, y - r * 0.25, e, 13)
+  pset(x - r * 0.4 + (face or 0), y - r * 0.25, 1) pset(x + r * 0.4 + (face or 0), y - r * 0.25, 1)
+  rectfill(x - 1, y + 1, 3, 2, 26)
+end
+
+function draw_court()
+  draw_beach()
+  for i, p in ipairs(P) do draw_player(p, i) end
+  local b = ball
+  if b.y < -b.r then                                                -- above the screen: an arrow shows where
+    text("^", mid(4, b.x - 4, 308), 2, 27)
+  end
+  local sw = mid(2, 9 - (GROUND - b.y) / 30, 9)
+  rectfill(b.x - sw, GROUND + 1, sw * 2, 3, 9)
+  draw_puffer(b.x, b.y, b.r, b.spin, sgn(b.vx))
+  for _, p in ipairs(fx) do rectfill(p.x, p.y, 2, 2, p.c) end
+end
+
+function draw_hud()
+  if mode == 1 then
+    text(tostring(score[1]), 121 - #tostring(score[1]) * 24, 7, 1, 3) text(tostring(score[1]), 120 - #tostring(score[1]) * 24, 6, 13, 3)
+    text(tostring(score[2]), 201, 7, 1, 3) text(tostring(score[2]), 200, 6, 13, 3)
+    rectfill(136, 31, 48, 11, 1) ctext("to " .. target, 33, 13)
+  else
+    stext(tostring(streak), 6, 13, 3)
+    local s = "passes  (best " .. best .. ", goal " .. RALLY_GOAL .. ")"
+    rectfill(156 - #s * 4, 31, #s * 8 + 8, 11, 1) ctext(s, 33, 13)
+    for i = 1, 3 do circfill(12 + i * 14, 14, 5, i <= lives and 26 or 30) end
+  end
+  if last_side ~= 0 and state == "play" then                        -- touches used on this side
+    local x = last_side == 1 and 12 or 272
+    for i = 1, 3 do circfill(x + i * 10, 226, 3, i <= touches and 27 or 9) end
+  end
+end
+
+function _draw()
+  draw_court()
+  if state == "pick" then
+    rectfill(40, 60, 240, 104, 1) rect(40, 60, 240, 104, 13)
+    stext("PICK A GAME", 68, 27, 2)
+    for i, m in ipairs(MODES) do
+      local x = 60 + (i - 1) * 104
+      rectfill(x, 94, 96, 26, i == sel and 20 or 2)
+      rect(x, 94, 96, 26, i == sel and 13 or 30)
+      text(m[1], x + 48 - #m[1] * 4, 103, i == sel and 27 or 29)
+    end
+    ctext(MODES[sel][2], 128, 13)
+    ctext(NP == 1 and "1 player, with a crab" or NP .. " players", 140, 29)
+    ctext("left / right: pick    A: play", 152, 29)
+    return
+  end
+  draw_hud()
+  if state == "point" and state_t < 60 then stext(why_text or "", 70, 27, 2) end
+  if ball.hold > 20 and state == "play" and hits == 0 then stext("READY", 60, 13, 2) end
+  if state == "over" then
+    rectfill(40, 70, 240, 80, 1) rect(40, 70, 240, 80, 13)
+    if mode == 1 then
+      local n = side_name(winner)
+      local s = n .. ((n == "You" or n == "The crabs" or n:find("+", 1, true)) and " win!" or " wins!")
+      stext(s, 80, 27, #s > 14 and 1 or 2)
+      ctext(score[1] .. " : " .. score[2], 104, 13)
+    else
+      stext("DROPPED!", 80, 26, 2)
+      ctext(passes_total .. " passes this run, best streak " .. best, 104, 13)
+    end
+    if state_t > 50 then ctext("A: again    B: pick a game", 128, 29) end
+  end
+end
+
+-- the title screen (game{title_draw = ...}): two crabs keep the puffer flying over a sunset beach.
+-- It only draws, from the frame count t it is given.
+function title_crab(x, hop, c, d, look)
+  local cy = GROUND - PR - hop
+  rectfill(x - 10, GROUND + 1, 20, 3, 8)
+  rectfill(x - 8, GROUND - 3 - hop, 5, 3, d) rectfill(x + 3, GROUND - 3 - hop, 5, 3, d)
+  circfill(x - 13, cy - 4, 4, d) circfill(x + 13, cy - 4, 4, d)
+  circfill(x, cy, PR, d) circfill(x, cy - 1, PR - 1, c)
+  for s = -1, 1, 2 do circfill(x + s * 5, cy - 4, 3, 13) circfill(x + s * 5 + look, cy - 5, 1, 1) end
+end
+
+function draw_title(t)
+  local bands = { 24, 25, 26, 9, 10, 27 }
+  for i, c in ipairs(bands) do rectfill(0, (i - 1) * 24, 320, 24, c) end
+  circfill(160, 150, 46, 12) circfill(160, 150, 42, 27)               -- the sun going down
+  rectfill(0, 144, 320, 30, 20)                                       -- the sea
+  for i = 0, 11 do
+    local x = (i * 37 + t // 4) % 344 - 12
+    line(x, 148 + (i * 7) % 24, x + 10, 148 + (i * 7) % 24, i % 3 == 0 and 27 or 21)
+  end
+  rectfill(0, 172, 320, 68, 9) rectfill(0, GROUND, 320, 36, 8)        -- sand in the evening
+  rectfill(NETX - NET_W, NET_TOP, NET_W * 2, GROUND - NET_TOP, 29)
+  rectfill(NETX - NET_W, NET_TOP, NET_W * 2, 3, 13)
+  -- the puffer flies from crab to crab and back, a little bigger with every touch
+  local n, f = t // 70, (t % 70) / 70
+  local from, to = n % 2 == 0 and 40 or 280, n % 2 == 0 and 280 or 40
+  local x = from + (to - from) * f
+  local y = 172 - math.sin(f * 3.1416) * 52
+  local hop = f > 0.86 and (f - 0.86) * 90 or (f < 0.14 and (0.14 - f) * 90 or 0)
+  title_crab(40, n % 2 == 1 and f > 0.5 and hop or (n % 2 == 0 and f < 0.5 and hop or 0), 10, 9, sgn(x - 40))
+  title_crab(280, n % 2 == 0 and f > 0.5 and hop or (n % 2 == 1 and f < 0.5 and hop or 0), 22, 21, sgn(x - 280))
+  rectfill(x - 6, GROUND + 1, 12, 3, 8)
+  draw_puffer(x, y, 9 + (n % 6), t / 12 * (to > from and 1 or -1), to > from and 1 or -1)
+  if f < 0.12 then for i = 0, 5 do pset(from + math.cos(i) * f * 160, 168 + math.sin(i) * f * 120, 13) end end
+end
+`;
+
+  // the icon: a puffed-up puffer
+  const K = { '.': 0, o: 9, y: 27, w: 13, e: 1, b: 12, r: 26, s: 10 };
+  const ICON = [
+    '.....s....s.....',
+    '..s..oooooo..s..',
+    '...ooyyyyyyoo...',
+    '..oyyyyyyyyyyo..',
+    's.oywwyyyywwyo.s',
+    '.oyyweyyyyweyyo.',
+    '.oyywwyyyywwyyo.',
+    '.oyyyyyrryyyyyo.',
+    '.oyyyyyrryyyyyo.',
+    's.oybbbbbbbbyo.s',
+    '..oybbbbbbbbyo..',
+    '...oobbbbbboo...',
+    '..s..oooooo..s..',
+    '.....s....s.....',
+    '................',
+    '................',
+  ];
+
+  function buildGfx(cart) {
+    cart.tiles.fill(0); cart.flags.fill(0); cart.map.fill(0);
+    ICON.forEach((row, y) => [...row].forEach((ch, x) => {
+      const t = 64 + (y >> 3) * 16 + (x >> 3);
+      cart.tiles[t * 64 + (y & 7) * 8 + (x & 7)] = K[ch] ?? 0;
+    }));
+    // Puffball draws everything itself. The puffer entity type is the game's icon on the Bit's home screen.
+    const base = { sw: 2, sh: 2, grav: false, collide: false, left: false, hp: 0, inset: 0, team: 'neutral', damage: 0, hidden: false,
+      player: false, stomp: false, touch_fx: '', hurt: 15, stats: [] };
+    cart.entities = { effects: [], cutscenes: [], placed: [],
+      types: [Object.assign({}, base, { name: 'puffer', anims: [{ name: 'idle', frames: [64], speed: 8 }], tree: null })] };
+    cart.levels = [{ name: 'Beach', w: 40, h: 30, map: cart.map, placed: cart.entities.placed }];
+  }
+
+  window.BK_DEMOS = window.BK_DEMOS || [];
+  window.BK_DEMOS.push({ name: 'Puffball', code, buildGfx,
+    about: 'Beach volleyball with a pufferfish for 1-8 players: a Match against the other side, or a Rally together.' });
+})();
+
+</script>
+<script>
+/* Demo cart "Hedge Hogs": fence off land with hedges, together or against each other (1-8 players).
+   Original art and code. MIT License. */
+(function () {
+  const code = `-- Hedge Hogs: hedgehogs that plant hedges (1-8 players, on one screen or on linked Bits)
+--   D-pad: walk. On your own land you can stand still; off it you keep walking.
+--   Walk off your land and you plant a hedge line behind you. Walk back onto your land to finish it:
+--   everything you fenced off becomes yours.
+--   Garden (together): fence off 75% of each garden. Moles dig about in the open ground, and a mole
+--   that touches an unfinished line eats it and costs the team a heart.
+--   Land Grab (against each other): walk across a rival's unfinished line to send them home.
+--   Most land when the time runs out wins. CPU hogs fill the garden up to 4.
+-- The ground is the map (one tile per cell), so the Bit draws it in one call.
+-- Linked Bits run in lockstep: the game only uses rnd() and the frame count, and drawing never calls rnd().
+
+W, H, TOP = 40, 26, 32                     -- the garden in cells (8x8 pixels each), and where it starts on screen
+STEP = tune("Frames per step", 4, 2, 8)
+MOLE_SPEED = tune("Mole speed", 1, 0.5, 2, 0.1)
+NEED = tune("Garden: land needed (%)", 75, 50, 90)
+GARDENS = 3
+PC = { 10, 21, 17, 5, 27, 26, 22, 13 }     -- hog colours
+DX, DY = { 1, 0, -1, 0 }, { 0, 1, 0, -1 }  -- directions: 1 right, 2 down, 3 left, 4 up
+DIRKEY = { "right", "down", "left", "up" }
+HOMES = { { 5, 4 }, { 34, 21 }, { 34, 4 }, { 5, 21 }, { 20, 4 }, { 20, 21 }, { 5, 13 }, { 34, 13 } }
+MODES = { { "GARDEN", "Together: fence off the garden." }, { "LAND GRAB", "Everyone for themselves." } }
+RING = 2 * W + 2 * H - 4
+
+function _init()
+  game{
+    title = "Hedge Hogs",
+    goal = "Fence off " .. NEED .. "% of all " .. GARDENS .. " gardens together, or end a Land Grab with the most land.",
+    help = {
+      "D-pad: walk. Off your own land you keep walking.",
+      "Leave your land to plant a hedge line. Walk back onto your land and all you fenced off is yours.",
+      "Garden: a mole that touches an unfinished line costs a heart. Land without moles in it fills in.",
+      "Land Grab: cross a rival's unfinished line to send them home. Most land at the end wins.",
+    },
+    continue = function(cp) if cp and cp.mode then start(cp.mode, cp.lvl) end end,
+    settings = {
+      { key = "cpu", name = "CPU hogs", values = { "Easy", "Normal", "Hard" }, value = 2 },
+      { key = "time", name = "Land Grab minutes", min = 1, max = 5, value = 2 },
+    },
+    title_draw = function(t) draw_title(t) end,   -- its own animated title screen (at the end of the code)
+    look = { title = 18, shadow = 14, panel = 14, edge = 17, hi = 15, text = 12, pick = 27, goal = 12, footer = 18 },
+  }
+  NP = math.max(1, math.min(PLAYERS or 1, 8))
+  gt, last_t, pick_t = 0, -9, 0
+  held, want = {}, {}
+  for p = 1, NP do held[p], want[p] = {}, 0 end
+  fx, sel, won_garden = {}, 1, false
+  start(1, 1)
+  state = "pick"
+end
+
+-- ---------------------------------------------------------------- helpers
+function sgn(v) return v > 0 and 1 or (v < 0 and -1 or 0) end
+function mid(a, v, b) return math.max(a, math.min(v, b)) end
+function ctext(s, y, c, sc) sc = sc or 1 text(s, 160 - #s * 4 * sc, y, c, sc) end
+function stext(s, y, c, sc) sc = sc or 1 text(s, 161 - #s * 4 * sc, y + sc, 1, sc) ctext(s, y, c, sc) end
+function idx(x, y) return y * W + x + 1 end
+function inb(x, y) return x >= 0 and x < W and y >= 0 and y < H end
+function opp(d) return (d + 1) % 4 + 1 end
+
+-- which way each player wants to go: the direction pressed last that is still held
+function read_pads()
+  local fresh = t() ~= last_t + 1
+  last_t = t()
+  press_a, press_b, press_lr = false, false, 0
+  for p = 1, NP do
+    for d = 1, 4 do
+      local now = btn(DIRKEY[d], p)
+      if now and not held[p][d] then
+        want[p] = d
+        if not fresh then press_lr = (d == 1 or d == 2) and 1 or -1 end
+      end
+      held[p][d] = now
+    end
+    if want[p] ~= 0 and not held[p][want[p]] then
+      want[p] = 0
+      for d = 1, 4 do if held[p][d] then want[p] = d end end
+    end
+    local a, b = btn("a", p), btn("b", p)
+    if a and not held[p].a and not fresh then press_a = true end
+    if b and not held[p].b and not fresh then press_b = true end
+    held[p].a, held[p].b = a, b
+  end
+end
+
+function burst(x, y, c, n)
+  for i = 1, n do
+    fx[#fx + 1] = { x = x, y = y, vx = (rnd() * 2 - 1) * 1.6, vy = (rnd() * 2 - 1) * 1.6, t = 14 + rnd(16), c = c }
+  end
+end
+
+-- ---------------------------------------------------------------- the garden
+-- own[i]: whose land a cell is (0 = open ground). trail[i]: whose unfinished line is on it (0 = none).
+function paint(i)
+  local x, y = (i - 1) % W, (i - 1) // W
+  local n
+  if trail[i] ~= 0 then n = 48 + trail[i]
+  elseif own[i] == 0 then n = 1 + (x + y) % 2
+  elseif mode == 1 then
+    local k = (x * 7 + y * 13 + x * y) % 23
+    n = k < 3 and 33 + k or 32
+  else n = 16 + own[i] end
+  mset(x, y, n)
+end
+
+function give(i, team)
+  if own[i] ~= team then
+    if own[i] ~= 0 then land[own[i]] = land[own[i]] - 1 end
+    own[i] = team
+    land[team] = land[team] + 1
+  end
+  paint(i)
+end
+
+function start(m, l)
+  mode, lvl = m, mid(1, l or 1, 99)
+  own, trail, land, HOGS, MOLES = {}, {}, {}, {}, {}
+  for i = 1, W * H do own[i], trail[i] = 0, 0 end
+  for i = 1, 8 do land[i] = 0 end
+  local n = mode == 1 and NP or math.max(NP, 4)
+  for i = 1, n do
+    local hx, hy = HOMES[i][1], HOMES[i][2]
+    if mode == 1 then hx, hy = math.floor(W * (i - 0.5) / n), 0 end
+    HOGS[i] = { id = i, pl = i <= NP and i or 0, team = mode == 1 and 1 or i, hx = hx, hy = hy, cx = hx, cy = hy, px = hx, py = hy,
+                d = 0, face = 2, alive = true, dead_t = 0, path = {}, ai = nil, wait = 10 + i * 7 }
+  end
+  for i = 1, W * H do paint(i) end
+  if mode == 1 then
+    for x = 0, W - 1 do give(idx(x, 0), 1) give(idx(x, H - 1), 1) end
+    for y = 0, H - 1 do give(idx(0, y), 1) give(idx(W - 1, y), 1) end
+    for k = 1, lvl + 1 do
+      MOLES[k] = { x = 80 + (k * 97) % 160, y = 60 + (k * 53) % 90, vx = (k % 2 == 0 and 1 or -1), vy = (k % 3 == 0 and -1 or 1) }
+    end
+    if lvl == 1 or not hearts or hearts <= 0 then hearts = 3 end
+  else
+    for _, h in ipairs(HOGS) do home_patch(h) end
+    time_left = (setting("time") or 2) * 3600
+  end
+  state, state_t, winner, rank = "ready", 0, 0, nil
+end
+
+function home_patch(h)
+  for y = h.hy - 1, h.hy + 1 do for x = h.hx - 1, h.hx + 1 do
+    local i = idx(x, y)
+    if trail[i] == 0 then give(i, h.team) end
+  end end
+end
+
+function percent(team)
+  if mode == 1 then return math.floor((land[1] - RING) * 100 / (W * H - RING)) end
+  return math.floor(land[team] * 100 / (W * H))
+end
+
+-- after a line is finished: open ground the team has fenced off becomes theirs.
+-- Garden: every patch with no mole in it. Land Grab: every patch but the biggest one.
+function fill(team)
+  local label, sizes, n = {}, {}, 0
+  for i = 1, W * H do
+    if own[i] ~= team and not label[i] then
+      n = n + 1
+      local q, at = { i }, 1
+      label[i] = n
+      while at <= #q do
+        local c = q[at]
+        at = at + 1
+        local x = (c - 1) % W
+        if x > 0 and own[c - 1] ~= team and not label[c - 1] then label[c - 1] = n; q[#q + 1] = c - 1 end
+        if x < W - 1 and own[c + 1] ~= team and not label[c + 1] then label[c + 1] = n; q[#q + 1] = c + 1 end
+        if c > W and own[c - W] ~= team and not label[c - W] then label[c - W] = n; q[#q + 1] = c - W end
+        if c <= W * (H - 1) and own[c + W] ~= team and not label[c + W] then label[c + W] = n; q[#q + 1] = c + W end
+      end
+      sizes[n] = #q
+    end
+  end
+  local keep = {}
+  if mode == 1 then
+    for _, m in ipairs(MOLES) do
+      local l = label[idx(mid(0, m.x // 8, W - 1), mid(0, m.y // 8, H - 1))]
+      if l then keep[l] = true end
+    end
+  else
+    local big = 0
+    for k = 1, n do if big == 0 or sizes[k] > sizes[big] then big = k end end
+    keep[big] = true
+  end
+  local got = 0
+  for i = 1, W * H do
+    local l = label[i]
+    if l and not keep[l] then give(i, team); got = got + 1 end
+  end
+  return got
+end
+
+function clear_path(h)
+  for _, c in ipairs(h.path) do
+    if trail[c] == h.id then trail[c] = 0; paint(c) end
+  end
+  h.path = {}
+end
+
+function finish(h)
+  local cells = h.path
+  h.path = {}
+  for _, c in ipairs(cells) do
+    if trail[c] == h.id then trail[c] = 0 end
+    give(c, h.team)
+  end
+  local got = fill(h.team) + #cells
+  sfx("C5", 1, 0.3, 5) sfx("E5", 1, 0.3, 9) if got > 30 then sfx("G5", 1, 0.3, 14) end
+  burst(h.cx * 8 + 4, TOP + h.cy * 8 + 4, mode == 1 and 18 or PC[h.id], math.min(20, 4 + got // 6))
+  h.gain, h.gain_t = got, 50
+end
+
+-- a hog loses its line and goes home
+function send_home(h)
+  burst(h.cx * 8 + 4, TOP + h.cy * 8 + 4, PC[h.id], 14)
+  clear_path(h)
+  h.alive, h.dead_t, h.d, h.ai = false, 80, 0, nil
+  sfx("C3", 3, 0.4, 14)
+end
+
+-- ---------------------------------------------------------------- CPU hogs (Land Grab)
+function blocked(h, d)
+  local x, y = h.cx + DX[d], h.cy + DY[d]
+  return not inb(x, y) or trail[idx(x, y)] == h.id
+end
+
+function cpu_dir(h)
+  local sk = setting("cpu") or 2
+  local on_own = own[idx(h.cx, h.cy)] == h.team
+  -- a rival's line right ahead: go and cut it
+  if #h.path < 4 + sk * 2 then
+    for d = 1, 4 do
+      for n = 1, 1 + sk do
+        local x, y = h.cx + DX[d] * n, h.cy + DY[d] * n
+        if not inb(x, y) then break end
+        local tr = trail[idx(x, y)]
+        if tr == h.id then break end
+        if tr ~= 0 then return d end
+      end
+    end
+  end
+  local ai = h.ai
+  if not ai then
+    if not on_own then ai = { ph = "home" }; h.ai = ai
+    else
+      h.wait = h.wait - 1
+      if h.wait > 0 then return nil end
+      local d = rnd(4)
+      ai = { ph = "exit", d = d, s = rnd(2) == 1 and d % 4 + 1 or (d + 2) % 4 + 1, len = rnd(3, 4 + sk * 2), side = rnd(2, 3 + sk * 2), n = 0 }
+      h.ai = ai
+    end
+  end
+  -- somebody close while my line is long: turn for home
+  if (ai.ph == "out" or ai.ph == "side") and #h.path > 3 then
+    for _, o in ipairs(HOGS) do
+      if o ~= h and o.alive and math.abs(o.cx - h.cx) + math.abs(o.cy - h.cy) < 3 + sk then ai.ph, ai.n = "back", ai.len + 8 end
+    end
+  end
+  if ai.ph == "exit" then
+    if not on_own then ai.ph, ai.n = "out", ai.len
+    elseif blocked(h, ai.d) then h.ai, h.wait = nil, 2 return nil
+    else return ai.d end
+  end
+  if ai.ph == "out" then
+    ai.n = ai.n - 1
+    if ai.n <= 0 or blocked(h, ai.d) then
+      ai.ph, ai.n = "side", ai.side
+      if blocked(h, ai.s) then ai.s = opp(ai.s) end
+    else return ai.d end
+  end
+  if ai.ph == "side" then
+    if on_own then h.ai, h.wait = nil, rnd(4, 30 - sk * 6) return nil end
+    ai.n = ai.n - 1
+    if ai.n < 0 or blocked(h, ai.s) then ai.ph, ai.n = "back", ai.len + 8
+    else return ai.s end
+  end
+  if ai.ph == "back" then
+    if on_own then h.ai, h.wait = nil, rnd(4, 30 - sk * 6) return nil end
+    ai.n = ai.n - 1
+    local d = opp(ai.d)
+    if ai.n < 0 or blocked(h, d) then ai.ph = "home" else return d end
+  end
+  -- home: any free step that gets closer to the home patch
+  if on_own then h.ai, h.wait = nil, rnd(4, 30 - sk * 6) return nil end
+  local best, bd = nil, 9999
+  for d = 1, 4 do
+    if not blocked(h, d) then
+      local dist = math.abs(h.cx + DX[d] - h.hx) + math.abs(h.cy + DY[d] - h.hy)
+      if dist < bd then best, bd = d, dist end
+    end
+  end
+  return best
+end
+
+-- ---------------------------------------------------------------- update
+function step_hog(h)
+  h.px, h.py = h.cx, h.cy
+  local on_own = own[idx(h.cx, h.cy)] == h.team
+  local d
+  if h.pl > 0 then d = want[h.pl] ~= 0 and want[h.pl] or nil else d = cpu_dir(h) end
+  if d and blocked(h, d) then d = nil end
+  if not d then
+    if on_own and (h.pl > 0 or not h.ai) then h.d = 0 return end
+    d = h.d
+    if d == 0 or blocked(h, d) then return end
+  end
+  h.d, h.face = d, d
+  h.cx, h.cy = h.cx + DX[d], h.cy + DY[d]
+  local i = idx(h.cx, h.cy)
+  local tr = trail[i]
+  if tr ~= 0 and tr ~= h.id and HOGS[tr].team ~= h.team then send_home(HOGS[tr]) end
+  if own[i] == h.team then
+    if #h.path > 0 then finish(h) end
+  else
+    if trail[i] == 0 then trail[i] = h.id; paint(i) end
+    h.path[#h.path + 1] = i
+  end
+end
+
+function hurt(h)
+  send_home(h)
+  hearts = hearts - 1
+  if hearts <= 0 then state, state_t = "over", 0 end
+end
+
+function moles()
+  for _, m in ipairs(MOLES) do
+    local sp = MOLE_SPEED * (1 + lvl * 0.12)
+    local here = own[idx(mid(0, m.x // 8, W - 1), mid(0, m.y // 8, H - 1))] == 1
+    local nx, ny = m.x + m.vx * sp, m.y + m.vy * sp
+    if not here then
+      local cx, cy = nx // 8, m.y // 8
+      if not inb(cx, cy) or own[idx(cx, cy)] == 1 then m.vx = -m.vx; nx = m.x end
+      cx, cy = m.x // 8, ny // 8
+      if not inb(cx, cy) or own[idx(cx, cy)] == 1 then m.vy = -m.vy; ny = m.y end
+    end
+    m.x, m.y = mid(4, nx, W * 8 - 4), mid(4, ny, H * 8 - 4)
+    local i = idx(mid(0, m.x // 8, W - 1), mid(0, m.y // 8, H - 1))
+    if trail[i] ~= 0 and HOGS[trail[i]].alive then hurt(HOGS[trail[i]]) end
+    for _, h in ipairs(HOGS) do
+      if h.alive and #h.path > 0 and idx(h.cx, h.cy) == i then hurt(h) end
+    end
+    if state ~= "play" then return end
+  end
+end
+
+function ranking()
+  local r = {}
+  for _, h in ipairs(HOGS) do r[#r + 1] = h end
+  table.sort(r, function(a, b) if land[a.team] ~= land[b.team] then return land[a.team] > land[b.team] end return a.id < b.id end)
+  return r
+end
+
+function hog_name(h)
+  if h.pl == 0 then return "CPU " .. h.id end
+  if NP == 1 then return "You" end
+  return "P" .. h.pl
+end
+
+function _update()
+  gt = gt + 1
+  read_pads()
+  for i = #fx, 1, -1 do
+    local p = fx[i]
+    p.x, p.y, p.t = p.x + p.vx, p.y + p.vy, p.t - 1
+    if p.t <= 0 then table.remove(fx, i) end
+  end
+  if state == "pick" then
+    pick_t = pick_t + 1
+    if press_lr ~= 0 then sel = (sel - 1 + press_lr) % #MODES + 1; sfx("E5", 0, 0.15, 3) end
+    if press_a and pick_t > 10 then
+      sfx("C5", 4, 0.3, 6)
+      start(sel, 1)
+      checkpoint({ mode = sel, lvl = 1 })
+    end
+    return
+  end
+  state_t = state_t + 1
+  if state == "ready" then
+    if state_t > 70 then state = "play"; sfx("G5", 1, 0.35, 10) end
+    return
+  end
+  if state == "over" or state == "clear" then
+    if state_t > 50 then
+      if press_a then
+        if state == "clear" then start(1, lvl + 1) else start(mode, lvl) end
+      elseif press_b then state, pick_t = "pick", 0 end
+    end
+    return
+  end
+  if mode == 1 then
+    moles()
+    if state ~= "play" then return end
+  else
+    time_left = time_left - 1
+    if time_left <= 600 and time_left % 60 == 0 and time_left > 0 then sfx("A4", 0, 0.2, 4) end
+  end
+  for _, h in ipairs(HOGS) do
+    if h.gain_t and h.gain_t > 0 then h.gain_t = h.gain_t - 1 end
+    -- Land Grab: a hog with no land left goes home and gets its home patch back
+    if mode == 2 and h.alive and land[h.team] == 0 then send_home(h) end
+    if not h.alive then
+      h.dead_t = h.dead_t - 1
+      if h.dead_t <= 0 then
+        h.alive, h.cx, h.cy, h.px, h.py, h.d = true, h.hx, h.hy, h.hx, h.hy, 0
+        if mode == 2 then home_patch(h) end
+      end
+    end
+  end
+  if gt % STEP == 0 then
+    for _, h in ipairs(HOGS) do if h.alive then step_hog(h) end end
+  end
+  if mode == 1 and percent(1) >= NEED then
+    state, state_t = "clear", 0
+    for _, h in ipairs(HOGS) do clear_path(h) end
+    sfx("C5", 1, 0.4, 8) sfx("E5", 1, 0.4, 16) sfx("G5", 1, 0.4, 24) sfx("C6", 1, 0.4, 40)
+    hearts = math.min(5, hearts + 1)
+    checkpoint({ mode = 1, lvl = lvl + 1 })
+    if lvl >= GARDENS and not won_garden then
+      won_garden = true
+      game_win("All " .. GARDENS .. " gardens are fenced off!")
+    end
+  elseif mode == 2 and time_left <= 0 then
+    state, state_t = "over", 0
+    rank = ranking()
+    winner = rank[1].id
+    sfx("C5", 1, 0.4, 8) sfx("E5", 1, 0.4, 16) sfx("G5", 1, 0.4, 30)
+    if rank[1].pl > 0 then
+      game_win(hog_name(rank[1]) .. (NP == 1 and " have" or " has") .. " the most land: " .. percent(rank[1].team) .. "% of the garden!")
+    end
+  end
+end
+
+-- ---------------------------------------------------------------- drawing (never calls rnd)
+function draw_hog(h, x, y)
+  local c = PC[h.id]
+  circfill(x, y, 6, c)
+  circfill(x, y, 5, 6)
+  for k = 0, 5 do                                        -- spikes
+    local a = k * 1.047 + 0.3
+    pset(x + math.cos(a) * 3.5, y + math.sin(a) * 3.5, 9)
+  end
+  local fx_, fy_ = DX[h.face], DY[h.face]
+  circfill(x + fx_ * 3, y + fy_ * 3, 2, 11)              -- face
+  pset(x + fx_ * 5, y + fy_ * 5, 1)
+  pset(x + fx_ * 3 - fy_ * 2, y + fy_ * 3 + fx_ * 2, 1) pset(x + fx_ * 3 + fy_ * 2, y + fy_ * 3 - fx_ * 2, 1)
+end
+
+function draw_field()
+  cls(1)
+  map(0, 0, W, H, 0, TOP)
+  rect(0, TOP, 320, H * 8, 6)
+  for _, m in ipairs(MOLES) do
+    local x, y = m.x, TOP + m.y
+    circfill(x, y + 1, 4, 6)
+    circfill(x, y, 3, 30)
+    circfill(x + m.vx * 2, y + m.vy * 2, 1, 5)
+    pset(x - 1, y - 1, 13) pset(x + 1, y - 1, 13)
+  end
+  local f = (gt % STEP) / STEP
+  if state ~= "play" then f = 1 end
+  for _, h in ipairs(HOGS) do
+    local x, y = (h.px + (h.cx - h.px) * f) * 8 + 4, TOP + (h.py + (h.cy - h.py) * f) * 8 + 4
+    if h.alive then
+      draw_hog(h, x, y)
+      if h.pl > 0 and (ME or 0) == h.pl then text("v", x - 4, y - 16 + (gt // 12) % 2, 13)
+      elseif h.pl > 0 and NP > 1 and state == "ready" then text("P" .. h.pl, x - 8, y + 8, 13) end
+      if h.gain_t and h.gain_t > 0 then text("+" .. h.gain, x - 8, y - 14 - (50 - h.gain_t) // 5, 13) end
+    elseif h.dead_t < 40 and (gt // 4) % 2 == 0 then
+      circ(h.hx * 8 + 4, TOP + h.hy * 8 + 4, 6, PC[h.id])
+    end
+  end
+  for _, p in ipairs(fx) do rectfill(p.x, p.y, 2, 2, p.c) end
+end
+
+function draw_hud()
+  rectfill(0, 0, 320, TOP, 1)
+  if mode == 1 then
+    text("GARDEN " .. lvl, 8, 6, 17)
+    for i = 1, 5 do if i <= hearts then circfill(12 + (i - 1) * 12, 23, 4, 26) elseif i <= 3 then circ(12 + (i - 1) * 12, 23, 4, 30) end end
+    local p = mid(0, percent(1), 100)
+    rectfill(100, 8, 152, 12, 30)
+    rectfill(101, 9, p * 1.5, 10, 16)
+    rectfill(101 + NEED * 1.5, 6, 2, 16, 27)
+    text(p .. "%", 262, 10, 13)
+    text("need " .. NEED .. "%", 232, 22, 29)
+  else
+    local s = time_left // 60
+    text(string.format("%d:%02d", s // 60, s % 60), 8, 12, s <= 10 and 26 or 13)
+    local n = #HOGS
+    local w = math.min(64, 260 // n)
+    for i, h in ipairs(HOGS) do
+      local x = 52 + (i - 1) * w
+      rectfill(x, 5, w - 4, 22, 2)
+      rectfill(x, 5, 4, 22, PC[h.id])
+      text(h.pl > 0 and "P" .. h.pl or "CPU", x + 7, 7, (ME or 0) == h.pl and h.pl > 0 and 27 or 29)
+      text(percent(h.team) .. "%", x + 7, 17, 13)
+    end
+  end
+end
+
+function _draw()
+  draw_field()
+  draw_hud()
+  if state == "pick" then
+    rectfill(32, 76, 256, 104, 1) rect(32, 76, 256, 104, 13)
+    stext("PICK A GAME", 84, 27, 2)
+    for i, m in ipairs(MODES) do
+      local x = 52 + (i - 1) * 112
+      rectfill(x, 110, 104, 26, i == sel and 15 or 2)
+      rect(x, 110, 104, 26, i == sel and 13 or 30)
+      text(m[1], x + 52 - #m[1] * 4, 119, i == sel and 27 or 29)
+    end
+    ctext(MODES[sel][2], 144, 13)
+    ctext(NP == 1 and "1 player" or NP .. " players", 156, 29)
+    ctext("left / right: pick    A: play", 168, 29)
+  elseif state == "ready" then
+    stext(mode == 1 and "GARDEN " .. lvl or "LAND GRAB", 100, 27, 2)
+    ctext(mode == 1 and "Fence off " .. NEED .. "%. Mind the moles!" or "Most land wins!", 124, 13)
+  elseif state == "clear" then
+    rectfill(40, 86, 240, 70, 1) rect(40, 86, 240, 70, 13)
+    stext("GARDEN " .. lvl .. " DONE!", 96, 17, 2)
+    ctext(lvl >= GARDENS and "Every garden is in bloom." or "On to the next garden.", 120, 13)
+    if state_t > 50 then ctext("A: next garden   B: pick a game", 136, 29) end
+  elseif state == "over" then
+    rectfill(40, 70, 240, 110, 1) rect(40, 70, 240, 110, 13)
+    if mode == 1 then
+      stext("THE MOLES WIN", 80, 26, 2)
+      ctext("Garden " .. lvl .. ", " .. percent(1) .. "% fenced off", 106, 13)
+    else
+      stext(hog_name(rank[1]) .. (hog_name(rank[1]) == "You" and " win!" or " wins!"), 78, 27, 2)
+      for i = 1, math.min(4, #rank) do
+        local h = rank[i]
+        rectfill(96, 100 + (i - 1) * 12, 6, 8, PC[h.id])
+        text(hog_name(h), 108, 100 + (i - 1) * 12, 13)
+        text(percent(h.team) .. "%", 192, 100 + (i - 1) * 12, 13)
+      end
+    end
+    if state_t > 50 then ctext(mode == 1 and "A: try again   B: pick a game" or "A: again   B: pick a game", 164, 29) end
+  end
+end
+
+-- the title screen (game{title_draw = ...}): a hog plants a hedge all the way round the screen, the
+-- border bursts into flower, and a mole pops up to look. It only draws, from the frame count t.
+function draw_title(t)
+  local L = 2 * 38 + 2 * 28 - 4                       -- cells in the loop, one cell in from the edge
+  local n = (t // 2) % (L + 100)
+  local function cell(k)                              -- the k-th cell of the loop, and which way the hog faces
+    if k < 38 then return 1 + k, 1, 1 end
+    k = k - 38
+    if k < 27 then return 38, 2 + k, 2 end
+    k = k - 27
+    if k < 37 then return 37 - k, 28, 3 end
+    k = k - 37
+    return 1, 27 - k, 4
+  end
+  for y = 0, 29 do for x = 0, 39 do spr(1 + (x + y) % 2, x * 8, y * 8) end end
+  local done = n >= L
+  if done then
+    for y = 0, 29 do for x = 0, 39 do
+      if x < 2 or x > 37 or y < 2 or y > 27 then
+        local k = (x * 7 + y * 13 + x * y) % 23
+        local grown = (n - L) * 2 > math.abs(x - 20) + math.abs(y - 15) - 16
+        spr(grown and (k < 5 and 33 + k % 3 or 32) or (((x == 1 or x == 38) and y >= 1 and y <= 28 or (y == 1 or y == 28) and x >= 1 and x <= 38) and 49 or 1 + (x + y) % 2), x * 8, y * 8)
+      end
+    end end
+  else
+    for k = 0, n - 1 do local x, y = cell(k) spr(49, x * 8, y * 8) end
+  end
+  local hx, hy, face = cell(math.min(n, L - 1))
+  if done then hx, hy, face = 1, 1, 1 end
+  draw_hog({ id = 1, face = face }, hx * 8 + 4, hy * 8 + 4 - (done and (n // 6) % 2 or 0))
+  -- the mole in the corner comes up when the hedge is nearly round
+  local up = mid(0, (n - L * 0.6) / 20, 1) * (done and mid(0, 1 - (n - L - 60) / 20, 1) or 1)
+  if up > 0 then
+    local mx, my = 284, 150
+    circfill(mx, my + 6, 9, 6)
+    clip(mx - 10, my - 14, 20, 20)
+    circfill(mx, my + 10 - up * 10, 7, 30)
+    circfill(mx, my + 12 - up * 10, 2, 5)
+    pset(mx - 3, my + 7 - up * 10, 13) pset(mx + 3, my + 7 - up * 10, 13)
+    clip()
+  end
+end
+`;
+
+  // ---- tiles: the ground is drawn with the map, so every kind of cell is one 8x8 tile
+  const PC = [10, 21, 17, 5, 27, 26, 22, 13], PD = [9, 20, 16, 4, 10, 25, 21, 29];
+  function buildGfx(cart) {
+    cart.tiles.fill(0); cart.flags.fill(0); cart.map.fill(0);
+    const put = (n, fn) => { for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) cart.tiles[n * 64 + y * 8 + x] = fn(x, y); };
+    const speck = (x, y, k) => ((x * 5 + y * 3 + k) % 11 === 0);
+    put(1, (x, y) => speck(x, y, 0) ? 6 : 7);                                   // open ground
+    put(2, (x, y) => speck(x, y, 4) ? 8 : 7);
+    for (let k = 1; k <= 8; k++) {
+      // land of hog k: a clipped hedge
+      put(16 + k, (x, y) => (x === 0 || y === 0) ? PD[k - 1] : ((x + y * 2) % 5 === 0 ? PD[k - 1] : PC[k - 1]));
+      // an unfinished line of hog k: saplings in a row
+      put(48 + k, (x, y) => (x >= 2 && x <= 5 && y >= 2 && y <= 5) ? ((x === 2 || y === 5) ? PD[k - 1] : PC[k - 1]) : (speck(x, y, 2) ? 6 : 7));
+    }
+    const grass = (x, y) => ((x * 3 + y * 5) % 7 === 0 ? 15 : 16);
+    put(32, grass);
+    const flower = (c) => (x, y) => {
+      if (x === 3 && y === 3) return 27;
+      if ((Math.abs(x - 3) === 1 && y === 3) || (Math.abs(y - 3) === 1 && x === 3)) return c;
+      return grass(x, y);
+    };
+    put(33, flower(13)); put(34, flower(5)); put(35, flower(11));
+    // the icon (16x16 at tile 64): a hedgehog on grass
+    const K = { '.': 0, o: 6, b: 7, s: 9, f: 11, e: 1, g: 16, G: 15, n: 26 };
+    const ICON = [
+      '................',
+      '......s.s.s.....',
+      '....s.ooooo.s...',
+      '...sooobbbooo...',
+      '..sobbsbbsbboo..',
+      '..obsbbbsbbbsof.',
+      '.sobbbsbbbsbbff.',
+      '.obbsbbbsbbbfefn',
+      '.obbbbsbbbsbffff',
+      '.sobsbbbsbbbfff.',
+      '..oobbbbbbboo...',
+      '...ooo...ooo....',
+      'gGgggGggggGgggGg',
+      'ggggGgggGggggggg',
+      '................',
+      '................',
+    ];
+    ICON.forEach((row, y) => [...row].forEach((ch, x) => {
+      const t = 64 + (y >> 3) * 16 + (x >> 3);
+      cart.tiles[t * 64 + (y & 7) * 8 + (x & 7)] = K[ch] ?? 0;
+    }));
+    const base = { sw: 2, sh: 2, grav: false, collide: false, left: false, hp: 0, inset: 0, team: 'neutral', damage: 0, hidden: false,
+      player: false, stomp: false, touch_fx: '', hurt: 15, stats: [] };
+    cart.entities = { effects: [], cutscenes: [], placed: [],
+      types: [Object.assign({}, base, { name: 'hog', anims: [{ name: 'idle', frames: [64], speed: 8 }], tree: null })] };
+    cart.levels = [{ name: 'Garden', w: 40, h: 30, map: cart.map, placed: cart.entities.placed }];
+  }
+
+  window.BK_DEMOS = window.BK_DEMOS || [];
+  window.BK_DEMOS.push({ name: 'Hedge Hogs', code, buildGfx,
+    about: 'Fence off land with hedges for 1-8 players: fill the garden together past the moles, or grab the most land.' });
+})();
+
+</script>
+<script>
+/* Demo cart "Cauldron Crew": a potion kitchen for 1-8 players, together or in two teams.
+   Original art and code. MIT License. */
+(function () {
+  const code = `-- Cauldron Crew: brew what the customers order before they lose patience (1-8 players)
+--   D-pad: walk. A: pick up / put down / use what you face. Hold X at a bubbling cauldron: stir (brews faster).
+--   B: dash.
+--   A potion is 3 ingredients in one cauldron. When it has brewed, take it out (A) and carry it to the
+--   window. Leave it on the fire too long and it burns: carry the sludge to the bin.
+--   One kitchen (alone or together): earn the shift's target in coins.
+--   Teams (2 players or more): two kitchens, the same orders, most coins wins.
+-- Linked Bits run in lockstep: the game only uses rnd() and the frame count, and drawing never calls rnd().
+
+TOP, GW, GH = 32, 20, 13                    -- the kitchen is 20 x 13 tiles of 16 pixels, under the order cards
+SPEED, DASH = tune("Walk speed", 1.8, 1, 3, 0.1), tune("Dash speed", 4.4, 2, 7, 0.2)
+BREW = tune("Brew time (frames)", 300, 120, 600, 10)
+BURN = tune("Time before it burns (frames)", 540, 180, 1200, 30)
+STIR = tune("Stirring bonus", 1.5, 0, 4, 0.1)
+PATIENCE = tune("Customer patience (frames)", 2700, 900, 5400, 60)
+PC = { 10, 21, 17, 5, 27, 26, 22, 13 }      -- hat colours
+PD = { 9, 20, 16, 4, 10, 25, 21, 29 }
+ING = { "mushroom", "herb", "berry" }
+ICOL = { 26, 17, 21 }                       -- potion colours by main ingredient
+MODES = { { "ONE KITCHEN", "Together: earn the target." }, { "TEAMS", "Two kitchens. Most coins wins." } }
+KITCHEN = {
+  { "####M#M##H#H##B#B###",
+    "#..................#",
+    "#..................#",
+    "#..................W",
+    "#....ccc....ccc....W",
+    "#..................#",
+    "#..................#",
+    "X..................#",
+    "#....ccc....ccc....#",
+    "#..................#",
+    "#..................#",
+    "#..................#",
+    "###C#####C#####C####" },
+  -- teams: the left half, mirrored for the right half. Both reach the berry crates in the middle wall.
+  { "##M##H####", "#........#", "#........#", "W........#", "W...cc...#", "#........#", "#........B",
+    "X........#", "#........#", "#...cc...#", "#........#", "#........#", "##C###C###" },
+}
+
+function _init()
+  game{
+    title = "Cauldron Crew",
+    goal = "Earn the shift's target in coins, or out-brew the other team's kitchen.",
+    help = {
+      "D-pad: walk. A: pick up, put down or use what you face. B: dash.",
+      "Put 3 ingredients in a cauldron. Hold X next to it to stir: it brews faster.",
+      "Take the finished potion (A) to the window. It must match an order card.",
+      "Potions left on the fire burn. Burnt or wrong potions go in the bin.",
+      "Fast service tips more, and a streak of right orders adds a bonus.",
+    },
+    continue = function(cp) if cp and cp.mode then start(cp.mode, cp) end end,
+    settings = { { key = "mins", name = "Shift minutes", min = 2, max = 5, value = 3 } },
+    title_draw = function(t) draw_title(t) end,   -- its own animated title screen (at the end of the code)
+    look = { title = 17, shadow = 1, panel = 1, edge = 5, hi = 3, text = 12, pick = 27, goal = 12, footer = 29, menu = "right" },
+  }
+  NP = math.max(1, math.min(PLAYERS or 1, 8))
+  gt, last_t, pick_t = 0, -9, 0
+  held, edge = {}, {}
+  fx, sel, best = {}, 1, 0
+  start(1)
+  if NP > 1 then state = "pick" end
+end
+
+-- ---------------------------------------------------------------- helpers
+function sgn(v) return v > 0 and 1 or (v < 0 and -1 or 0) end
+function mid(a, v, b) return math.max(a, math.min(v, b)) end
+function ctext(s, y, c, sc) sc = sc or 1 text(s, 160 - #s * 4 * sc, y, c, sc) end
+function stext(s, y, c, sc) sc = sc or 1 text(s, 161 - #s * 4 * sc, y + sc, 1, sc) ctext(s, y, c, sc) end
+function pan(x) return mid(-1, (x - 160) / 160, 1) end
+
+function read_pads()
+  local fresh = t() ~= last_t + 1
+  last_t = t()
+  for p = 1, NP do
+    local was = held[p] or {}
+    local now = { a = btn("a", p), b = btn("b", p), left = btn("left", p), right = btn("right", p) }
+    edge[p] = {}
+    for k, v in pairs(now) do edge[p][k] = v and not was[k] and not fresh end   -- (order doesn't matter here)
+    held[p] = now
+  end
+end
+function any_edge(k) for p = 1, NP do if edge[p][k] then return p end end end
+
+function burst(x, y, c, n)
+  for i = 1, n do
+    fx[#fx + 1] = { x = x, y = y, vx = (rnd() * 2 - 1) * 1.4, vy = -rnd() * 2, t = 16 + rnd(18), c = c }
+  end
+end
+function float(x, y, s, c) fl[#fl + 1] = { x = x, y = y, s = s, c = c, t = 50 } end
+
+-- ---------------------------------------------------------------- the kitchen
+function tile(tx, ty)
+  if tx < 0 or ty < 0 or tx >= GW or ty >= GH then return "#" end
+  return G[ty * GW + tx + 1]
+end
+function solid(x, y) return tile(x // 16, y // 16) ~= "." end
+
+function start(m, cp)
+  mode = m
+  G, ST, CAULS = {}, {}, {}
+  for y = 0, GH - 1 do
+    local row = KITCHEN[m][y + 1]
+    if m == 2 then row = row .. row:reverse() end
+    for x = 0, GW - 1 do
+      local ch = row:sub(x + 1, x + 1)
+      local i = y * GW + x + 1
+      G[i] = ch
+      if ch ~= "." and ch ~= "#" then
+        local s = { ch = ch, tx = x, ty = y, team = (m == 2 and x >= GW // 2) and 2 or 1 }
+        if ch == "C" then s.items, s.prog, s.over, s.stir = {}, 0, 0, 0; CAULS[#CAULS + 1] = s end
+        ST[i] = s
+      end
+    end
+  end
+  teams = m == 2 and 2 or 1
+  size = { 0, 0 }
+  P = {}
+  for p = 1, NP do
+    local tm = m == 2 and (p - 1) % 2 + 1 or 1
+    size[tm] = size[tm] + 1
+    local n = size[tm]
+    local x = m == 2 and (tm == 1 and 40 or 280) + ((n - 1) % 2) * 24 * (tm == 1 and 1 or -1) or 80 + ((p - 1) % 4) * 48
+    local y = m == 2 and 40 + ((n - 1) // 2) * 30 or 40 + ((p - 1) // 4) * 100
+    P[p] = { pl = p, team = tm, x = x, y = y, fx = 0, fy = 1, hold = nil, dash_t = 0, cd = 0, walk = 0, stir = false }
+  end
+  -- every team gets the same orders at the same moments
+  SEQ = {}
+  for n = 1, 80 do
+    local a, b, c = rnd(3), rnd(3), rnd(3)
+    if n <= 2 then b, c = a, a elseif n <= 6 then c = a end
+    local r = { a, b, c }
+    table.sort(r)
+    SEQ[n] = r
+  end
+  ORD = {}
+  for tm = 1, teams do ORD[tm] = { list = {}, n = 0, wait = 1, served = 0, streak = 0 } end
+  score = { cp and cp.s1 or 0, cp and cp.s2 or 0 }
+  time_left = cp and cp.time or (setting("mins") or 3) * 3600
+  best = cp and cp.best or best
+  target = 150 + 60 * (math.max(size[1], 1) - 1)
+  fl, shake = {}, 0
+  state, state_t, winner = "ready", 0, 0
+end
+
+function key(r) return r[1] * 100 + r[2] * 10 + r[3] end
+function potion_col(r) return ICOL[r[2]] end      -- the middle of the sorted three is the main ingredient
+
+function save_point()
+  checkpoint({ mode = mode, s1 = score[1], s2 = score[2], time = time_left, best = best })
+end
+
+-- ---------------------------------------------------------------- using things
+function facing(p)
+  local tx, ty = (p.x + p.fx * 12) // 16, (p.y + p.fy * 12) // 16
+  return ST[ty * GW + tx + 1]
+end
+
+function use(p)
+  local s = facing(p)
+  if not s then return end
+  local h = p.hold
+  local px, py = s.tx * 16 + 8, TOP + s.ty * 16 + 8
+  local ok = false
+  if s.ch == "M" or s.ch == "H" or s.ch == "B" then
+    local t = s.ch == "M" and 1 or (s.ch == "H" and 2 or 3)
+    if not h then p.hold = { k = "ing", t = t }; ok = true
+    elseif h.k == "ing" and h.t == t then p.hold = nil; ok = true end
+  elseif s.ch == "c" then
+    p.hold, s.item = s.item, h
+    ok = h ~= nil or p.hold ~= nil
+  elseif s.ch == "X" then
+    if h then p.hold = nil; ok = true; burst(px, py, 30, 6) end
+  elseif s.ch == "C" then
+    if h and h.k == "ing" and #s.items < 3 and s.over == 0 then
+      s.items[#s.items + 1] = h.t
+      p.hold = nil
+      ok = true
+      if #s.items == 3 then table.sort(s.items); sfx("C3", 3, 0.3, 10, nil, pan(px)) end
+      burst(px, py - 4, ICOL[h.t], 5)
+    elseif not h and #s.items > 0 and (#s.items < 3 or s.prog >= BREW) then
+      -- brewed: a potion. Not full yet, or burnt: sludge for the bin.
+      p.hold = { k = "pot", r = s.items, bad = #s.items < 3 or s.over >= BURN }
+      s.items, s.prog, s.over = {}, 0, 0
+      ok = true
+    end
+  elseif s.ch == "W" then
+    if h and h.k == "pot" then
+      p.hold = nil
+      ok = true
+      serve(p, h, px, py)
+    end
+  end
+  if ok then sfx("A4", 4, 0.25, 4, nil, pan(px)) else sfx("C3", 0, 0.12, 4, nil, pan(px)) end
+end
+
+function serve(p, pot, px, py)
+  local o = ORD[p.team]
+  local hit
+  if not pot.bad then
+    for i, c in ipairs(o.list) do
+      if key(c.r) == key(pot.r) and (not hit or c.t < o.list[hit].t) then hit = i end   -- the most impatient match
+    end
+  end
+  if not hit then
+    score[p.team] = math.max(0, score[p.team] - 5)
+    o.streak = 0
+    float(px, py - 10, "-5", 26)
+    sfx("C3", 2, 0.35, 12, nil, pan(px), -80)
+    return
+  end
+  local c = table.remove(o.list, hit)
+  local pay = 20 + math.floor(10 * c.t / PATIENCE) + 5 * math.min(o.streak, 4)
+  o.streak, o.served = o.streak + 1, o.served + 1
+  score[p.team] = score[p.team] + pay
+  float(px, py - 10, "+" .. pay, 27)
+  burst(px, py, 27, 10)
+  sfx("E5", 1, 0.35, 5) sfx("A5", 1, 0.35, 10)
+  save_point()
+end
+
+-- ---------------------------------------------------------------- update
+function walk(p)
+  local n = p.pl
+  local mx = (btn("right", n) and 1 or 0) - (btn("left", n) and 1 or 0)
+  local my = (btn("down", n) and 1 or 0) - (btn("up", n) and 1 or 0)
+  if p.cd > 0 then p.cd = p.cd - 1 end
+  if edge[n].b and p.cd == 0 and (mx ~= 0 or my ~= 0) then
+    p.dash_t, p.cd = 9, 34
+    sfx("C4", 3, 0.2, 5, nil, pan(p.x))
+  end
+  local sp = SPEED
+  if p.dash_t > 0 then p.dash_t = p.dash_t - 1; sp = DASH end
+  if mx ~= 0 and my ~= 0 then sp = sp * 0.75 end
+  local bx, by = false, false
+  if mx ~= 0 then
+    local nx = p.x + mx * sp
+    local ex = nx + mx * 5
+    if solid(ex, p.y - 5) or solid(ex, p.y + 5) then bx = true else p.x = nx end
+  end
+  if my ~= 0 then
+    local ny = p.y + my * sp
+    local ey = ny + my * 5
+    if solid(p.x - 5, ey) or solid(p.x + 5, ey) then by = true else p.y = ny end
+  end
+  -- face the way you walk; walking into something turns you to it
+  if mx ~= 0 and (my == 0 or bx) then p.fx, p.fy = mx, 0
+  elseif my ~= 0 and (mx == 0 or by) then p.fx, p.fy = 0, my end
+  p.walk = (mx ~= 0 or my ~= 0) and p.walk + 1 or 0
+  if edge[n].a then use(p) end
+  p.stir = false
+  if btn("x", n) and not p.hold then
+    local s = facing(p)
+    if s and s.ch == "C" and #s.items == 3 and s.prog < BREW then s.stir = s.stir + 1; p.stir = true end
+  end
+end
+
+function cauldrons()
+  for _, s in ipairs(CAULS) do
+    local px, py = s.tx * 16 + 8, TOP + s.ty * 16 + 8
+    if #s.items == 3 then
+      if s.prog < BREW then
+        s.prog = s.prog + 1 + s.stir * STIR
+        if s.prog >= BREW then s.prog = BREW; sfx("G5", 4, 0.35, 8, nil, pan(px)) sfx("C6", 4, 0.3, 14, nil, pan(px)) end
+      elseif s.over < BURN then
+        s.over = s.over + 1
+        if s.over > BURN - 180 and s.over % 20 == 0 then sfx("A5", 0, 0.15, 3, nil, pan(px)) end
+        if s.over == BURN then sfx("C3", 3, 0.4, 20, nil, pan(px)) burst(px, py - 4, 30, 10) end
+      end
+    end
+    s.stirred, s.stir = s.stir > 0, 0
+  end
+end
+
+function orders()
+  local most = mode == 2 and 3 or 4
+  for tm = 1, teams do
+    local o = ORD[tm]
+    for i = #o.list, 1, -1 do
+      local c = o.list[i]
+      c.t = c.t - 1
+      if c.t <= 0 then
+        table.remove(o.list, i)
+        score[tm] = math.max(0, score[tm] - 10)
+        o.streak = 0
+        shake = 10
+        sfx("C3", 2, 0.35, 14, nil, 0, -40)
+        float(mode == 2 and (tm == 1 and 50 or 270) or 100, TOP + 6, "-10", 26)
+      end
+    end
+    o.wait = o.wait - 1
+    if o.wait <= 0 and #o.list < most and o.n < #SEQ then
+      o.n = o.n + 1
+      o.list[#o.list + 1] = { r = SEQ[o.n], t = PATIENCE }
+      -- the next one comes sooner as the shift goes on, and sooner for bigger crews
+      local k = math.max(1, mode == 2 and math.min(size[1], size[2]) or size[1])
+      o.wait = math.floor(math.max(420, 900 - o.n * 24) / (0.6 + 0.4 * k))
+      sfx("E5", 4, 0.2, 5)
+    elseif o.wait <= 0 then o.wait = 30 end
+  end
+end
+
+function _update()
+  gt = gt + 1
+  read_pads()
+  for i = #fx, 1, -1 do
+    local p = fx[i]
+    p.x, p.y, p.vy, p.t = p.x + p.vx, p.y + p.vy, p.vy + 0.1, p.t - 1
+    if p.t <= 0 then table.remove(fx, i) end
+  end
+  for i = #fl, 1, -1 do
+    local f = fl[i]
+    f.y, f.t = f.y - 0.4, f.t - 1
+    if f.t <= 0 then table.remove(fl, i) end
+  end
+  if shake > 0 then shake = shake - 1 end
+  if state == "pick" then
+    pick_t = pick_t + 1
+    if any_edge("left") then sel = sel == 1 and #MODES or sel - 1; sfx("E5", 0, 0.15, 3) end
+    if any_edge("right") then sel = sel % #MODES + 1; sfx("E5", 0, 0.15, 3) end
+    if any_edge("a") and pick_t > 10 then
+      sfx("C5", 4, 0.3, 6)
+      start(sel)
+      save_point()
+    end
+    return
+  end
+  state_t = state_t + 1
+  if state == "ready" then
+    if state_t > 80 then state = "play"; sfx("G5", 1, 0.35, 10) end
+    return
+  end
+  if state == "over" then
+    if state_t > 60 then
+      if any_edge("a") then start(mode); save_point()
+      elseif any_edge("b") and NP > 1 then state, pick_t = "pick", 0 end
+    end
+    return
+  end
+  for _, p in ipairs(P) do walk(p) end
+  cauldrons()
+  orders()
+  time_left = time_left - 1
+  if time_left <= 600 and time_left % 60 == 0 and time_left > 0 then sfx("A4", 0, 0.2, 4) end
+  if time_left <= 0 then
+    state, state_t = "over", 0
+    sfx("C5", 1, 0.4, 8) sfx("E5", 1, 0.4, 16) sfx("G5", 1, 0.4, 30)
+    if mode == 1 then
+      if score[1] > best then best = score[1] end
+      if score[1] >= target then game_win("The crew earned " .. score[1] .. " coins in one shift (target " .. target .. ")!") end
+    else
+      winner = score[1] > score[2] and 1 or (score[2] > score[1] and 2 or 0)
+      if winner ~= 0 then game_win(team_name(winner) .. " kitchen wins, " .. score[winner] .. " coins to " .. score[3 - winner] .. "!") end
+    end
+    checkpoint({ mode = mode, best = best })
+  end
+end
+
+function team_name(tm) return tm == 1 and "The left" or "The right" end
+
+-- ---------------------------------------------------------------- drawing (never calls rnd)
+function draw_item(it, x, y)
+  if it.k == "ing" then spr(it.t, x - 4, y - 4)
+  else
+    pal(5, it.bad and 30 or potion_col(it.r))
+    spr(4, x - 4, y - 4)
+    pal()
+    if not it.bad then for i = 1, 3 do rectfill(x - 5 + (i - 1) * 4, y - 8, 3, 3, ICOL[it.r[i]]) end end
+  end
+end
+
+function draw_kitchen()
+  for ty = 0, GH - 1 do
+    for tx = 0, GW - 1 do
+      local ch = G[ty * GW + tx + 1]
+      local x, y = tx * 16, TOP + ty * 16
+      local cool = mode == 2 and tx >= GW // 2
+      if ch == "." then
+        rectfill(x, y, 16, 16, (tx + ty) % 2 == 0 and (cool and 20 or 8) or (cool and 19 or 7))
+      elseif ch == "#" then
+        rectfill(x, y, 16, 16, 30) rectfill(x, y, 16, 3, 28) rectfill(x, y + 15, 16, 1, 31)
+      else
+        local s = ST[ty * GW + tx + 1]
+        rectfill(x, y, 16, 16, 8) rectfill(x + 1, y + 1, 14, 13, 9)
+        if ch == "c" then
+          rectfill(x + 1, y + 1, 14, 13, 10) rectfill(x + 1, y + 1, 14, 2, 11)
+          if s.item then draw_item(s.item, x + 8, y + 9) end
+        elseif ch == "M" or ch == "H" or ch == "B" then
+          rectfill(x + 2, y + 2, 12, 11, 7)
+          spr(ch == "M" and 1 or (ch == "H" and 2 or 3), x + 4, y + 4)
+        elseif ch == "X" then
+          rectfill(x + 1, y + 1, 14, 13, 28) rectfill(x + 4, y + 4, 8, 8, 1) rect(x + 3, y + 3, 10, 10, 29)
+        elseif ch == "W" then
+          local c = mode == 2 and (s.team == 1 and 10 or 21) or 27
+          rectfill(x + 1, y + 1, 14, 14, 12) rect(x, y, 16, 16, c)
+          circfill(x + 8, y + 8, 3, 27) rectfill(x + 5, y + 11, 7, 2, 10)      -- the bell
+        elseif ch == "C" then
+          rectfill(x, y, 16, 16, 28) rectfill(x, y, 16, 2, 29)
+          if #s.items == 3 and (gt // 5) % 2 == 0 then rectfill(x + 3, y + 13, 10, 3, s.over >= BURN and 30 or 10) rectfill(x + 5, y + 14, 6, 2, 27) end
+          circfill(x + 8, y + 7, 7, 31) circ(x + 8, y + 7, 7, 1)
+          if #s.items > 0 then
+            local c = s.over >= BURN and 30 or (#s.items == 3 and ICOL[s.items[2]] or 29)
+            circfill(x + 8, y + 7, 5, c)
+            if #s.items == 3 and s.over < BURN then                              -- bubbles
+              pset(x + 6 + (gt // 7) % 5, y + 5 + (gt // 11) % 4, 13)
+              if s.stirred then line(x + 8, y + 7, x + 8 + math.cos(gt / 4) * 5, y + 7 + math.sin(gt / 4) * 4, 12) end
+            end
+          else circfill(x + 8, y + 7, 5, 1) end
+        end
+      end
+    end
+  end
+  -- what is in each cauldron, and how far along it is
+  for _, s in ipairs(CAULS) do
+    local x, y = s.tx * 16, TOP + s.ty * 16
+    local up = s.ty > 6 and -1 or 1                    -- cards sit on the kitchen side of the cauldron
+    local cy = y + (up < 0 and -13 or 17)
+    if #s.items > 0 then
+      rectfill(x - 6, cy, 28, 11, 1)
+      for i, t in ipairs(s.items) do spr(t, x - 5 + (i - 1) * 9, cy + 1) end
+      if #s.items == 3 then
+        local by = cy + (up < 0 and -4 or 12)
+        rectfill(x - 6, by, 28, 3, 1)
+        if s.prog < BREW then rectfill(x - 5, by + 1, 26 * s.prog / BREW, 1, 27)
+        elseif s.over >= BURN then rectfill(x - 5, by + 1, 26, 1, 30)
+        else
+          rectfill(x - 5, by + 1, 26 * (1 - s.over / BURN), 1, s.over > BURN - 180 and ((gt // 6) % 2 == 0 and 26 or 13) or 17)
+          if (gt // 20) % 2 == 0 then text("!", x + 4, cy + (up < 0 and -14 or 16), s.over > BURN - 180 and 26 or 17) end
+        end
+      end
+    end
+  end
+end
+
+function draw_cook(p)
+  local x, y = p.x, TOP + p.y
+  local s = facing(p)
+  if s and state == "play" then rect(s.tx * 16, TOP + s.ty * 16, 16, 16, PC[p.pl]) end
+  rectfill(x - 5, y + 5, 10, 2, 1)
+  pal(4, PC[p.pl]) pal(3, PD[p.pl])
+  local bob = p.walk > 0 and (p.walk // 6) % 2 or 0
+  spr(16, x - 8, y - 11 - bob, 2, 2, p.fx < 0)
+  pal()
+  if p.dash_t > 0 then line(x - p.fx * 8, y, x - p.fx * 14, y, 13) line(x - p.fy * 0, y - p.fy * 8, x, y - p.fy * 14, 13) end
+  if p.hold then draw_item(p.hold, x + p.fx * 7, y - 2 + p.fy * 5 - (p.fy == 0 and 3 or 0)) end
+  if p.stir then text("~", x - 4, y - 22 + (gt // 5) % 2, 13) end
+  if (ME or 0) == p.pl then text("v", x - 4, y - 24 + (gt // 12) % 2, 13)
+  elseif NP > 1 and state == "ready" then text("P" .. p.pl, x - 8, y - 22, PC[p.pl]) end
+end
+
+function draw_card(c, x, w)
+  rectfill(x, 2, w, 26, 12) rect(x, 2, w, 26, 9)
+  local step = w >= 40 and 12 or 9
+  for i = 1, 3 do spr(c.r[i], x + (w - step * 3) // 2 + (i - 1) * step + (step - 8) // 2, 6) end
+  local f = c.t / PATIENCE
+  rectfill(x + 3, 19, w - 6, 5, 30)
+  rectfill(x + 3, 19, (w - 6) * f, 5, f > 0.5 and 16 or (f > 0.25 and 27 or 26))
+end
+
+function draw_hud()
+  rectfill(0, 0, 320, TOP, 1)
+  local s = math.max(0, time_left) // 60
+  local clock = string.format("%d:%02d", s // 60, s % 60)
+  if mode == 1 then
+    for i, c in ipairs(ORD[1].list) do draw_card(c, 3 + (i - 1) * 46, 43) end
+    text(clock, 276, 4, s <= 10 and 26 or 13)
+    local sc = score[1] .. "/" .. target
+    text(sc, 316 - #sc * 8, 14, score[1] >= target and 17 or 27)
+    text("coins", 276, 23, 29)
+    if ORD[1].streak > 1 then text("x" .. ORD[1].streak, 196, 12, 10) end
+  else
+    for i, c in ipairs(ORD[1].list) do draw_card(c, 2 + (i - 1) * 32, 30) end
+    for i, c in ipairs(ORD[2].list) do draw_card(c, 288 - (i - 1) * 32, 30) end
+    ctext(clock, 3, s <= 10 and 26 or 13)
+    text(tostring(score[1]), 156 - #tostring(score[1]) * 8, 15, 10) text(":", 156, 15, 13) text(tostring(score[2]), 166, 15, 21)
+  end
+end
+
+function _draw()
+  cls(1)
+  if shake > 0 then camera((gt % 2) * 2 - 1, 0) end
+  draw_kitchen()
+  -- cooks further down the screen are drawn over the ones further up
+  local order = {}
+  for i, p in ipairs(P) do order[i] = p end
+  table.sort(order, function(a, b) if a.y ~= b.y then return a.y < b.y end return a.pl < b.pl end)
+  for _, p in ipairs(order) do draw_cook(p) end
+  for _, p in ipairs(fx) do rectfill(p.x, p.y, 2, 2, p.c) end
+  for _, f in ipairs(fl) do text(f.s, f.x - #f.s * 4 + 1, f.y + 1, 1) text(f.s, f.x - #f.s * 4, f.y, f.c) end
+  camera()
+  draw_hud()
+  if state == "pick" then
+    rectfill(32, 76, 256, 104, 1) rect(32, 76, 256, 104, 13)
+    stext("PICK A GAME", 84, 27, 2)
+    for i, m in ipairs(MODES) do
+      local x = 48 + (i - 1) * 116
+      rectfill(x, 110, 108, 26, i == sel and 8 or 2)
+      rect(x, 110, 108, 26, i == sel and 13 or 30)
+      text(m[1], x + 54 - #m[1] * 4, 119, i == sel and 27 or 29)
+    end
+    ctext(MODES[sel][2], 144, 13)
+    ctext(NP .. " players", 156, 29)
+    ctext("left / right: pick    A: play", 168, 29)
+  elseif state == "ready" then
+    stext(mode == 1 and "SHIFT STARTS" or "KITCHEN DUEL", 100, 27, 2)
+    ctext(mode == 1 and "Earn " .. target .. " coins!" or "Most coins wins!", 124, 13)
+  elseif state == "over" then
+    rectfill(40, 76, 240, 88, 1) rect(40, 76, 240, 88, 13)
+    if mode == 1 then
+      stext(score[1] >= target and "GREAT SHIFT!" or "SHIFT OVER", 86, score[1] >= target and 17 or 27, 2)
+      ctext(score[1] .. " coins (target " .. target .. ", best " .. best .. ")", 112, 13)
+      ctext(ORD[1].served .. " potions served", 124, 29)
+    else
+      stext(winner == 0 and "A DRAW!" or (winner == 1 and "LEFT KITCHEN WINS" or "RIGHT KITCHEN WINS"), 86, 27, winner == 0 and 2 or 1)
+      ctext(score[1] .. " : " .. score[2], 108, 13, 2)
+    end
+    if state_t > 60 then ctext(NP > 1 and "A: again   B: pick a game" or "A: another shift", 146, 29) end
+  end
+end
+
+-- the title screen (game{title_draw = ...}): ingredients drop into a big cauldron, and the brew
+-- changes colour with every third one. It only draws, from the frame count t.
+function draw_title(t)
+  cls(2)
+  for y = 0, 11 do for x = 0, 10 do                                  -- the stone wall
+    rect(x * 32 - (y % 2) * 16, y * 16, 33, 17, 1)
+  end end
+  rectfill(0, 196, 320, 44, 6) rectfill(0, 196, 320, 2, 7)           -- the floor
+  local cx, cy = 74, 158
+  local n = t // 50                                                  -- one ingredient every 50 frames
+  local c = ICOL[(n // 3) % 3 + 1]
+  for i = 0, 4 do                                                    -- the fire
+    local h = 8 + ((t // 4 + i * 3) % 5) * 3
+    rectfill(cx - 30 + i * 13, 204 - h, 9, h, i % 2 == 0 and 10 or 27)
+  end
+  circfill(cx, cy, 47, 30) circfill(cx, cy, 45, 1)
+  rectfill(cx - 47, cy - 47, 95, 23, 2)                              -- cut the top off: the cauldron's mouth
+  for x = 0, 10 do rect(x * 32 - 16, 112, 33, 17, 1) end
+  rectfill(cx - 44, cy - 26, 89, 8, 30) rectfill(cx - 40, cy - 24, 81, 5, c)
+  circfill(cx - 22, cy + 4, 5, 31) rectfill(cx - 26, cy - 4, 3, 9, 31)   -- a shine on its belly
+  for i = 0, 4 do                                                    -- bubbles rise and pop
+    local life = (t + i * 17) % 60
+    circ(cx - 32 + i * 16 + math.sin((t + i * 40) / 12) * 3, cy - 30 - life * 0.9, 2 + i % 3, life > 50 and 13 or c)
+  end
+  -- the next ingredient falls in with a splash
+  local f = (t % 50) / 50
+  local kind = n % 3 + 1
+  if f < 0.6 then spr(kind, cx - 12, 60 + f * f * 200, 1, 1, false, false, 3)
+  else for i = 0, 5 do pset(cx + (i - 2.5) * (f - 0.6) * 60, cy - 28 - math.sin((f - 0.6) * 7.85) * (10 + i * 2), ICOL[kind]) end end
+  -- a cook waits with the next order
+  pal(4, PC[(n // 3) % 8 + 1]) pal(3, PD[(n // 3) % 8 + 1])
+  spr(16, 110, 150 - (t // 20) % 2, 2, 2, true, false, 2)
+  pal()
+end
+`;
+
+  // ---- sprites: 1 mushroom, 2 herb, 3 berry, 4 flask (colour 5 = the potion), 16 the cook (4 / 3 = hat colours)
+  const K = { '.': 0, o: 1, r: 26, R: 25, w: 13, s: 12, g: 17, G: 15, b: 21, B: 20, l: 23, p: 5, h: 4, H: 3, f: 11, e: 1, n: 29, y: 27, k: 31, t: 7 };
+  const ART = {
+    1: ['..rrrr..', '.rrwrrr.', 'rrrrrwrr', 'rwrrrrrr', '.RRRRRR.', '...ss...', '...ss...', '..ssss..'],
+    2: ['...g....', '..ggg.g.', '.gGgggg.', '..gGgGg.', '.gggGg..', '..gGgg..', '...G....', '...G....'],
+    3: ['....G...', '...G.G..', '..bb.bb.', '.bblbblb', '.bbbbbbb', '..bbbBb.', '...bbB..', '....B...'],
+    4: ['...nn...', '...ww...', '...ww...', '..wllw..', '.wppppw.', '.wppppw.', '.wppppw.', '..wwww..'],
+    16: [
+      '.......hh.......',
+      '......hhhh......',
+      '.....hhhhH......',
+      '.....hhhhH......',
+      '....hhhhhHH.....',
+      '....yyyyyyy.....',
+      '..hhhhhhhhHHH...',
+      '.hhhhhhhhhhHHH..',
+      '....ffffff......',
+      '....fefffe......',
+      '....ffffff......',
+      '...hhhhhhHH.....',
+      '..fhhhhyhHHf....',
+      '...hhhhhhHH.....',
+      '...hhhhhhHH.....',
+      '....tt..tt......',
+    ],
+    64: [   // the icon: a bubbling cauldron
+      '.....b......r...',
+      '...g....b.......',
+      '......g....g....',
+      '..kkkkkkkkkkkk..',
+      '.kkggggggggggkk.',
+      '..kkkkkkkkkkkk..',
+      '..kkkkkkkkkkkk..',
+      '.kkknkkkkkkkkkk.',
+      '.kknkkkkkkkkkkk.',
+      '.kknkkkkkkkkkkk.',
+      '.kkkkkkkkkkkkkk.',
+      '..kkkkkkkkkkkk..',
+      '...kkkkkkkkkk...',
+      '..k.ryyrryyr.k..',
+      '....rryyyyrr....',
+      '................',
+    ],
+  };
+
+  function buildGfx(cart) {
+    cart.tiles.fill(0); cart.flags.fill(0); cart.map.fill(0);
+    for (const [n, rows] of Object.entries(ART))
+      rows.forEach((row, y) => [...row].forEach((ch, x) => {
+        const t = +n + (y >> 3) * 16 + (x >> 3);
+        cart.tiles[t * 64 + (y & 7) * 8 + (x & 7)] = K[ch] ?? 0;
+      }));
+    const base = { sw: 2, sh: 2, grav: false, collide: false, left: false, hp: 0, inset: 0, team: 'neutral', damage: 0, hidden: false,
+      player: false, stomp: false, touch_fx: '', hurt: 15, stats: [] };
+    cart.entities = { effects: [], cutscenes: [], placed: [],
+      types: [Object.assign({}, base, { name: 'cauldron', anims: [{ name: 'idle', frames: [64], speed: 8 }], tree: null })] };
+    cart.levels = [{ name: 'Kitchen', w: 40, h: 30, map: cart.map, placed: cart.entities.placed }];
+  }
+
+  window.BK_DEMOS = window.BK_DEMOS || [];
+  window.BK_DEMOS.push({ name: 'Cauldron Crew', code, buildGfx,
+    about: 'A potion kitchen for 1-8 players: fill the orders together in one kitchen, or race another team\'s kitchen.' });
+})();
+
+</script>
+<script>
 /* BitKit Studio: entity maker (sprites, animations, behavior trees). MIT License. */
 'use strict';
 window.BKEntities = (function () {
