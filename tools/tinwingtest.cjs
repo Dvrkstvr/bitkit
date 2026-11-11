@@ -53,75 +53,99 @@ const runtime = require('../studio/runtime.js');
   const last = tag => { const l = logs.filter(x => x.startsWith(tag)).pop(); return l ? l.split(/\s+/).slice(1) : []; };
   const run = (n, input) => { for (let f = 0; f < n; f++) if (frame(input ? input(f) : 0)) return false; return true; };
   // the probe prints the state every frame
-  const PROBE = 'local _pd = _draw\nfunction _draw() _pd() print("tw", MODE, LEVEL, S.scrap, S.built, S.coil, S.satchel, S.done, P and math.floor(P.z) or -1, P and string.format("%.2f", P.bat) or -1, GAME.state, cutscene_playing() and "cut" or "free") end\n';
-  const state = () => last('tw');
+  const PROBE = 'local _pd = _draw\nfunction _draw() _pd() print("tw", MODE, S.scrap, S.coil, S.satchel, S.done, P and math.floor(P.z) or -1, P and string.format("%.2f", P.bat) or -1, GAME.state, cutscene_playing() and "cut" or "free", #problems(), H and H.tab or 0, S.shape.nose, S.sel.m, S.sel.c) end\n';
+  const st = () => last('tw');
   const init = c => `local _i = _init\nfunction _init() _i() ${c} end\n`;
   const A = bit('a');
+  const tap = (...n) => { frame(bit(...n)); frame(0); };
+  const skipCut = () => { for (let f = 0; f < 2000 && st()[8] === 'cut'; f++) frame(f % 12 === 0 ? A : 0); run(2); };
+  const fly = (setup, at) => `local _u = _update\nfunction _update() _u() if gt == ${at || 30} then ${setup} end end\n`;
 
-  // 1. a new game opens on the intro cutscene in town; A skips through it
+  // 1. a new game opens in the hangar with the intro; the default plane is ready to fly
   load(PROBE);
-  run(2);
-  if (state()[0] !== 'town' || state()[10] !== 'cut') fail('new game should start in town with the intro: ' + state().join(' '));
+  run(3);
+  if (st()[0] !== 'hangar' || st()[8] !== 'cut') fail('a new game should start in the hangar with the intro: ' + st().join(' '));
   run(60); shot('intro');
-  run(900, f => (f % 20 === 0 ? A : 0));
-  if (state()[10] !== 'free') fail('the intro should end: ' + state().join(' '));
-  shot('town');
+  skipCut();
+  if (st()[8] !== 'free' || st()[9] !== '0') fail('after the intro the default plane should be ready: ' + st().join(' '));
+  shot('blueprint-side');
 
-  // 2. walk to the workbench and open it
-  load(PROBE + init('INTRO = false'));
-  run(2);
-  run(15, f => bit('left'));
-  run(4, f => (f === 1 ? A : 0));
-  if (state()[0] !== 'bench') fail('A next to the workbench should open it: ' + state().join(' '));
-  shot('bench');
-  // buy nothing (no scrap), then Fly!
-  run(4, f => (f === 1 ? bit('down') : 0)); run(4, f => (f === 1 ? bit('down') : 0)); run(4, f => (f === 1 ? bit('down') : 0)); run(4, f => (f === 1 ? bit('down') : 0));
-  run(4, f => (f === 1 ? A : 0));
-  run(4);
-  if (state()[0] !== 'fly' || state()[1] !== '2' || state()[3] !== 'true') fail('Fly! should launch the plane: ' + state().join(' '));
+  // 2. the blueprint: A grabs the nose, right moves it forward a quarter step per press, A drops it
+  tap('a'); for (let i = 0; i < 4; i++) tap('right'); tap('a');
+  if (+st()[11] !== 12) fail('moving the nose should lengthen the plane to 12: ' + st().join(' '));
+  tap('r'); shot('blueprint-top');
+  if (st()[10] !== '2') fail('R should switch to the top view: ' + st().join(' '));
+
+  // 3. parts: buy the Buzzer with scrap; it doesn't fit the stock nose, so FLY refuses until the body grows
+  load(PROBE + init('INTRO = false S.scrap = 6'));
+  run(3);
+  tap('r'); tap('r');                     // PARTS
+  tap('right'); tap('a');                 // Buzzer: bought and fitted
+  if (st()[1] !== '0' || st()[12] !== '2') fail('A should buy and fit the Buzzer: ' + st().join(' '));
+  if (st()[9] !== '1') fail('the Buzzer should not fit the stock nose: ' + st().join(' '));
+  shot('parts');
+  tap('r'); tap('a'); run(2);             // FLY: refused
+  if (st()[0] !== 'hangar') fail('FLY should refuse while a part does not fit: ' + st().join(' '));
+  shot('preflight');
+  // make the front of the body taller and wider on the blueprint (side view: front top up, front bottom down)
+  tap('r');                               // round to SIDE
+  tap('left');                            // nose -> the next corner back (front top)
+  tap('a'); for (let i = 0; i < 4; i++) tap('up'); tap('a');
+  tap('down');                            // front bottom
+  tap('a'); for (let i = 0; i < 4; i++) tap('down'); tap('a');
+  tap('r');                               // TOP: front width
+  tap('a'); for (let i = 0; i < 4; i++) tap('right'); tap('a');
+  shot('reshaped');
+  if (st()[9] !== '0') fail('a bigger front should fit the Buzzer: ' + st().join(' ') + ' ' + logs.filter(l => l.startsWith('ERR')).join(' '));
+  tap('r'); tap('r'); tap('a'); run(3);   // FLY
+  if (st()[0] !== 'fly') fail('FLY should launch once everything fits: ' + st().join(' '));
   run(30); shot('launch');
-  // 3. full throttle climbing: the battery drains, the plane climbs
-  run(240, f => A | (f < 120 ? bit('up') : 0));
-  const s3 = state();
-  if (!(+s3[7] > 40) || !(+s3[8] < 0.9)) fail('flying with the motor should climb and use battery: ' + s3.join(' '));
-  shot('flight');
-  // 4. let go: the plane glides down without using battery
-  run(40);
-  const bat = +state()[8];
-  run(120);
-  if (+state()[8] !== bat) fail('gliding should not use battery: ' + state().join(' '));
 
-  // 5. pickups: put the plane at the Belltower top and the coil is collected
-  const go = 'level(SKY)';
-  load(PROBE + init('INTRO = false S.built = true') + `local _u = _update\nfunction _update() _u() if gt == 2 then ${go} end if gt == 8 then local c = ents_get("coil") local x, y = ground(c) P.x, P.y, P.z, P.launch = x - 30, y, pick_z(c) + 9, 0 P.h = 0 end end\n`);
-  run(40, f => A);
-  if (state()[4] !== 'true') fail('flying through the Twin Cell should pick it up: ' + state().join(' '));
+  // 4. full throttle climbing uses battery; gliding doesn't
+  run(240, f => A | (f < 120 ? bit('up') : 0));
+  if (!(+st()[5] > 40) || !(+st()[6] < 0.95)) fail('flying with the motor should climb and use battery: ' + st().join(' '));
+  run(30, f => A | bit('right'));
+  shot('flight');
+  run(40);
+  const bat = +st()[6];
+  run(120);
+  if (+st()[6] !== bat) fail('gliding should not use battery: ' + st().join(' '));
+
+  // 5. flying through the Twin Cell on the Belltower picks it up
+  load(PROBE + init('INTRO = false fly_start()') + fly('local c = ents_get("coil") local x, y = ground(c) P.x, P.y, P.z, P.launch, P.h = x - 30, y, pick_z(c) + 9, 0, 0'));
+  run(45, () => A);
+  if (st()[2] !== 'true') fail('flying through the Twin Cell should pick it up: ' + st().join(' '));
   shot('coil');
-  // 6. the pad lands you in town; first time with the coil Tobin comes over
-  load(PROBE + init('INTRO = false S.built = true') + `local _u = _update\nfunction _update() _u() if gt == 2 then level(SKY) end if gt == 8 then P.launch = 0 P.armed = true S.coil = true P.x, P.y, P.z = PAD.x - 20, PAD.y, 12 P.h = 0 end end\n`);
-  run(20);
-  if (state()[0] !== 'town' || state()[10] !== 'cut') fail('landing on the pad should go back to town and play the cutscene: ' + state().join(' '));
-  // quick resume: the landing saved a checkpoint, Continue on the title screen goes straight back to town with the coil
+  // 6. landing on the pad goes back to the hangar, and Tobin talks about the Twin Cell
+  load(PROBE + init('INTRO = false fly_start()') + fly('P.launch = 0 P.armed = true S.coil = true S.own.c2 = true P.x, P.y, P.z, P.h = PAD.x - 20, PAD.y, 12, 0'));
+  run(40);
+  if (st()[0] !== 'hangar' || st()[8] !== 'cut') fail('landing should return to the hangar with a cutscene: ' + st().join(' '));
+  skipCut();
+  // the Twin Cell is too wide for the stock body
+  tap('r'); tap('r'); tap('down'); tap('right'); tap('a');
+  if (st()[13] !== '2' || st()[9] !== '1') fail('the Twin Cell should be fitted but too wide for the stock body: ' + st().join(' '));
+  // quick resume: Continue goes straight back to the hangar with the Twin Cell
   run(5);
   load(PROBE, 0, true); run(3);
   frame(A); run(3);
-  if (state()[9] !== 'play' || state()[0] !== 'town' || state()[4] !== 'true') fail('Continue should carry on in town with the Twin Cell: ' + state().join(' '));
-  // 7. battery flat over water: the plane splashes down and Tobin brings you home
-  load(PROBE + init('INTRO = false S.built = true') + `local _u = _update\nfunction _update() _u() if gt == 2 then level(SKY) end if gt == 8 then P.launch = 0 P.bat = 0 P.x, P.y, P.z = 600, 400, 20 end end\n`);
+  if (st()[7] !== 'play' || st()[0] !== 'hangar' || st()[2] !== 'true' || st()[13] !== '2') fail('Continue should carry on in the hangar with the Twin Cell: ' + st().join(' '));
+
+  // 7. a flat battery over the sea: splash, and Tobin brings the plane back to the hangar
+  load(PROBE + init('INTRO = false fly_start()') + fly('P.launch = 0 P.bat = 0 P.x, P.y, P.z = 600, 400, 20'));
   run(400);
-  if (state()[0] !== 'town' || state()[10] !== 'cut') fail('a flat battery should end in the water and back in town: ' + state().join(' '));
+  if (st()[0] !== 'hangar' || st()[8] !== 'cut') fail('a flat battery should end in the water and back in the hangar: ' + st().join(' '));
+
   // 8. the satchel brought home wins the game
-  load(PROBE + init('INTRO = false S.built = true') + `local _u = _update\nfunction _update() _u() if gt == 2 then level(SKY) end if gt == 8 then P.launch = 0 local c = ents_get("satchel") local x, y = ground(c) P.x, P.y, P.z, P.h = x - 30, y, pick_z(c) + 9, 0 end if gt == 30 then P.armed = true P.x, P.y, P.z = PAD.x - 20, PAD.y, 12 end end\n`);
-  run(40, f => A);
-  shot('satchel-home');
-  if (state()[6] !== 'true' || state()[5] !== 'true') fail('bringing the satchel home should finish the story: ' + state().join(' '));
-  for (let f = 0; f < 1500 && state()[10] === 'cut'; f++) frame(f % 20 === 0 ? A : 0);
-  run(5);
-  if (state()[9] !== 'won') fail('the goal complete screen should show: ' + state().join(' '));
+  load(PROBE + init('INTRO = false fly_start()') + fly('P.launch = 0 local c = ents_get("satchel") local x, y = ground(c) P.x, P.y, P.z, P.h = x - 30, y, pick_z(c) + 9, 0') +
+    fly('P.armed = true P.x, P.y, P.z, P.h = PAD.x - 20, PAD.y, 12, 0', 60));
+  run(70, () => A);
+  if (st()[4] !== 'true' || st()[3] !== 'true') fail('bringing the satchel home should finish the story: ' + st().join(' '));
+  skipCut(); run(3);
+  if (st()[7] !== 'won') fail('the goal complete screen should show: ' + st().join(' '));
   shot('won');
-  // 9. the title screen draws over the town
+
+  // 9. the title screen
   load(PROBE, 0); run(5); shot('title');
-  if (state()[9] !== 'title') fail('should open on the title screen: ' + state().join(' '));
-  load(PROBE + init('INTRO = false')); run(5); shot('town');
+  if (st()[7] !== 'title') fail('should open on the title screen: ' + st().join(' '));
   if (!process.exitCode) console.log('tinwing ok');
 })();

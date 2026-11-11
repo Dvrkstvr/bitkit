@@ -155,15 +155,14 @@ A tug-of-war crossbow duel. Wren (orange) fights east out of the Sea Gate, Rook 
 ### Tinwing (2.5D)
 
 <img src="docs/media/tinwing.png" width="480" alt="Tinwing: an orange RC plane flying past the Drowned Belltower over a flooded sea">
+<img src="docs/media/tinwing-hangar.png" width="480" alt="Tinwing: the hangar blueprint, where you drag the corners of the plane so the motor and battery fit">
 
-A story game drawn in 2.5D like Kart Lab. Perch is a town on stilts, on a planet that is nearly all sea: letters go by pigeon and people go by boat. You play Pip, a teenager who builds radio-controlled planes.
+A story game drawn in 2.5D like Kart Lab. Perch is a town on stilts, on a planet that is nearly all sea: letters go by pigeon and people go by boat. You play Pip, who builds radio-controlled planes. You're either in the hangar building, or in the air.
 
-- **Town:** walk the boardwalks in a tilted diorama view (`floor()` plus scaled sprites). Talk to Mags at the pigeon post and Tobin the ferryman with **A**, and use your workbench by the shed.
-- **Workbench:** build the plane from wings (Kite, Swift, Albatross), a motor (Hummer, Buzzer), a battery and a paint job. The plane is a little 3D model drawn from triangles, so you see it turn on the stand. Scrap from crates buys new parts.
-- **Flying:** a chase camera over the sea and the islands (`floorh()`). Left and right turn, up and down climb and dive (swap them in Settings). Hold **A** or squeeze **R** to run the motor; let go and you glide, which costs no battery. Warm air rings give a Tailwind (an effect on the Entities tab). Fly low over the yellow pad at Perch to land. If the battery goes flat you splash down and Tobin fishes you out.
-- **The story so far:** a squall knocked the mail satchel out of the sky past the Drowned Belltower. Your first battery can't reach it, but there's a Twin Cell on top of the Belltower. Fit it and fly out to the reef.
-- **Goal:** find the mail satchel and fly it home to Perch. Continue puts you back in town with everything you found.
-- Both maps are levels (Perch and The Shallows), and every house, crate, ring and person is an entity you can move on the Map tab. The story is on the Cutscenes tab.
+- **Build the plane yourself.** The hangar shows the plane as a blueprint, from the side and from above. Pick a corner with the D-pad, grab it with **A**, move it, and drop it with **A**. The motor and battery are boxes that have to fit inside the body: a bigger motor needs a fatter nose, and the Twin Cell needs a wider body. You also shape the wings, which work out how the plane flies: more wing glides further, a short span turns quicker, and a bigger motor is faster but uses more battery. **L / R** (or **X**) switch between the Side, Top, Parts and Fly pages. Parts shows your inventory of motors, batteries and paints, and scrap from crates buys new ones.
+- **Fly.** A chase camera follows you over the sea and the islands (`floorh()`). The plane is the 3D model built from your blueprint and drawn with triangles. Left and right bank, and up and down climb and dive (swap these in Settings). The controls ease in and out on springs, the camera swings round a little late, and there are wingtip trails and speed lines. Hold **A** or squeeze **R** for the motor. Let go and you glide, which costs no battery. Warm air rings give a Tailwind, which is an effect on the Entities tab. To land, fly low over the yellow pad at Perch. If the battery goes flat you splash down, and Tobin fishes you out.
+- **The story:** a squall knocked the mail satchel out of the sky past the Drowned Belltower. Your first battery can't get you there and back, but there's a Twin Cell on top of the Belltower. Widen the body to fit it, then fly out to the reef.
+- **Goal:** find the mail satchel and fly it home to Perch. Continue takes you back to the hangar with your plane and everything you found.
 
 ## 🏎️ The demo: Kart Lab (2.5D)
 
