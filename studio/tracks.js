@@ -1,13 +1,16 @@
 /* Track editor: race tracks drawn as a smooth loop (a spline) over a level's map.
    A level becomes a track when it has level.track = {pts, road, kerb, laps, items}:
      pts    control points [[x, y], ...] in world pixels (the map is 2048 x 1024). The loop runs through
-            them in order and closes back to the first one, which is the start line.
+            them in order and closes back to the first one, which is the start line. [x, y, road, kerb]
+            gives a point its own widths; the road blends smoothly between points.
      road   half the width of the road, kerb: width of the kerb on each side (pixels)
      laps   laps per race
-     items  [{k, t, o}]: k is boost, crate (a row of 3), hill, bump or dip; t is how far round the lap
+     items  [{k, t, o}]: k is boost, crate (a row of 3), hill, bump, dip or ramp; t is how far round the lap
             (0..1 from the start line), o the offset to the right of the centre line (pixels).
+            Hills, bumps, dips and ramps may also have h (height), r (size: radius, or a ramp's length),
+            c (shape: a preset name or 5 heights from the top out to the edge) and, for a ramp, w (half width).
    Elevation is painted with the height brush: level.height is a grid of 129 x 65 heights (0..255, one
-   every 16 pixels, flat ground is 40); hill, bump and dip items add smooth bumps on top of it.
+   every 16 pixels, flat ground is 40); hill, bump, dip and ramp items are added on top of it.
    The road is painted onto the map from "segment" tiles: road, kerb A/B, grass, start line and boost pad.
    You paint those few tiles and the 162 edge tiles (road meeting kerb meeting grass at any angle) are
    built from them. The game reads LEVELS[n].track and builds the same road when a race starts.
@@ -30,14 +33,31 @@ window.BKTracks = (function () {
     { tile: TILE.BOOST, name: 'Boost pad', about: 'Painted where you put a boost pad.' },
   ];
   const HG_W = 129, HG_H = 65, HG_CELL = 16, HG_FLAT = 40;   // height grid
-  const ITEM_HILLS = { hill: [36, 180], bump: [14, 44], dip: [-26, 160] };   // same as the game: height, radius
+  // hills, bumps, dips and ramps (same as the game): default height, size (radius, or a ramp's length), shape
+  const ITEM_HILLS = { hill: [36, 360, 'round'], bump: [14, 88, 'round'], dip: [-26, 320, 'round'], ramp: [22, 72, 'straight'] };
+  const RAMP_W = 24;
+  // a shape is 5 heights (0..1) from the top (the middle, or a ramp's lip) out to the edge
+  const SHAPES = { round: [1, 0.78, 0.37, 0.1, 0], dome: [1, 0.95, 0.75, 0.4, 0], cone: [1, 0.75, 0.5, 0.25, 0],
+    mesa: [1, 1, 0.95, 0.4, 0], spike: [1, 0.35, 0.12, 0.03, 0], straight: [1, 0.75, 0.5, 0.25, 0], kicker: [1, 0.55, 0.25, 0.07, 0] };
+  const SHAPE_NAMES = { round: 'Round', dome: 'Dome', cone: 'Cone', mesa: 'Flat top', spike: 'Spike', straight: 'Straight', kicker: 'Kicker' };
   const ITEM_KINDS = {
     boost: { name: 'Boost pad', color: '#ffd23f', side: true },
     crate: { name: 'Item crates', color: '#c98a4b', side: true },
-    hill: { name: 'Hill', color: '#8ad35a', r: 180 },
-    bump: { name: 'Bump (jump)', color: '#e0e070', r: 44 },
-    dip: { name: 'Dip', color: '#3a86d0', r: 160 },
+    hill: { name: 'Hill', color: '#8ad35a' },
+    bump: { name: 'Bump (jump)', color: '#e0e070' },
+    dip: { name: 'Dip', color: '#3a86d0' },
+    ramp: { name: 'Ramp (jump)', color: '#ff9f43', side: true },
   };
+  // smooth curve through a shape's 5 heights, u from 0 (top) to 1 (edge)
+  function shapeAt(c, u) {
+    if (u >= 1) return c[4];
+    const f = u * 4, i = Math.floor(f), t = f - i;
+    const p0 = c[Math.max(i - 1, 0)], p1 = c[i], p2 = c[i + 1], p3 = c[Math.min(i + 2, 4)];
+    return 0.5 * (2 * p1 + (p2 - p0) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t + (3 * p1 - p0 - 3 * p2 + p3) * t * t * t);
+  }
+  const shapeOf = it => (Array.isArray(it.c) && it.c.length === 5 ? it.c : SHAPES[it.c || ITEM_HILLS[it.k][2]] || SHAPES.round);
+  const hillSize = it => Math.max(it.r || ITEM_HILLS[it.k][1], 8);
+  const hillHeight = it => (it.h === undefined ? ITEM_HILLS[it.k][0] : it.h);
 
   // ------------------------------------------------------------ geometry
   // Catmull-Rom through the closed loop of points, 'sub' samples per segment (the game uses 8)
@@ -80,6 +100,34 @@ window.BKTracks = (function () {
     return { s: bs, d: Math.sqrt(best), o: bo, seg: Math.floor(bi / sp.sub) };
   }
   const itemPos = (sp, it) => { const p = at(sp, it.t * sp.len); return { x: p.x + p.nx * it.o, y: p.y + p.ny * it.o }; };
+  // a hill piece placed on the curve, and what it adds to the ground at (x, y)
+  function hillOf(sp, it) {
+    const p = at(sp, it.t * sp.len);
+    return { x: p.x + p.nx * it.o, y: p.y + p.ny * it.o, h: hillHeight(it), r: hillSize(it), c: shapeOf(it),
+      ramp: it.k === 'ramp', dx: p.dx, dy: p.dy, nx: p.nx, ny: p.ny, w: it.w || RAMP_W };
+  }
+  function hillH(hl, x, y) {
+    const ex = x - hl.x, ey = y - hl.y;
+    if (hl.ramp) {
+      const a = ex * hl.dx + ey * hl.dy, c = Math.abs(ex * hl.nx + ey * hl.ny);
+      if (a < -hl.r || a > 8 || c > hl.w + 12) return 0;
+      const side = c <= hl.w ? 1 : 1 - (c - hl.w) / 12;
+      const v = a <= 0 ? shapeAt(hl.c, -a / hl.r) : hl.c[0] * (1 - a / 8);
+      return hl.h * v * side * side * (3 - 2 * side);
+    }
+    const d2 = (ex * ex + ey * ey) / (hl.r * hl.r);
+    return d2 >= 1 ? 0 : hl.h * shapeAt(hl.c, Math.sqrt(d2));
+  }
+  // road and kerb width at every sample of the curve: each point can set its own ([x, y, road, kerb])
+  function widths(tk, sub) {
+    const P = tk.pts, n = P.length, R0 = tk.road || 44, K0 = tk.kerb || 7, RW = [], KW = [];
+    for (let i = 0; i < n; i++) {
+      const a = P[i], b = P[(i + 1) % n];
+      const ra = a[2] ?? R0, rb = b[2] ?? R0, ka = a[3] ?? K0, kb = b[3] ?? K0;
+      for (let j = 0; j < sub; j++) { let u = j / sub; u = u * u * (3 - 2 * u); RW.push(ra + (rb - ra) * u); KW.push(ka + (kb - ka) * u); }
+    }
+    return { RW, KW };
+  }
 
   // ------------------------------------------------------------ tiles
   // the edge tiles: the classes of a tile's 4 corners (0 road, 1 kerb, 2 grass) are blended across it
@@ -111,8 +159,7 @@ window.BKTracks = (function () {
   function paint(map, tk) {
     for (let ty = 0; ty < MAPH; ty++) for (let tx = 0; tx < MAPW; tx++) if (map[ty * MAPW + tx] <= TILE.EDGE_END) map[ty * MAPW + tx] = grassTile(tx, ty);
     if (!tk || !tk.pts || tk.pts.length < 3) return;
-    const ROAD = tk.road || 44, KERB = tk.kerb || 7;
-    const sp = spline(tk.pts, 8), RAW = sp.pts, RAWS = sp.S, LEN = sp.len, n = RAW.length;
+    const sp = spline(tk.pts, 8), RAW = sp.pts, RAWS = sp.S, LEN = sp.len, n = RAW.length, { RW, KW } = widths(tk, 8);
     const CS = 64, grid = new Map();
     for (let i = 0; i < n; i++) {
       const a = RAW[i], b = RAW[(i + 1) % n];
@@ -123,23 +170,24 @@ window.BKTracks = (function () {
     }
     const near = (x, y) => {
       const list = grid.get(Math.floor(x / CS) * 1000 + Math.floor(y / CS));
-      if (!list) return [1e9, 0];
-      let best = 1e18, s = 0;
+      if (!list) return [1e9, 0, 44, 7];
+      let best = 1e18, s = 0, rw = 44, kw = 7;
       for (const i of list) {
         const a = RAW[i], b = RAW[(i + 1) % n], dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy;
         let f = l2 > 0 ? ((x - a[0]) * dx + (y - a[1]) * dy) / l2 : 0; f = f < 0 ? 0 : f > 1 ? 1 : f;
         const ex = x - (a[0] + dx * f), ey = y - (a[1] + dy * f), d = ex * ex + ey * ey;
-        if (d < best) { best = d; s = RAWS[i] + f * (RAWS[i + 1] - RAWS[i]); }
+        if (d < best) { const j = (i + 1) % n; best = d; s = RAWS[i] + f * (RAWS[i + 1] - RAWS[i]); rw = RW[i] + (RW[j] - RW[i]) * f; kw = KW[i] + (KW[j] - KW[i]) * f; }
       }
-      return [Math.sqrt(best), s];
+      return [Math.sqrt(best), s, rw, kw];
     };
-    const CL = new Map(), CSV = new Map(), M = ROAD + KERB + 4;
+    let mw = 0; for (let i = 0; i < n; i++) mw = Math.max(mw, RW[i] + KW[i]);
+    const CL = new Map(), CSV = new Map(), M = mw + 4;
     for (let i = 0; i < n; i++) {
       const a = RAW[i], b = RAW[(i + 1) % n];
       for (let cy = Math.max(0, Math.floor((Math.min(a[1], b[1]) - M) / 8)); cy <= Math.min(MAPH, Math.floor((Math.max(a[1], b[1]) + M) / 8) + 1); cy++)
         for (let cx = Math.max(0, Math.floor((Math.min(a[0], b[0]) - M) / 8)); cx <= Math.min(MAPW, Math.floor((Math.max(a[0], b[0]) + M) / 8) + 1); cx++) {
           const k = cy * 257 + cx;
-          if (!CL.has(k)) { const [d, s] = near(cx * 8, cy * 8); CL.set(k, d < ROAD ? 0 : d < ROAD + KERB ? 1 : 2); CSV.set(k, s); }
+          if (!CL.has(k)) { const [d, s, rw, kw] = near(cx * 8, cy * 8); CL.set(k, d < rw ? 0 : d < rw + kw ? 1 : 2); CSV.set(k, s); }
         }
     }
     const done = new Set();
@@ -170,7 +218,7 @@ window.BKTracks = (function () {
   // ground height at a world point: the painted grid (blended) plus the hill items
   function heightFn(lv) {
     const g = lv.height, tk = lv.track, sp = tk && tk.pts && tk.pts.length >= 3 ? spline(tk.pts, 8) : null;
-    const hills = sp ? (tk.items || []).filter(it => ITEM_HILLS[it.k]).map(it => { const p = itemPos(sp, it); return [p.x, p.y, ITEM_HILLS[it.k][0], ITEM_HILLS[it.k][1]]; }) : [];
+    const hills = sp ? (tk.items || []).filter(it => ITEM_HILLS[it.k]).map(it => hillOf(sp, it)) : [];
     return (x, y) => {
       let h = HG_FLAT;
       if (g) {
@@ -178,7 +226,7 @@ window.BKTracks = (function () {
         const ix = Math.floor(fx), iy = Math.floor(fy), u = fx - ix, v = fy - iy, i = iy * HG_W + ix;
         h = (g[i] * (1 - u) + g[i + 1] * u) * (1 - v) + (g[i + HG_W] * (1 - u) + g[i + HG_W + 1] * u) * v;
       }
-      for (const hl of hills) { const d2 = ((x - hl[0]) ** 2 + (y - hl[1]) ** 2) / (hl[3] * hl[3]); if (d2 < 9) h += hl[2] * Math.exp(-d2); }
+      for (const hl of hills) h += hillH(hl, x, y);
       return h;
     };
   }
@@ -324,7 +372,16 @@ window.BKTracks = (function () {
       (t.items || []).forEach((it, i) => {
         const K = ITEM_KINDS[it.k] || ITEM_KINDS.boost, p = itemPos(sp, it), [x, y] = toScr(p.x, p.y);
         const selected = st.sel && st.sel.item === i;
-        if (K.r) { g.strokeStyle = K.color; g.globalAlpha = 0.6; g.beginPath(); g.arc(x, y, K.r * st.s, 0, Math.PI * 2); g.stroke(); g.globalAlpha = 1; }
+        if (ITEM_HILLS[it.k]) {
+          const hl = hillOf(sp, it);
+          g.strokeStyle = K.color; g.globalAlpha = 0.6; g.beginPath();
+          if (hl.ramp) {   // the ramp's footprint: from its foot up to the lip
+            const c = [[-hl.r, -hl.w], [0, -hl.w], [0, hl.w], [-hl.r, hl.w]].map(([a, o]) => toScr(hl.x + hl.dx * a + hl.nx * o, hl.y + hl.dy * a + hl.ny * o));
+            c.forEach(([cx, cy], j) => (j ? g.lineTo(cx, cy) : g.moveTo(cx, cy))); g.closePath(); g.stroke();
+            g.lineWidth = 3; g.beginPath(); g.moveTo(c[1][0], c[1][1]); g.lineTo(c[2][0], c[2][1]);
+          } else g.arc(x, y, hl.r * st.s, 0, Math.PI * 2);
+          g.stroke(); g.globalAlpha = 1;
+        }
         g.fillStyle = K.color; g.strokeStyle = selected ? '#fff' : '#000'; g.lineWidth = selected ? 2 : 1;
         if (it.k === 'crate') {
           const q = at(sp, it.t * sp.len);
@@ -413,7 +470,7 @@ window.BKTracks = (function () {
       if (d.height) { brush(wx, wy); draw(); return; }
       if (d.pan) { st.ox = d.ox - (sx - d.sx) / st.s; st.oy = d.oy - (sy - d.sy) / st.s; draw(); return; }
       if (d.pt !== undefined) {
-        t.pts[d.pt] = [Math.round(clampW(wx, 8, WW - 8)), Math.round(clampW(wy, 8, WH - 8))];
+        t.pts[d.pt] = [Math.round(clampW(wx, 8, WW - 8)), Math.round(clampW(wy, 8, WH - 8))].concat(t.pts[d.pt].slice(2));
         d.moved = true; st.sp = null; st.hDirty = true; repaint(); draw();
       } else if (d.item !== undefined) {
         const it = t.items[d.item], n = itemFrom(it.k, wx, wy);
@@ -468,8 +525,23 @@ window.BKTracks = (function () {
       if (!t || !st.sel) { box.innerHTML = '<span class="dim">Click a point or item to select it.</span>'; return; }
       if (st.sel.pt !== undefined) {
         const i = st.sel.pt;
-        box.innerHTML = `<b>${i === 0 ? 'Start point' : 'Point ' + i}</b> <span class="dim">(${t.pts[i][0]}, ${t.pts[i][1]})</span><br>` +
+        const P = t.pts[i], own = P.length > 2;
+        box.innerHTML = `<b>${i === 0 ? 'Start point' : 'Point ' + i}</b> <span class="dim">(${P[0]}, ${P[1]})</span><br>` +
+          '<div class="prop-grid">' +
+          `<span>Road width</span><span><input id="trkPtRoad" type="range" min="12" max="96" value="${P[2] ?? (t.road || 44)}"> <b id="trkPtRoadV">${(P[2] ?? (t.road || 44)) * 2}</b> px</span>` +
+          `<span>Kerb width</span><span><input id="trkPtKerb" type="range" min="0" max="20" value="${P[3] ?? (t.kerb || 7)}"> <b id="trkPtKerbV">${P[3] ?? (t.kerb || 7)}</b> px</span></div>` +
+          `<span class="dim">${own ? 'This point has its own width; the road blends to the next point.' : 'Uses the track width. Move a slider to give this point its own.'}</span><br>` +
+          (own ? '<button id="trkPtReset" class="tiny">Use track width</button> ' : '') +
           (i ? '<button id="trkMakeStart" class="tiny">Start here</button> ' : '') + '<button id="trkDelPt" class="tiny danger">Delete</button>';
+        const setW = () => {
+          const r = +$('trkPtRoad').value, k = +$('trkPtKerb').value;
+          t.pts[i] = [t.pts[i][0], t.pts[i][1], r, k];
+          $('trkPtRoadV').textContent = r * 2; $('trkPtKerbV').textContent = k;
+          st.sp = null; ctx.changed(); repaint();
+        };
+        $('trkPtRoad').oninput = setW; $('trkPtKerb').oninput = setW;
+        $('trkPtRoad').onchange = $('trkPtKerb').onchange = () => { if (!own) updateSel(); };
+        if (own) $('trkPtReset').onclick = () => { t.pts[i] = t.pts[i].slice(0, 2); edited(); updateSel(); };
         if (i) $('trkMakeStart').onclick = () => {
           remapItems(() => { t.pts = t.pts.slice(i).concat(t.pts.slice(0, i)); L().track.pts = t.pts; });
           st.sel = { pt: 0 }; edited(); updateSel();
@@ -479,9 +551,62 @@ window.BKTracks = (function () {
         const it = t.items[st.sel.item]; if (!it) { st.sel = null; updateSel(); return; }
         box.innerHTML = `<b>${escapeHtml(ITEM_KINDS[it.k].name)}</b> <span class="dim">${Math.round(it.t * 100)}% round the lap, ${it.o} px ${it.o < 0 ? 'left' : 'right'}</span><br>` +
           `<select id="trkItemKind">${Object.keys(ITEM_KINDS).map(k => `<option value="${k}"${k === it.k ? ' selected' : ''}>${ITEM_KINDS[k].name}</option>`).join('')}</select> <button id="trkDelItem" class="tiny danger">Delete</button>`;
-        $('trkItemKind').onchange = e => { it.k = e.target.value; const p = itemPos(spl(), it), n = itemFrom(it.k, p.x, p.y); it.o = n.o; edited(); updateSel(); };
+        $('trkItemKind').onchange = e => {
+          it.k = e.target.value; delete it.h; delete it.r; delete it.c; delete it.w;
+          const p = itemPos(spl(), it), n = itemFrom(it.k, p.x, p.y); it.o = n.o; edited(); updateSel();
+        };
         $('trkDelItem').onclick = () => { t.items.splice(st.sel.item, 1); st.sel = null; edited(); updateSel(); };
+        if (ITEM_HILLS[it.k]) hillPanel(box, it);
       }
+    }
+    // size, height and shape of a hill, bump, dip or ramp
+    function hillPanel(box, it) {
+      const ramp = it.k === 'ramp', c = shapeOf(it);
+      const preset = Array.isArray(it.c) ? '' : (it.c || ITEM_HILLS[it.k][2]);
+      const div = document.createElement('div');
+      div.innerHTML = '<div class="prop-grid">' +
+        `<span>Height</span><span><input id="trkHH" type="range" min="-60" max="80" value="${hillHeight(it)}"> <b id="trkHHV">${hillHeight(it)}</b></span>` +
+        `<span>${ramp ? 'Length' : 'Size'}</span><span><input id="trkHR" type="range" min="16" max="${ramp ? 240 : 640}" step="4" value="${hillSize(it)}"> <b id="trkHRV">${hillSize(it)}</b> px</span>` +
+        (ramp ? `<span>Width</span><span><input id="trkHW" type="range" min="8" max="80" value="${it.w || RAMP_W}"> <b id="trkHWV">${(it.w || RAMP_W) * 2}</b> px</span>` : '') +
+        `<span>Shape</span><span><select id="trkHS">${Object.keys(SHAPES).map(k => `<option value="${k}"${k === preset ? ' selected' : ''}>${SHAPE_NAMES[k]}</option>`).join('')}` +
+        `${preset ? '' : '<option value="" selected>Custom</option>'}</select></span></div>` +
+        `<canvas id="trkHC" class="trk-curve" width="264" height="84" title="Drag the dots to change the shape: ${ramp ? 'the lip is on the left, the foot of the ramp on the right' : 'the top is on the left, the edge on the right'}"></canvas>`;
+      box.appendChild(div);
+      const cv = $('trkHC'), cg = cv.getContext('2d'), PAD = 10;
+      const px = j => PAD + j * (cv.width - 2 * PAD) / 4, py = v => cv.height - PAD - v * (cv.height - 2 * PAD);
+      function drawCurve() {
+        const cc = shapeOf(it);
+        cg.clearRect(0, 0, cv.width, cv.height);
+        cg.strokeStyle = 'rgba(255,255,255,0.15)'; cg.beginPath(); cg.moveTo(PAD, py(0)); cg.lineTo(cv.width - PAD, py(0)); cg.stroke();
+        cg.fillStyle = ITEM_KINDS[it.k].color + '55'; cg.strokeStyle = ITEM_KINDS[it.k].color; cg.lineWidth = 2; cg.beginPath();
+        for (let x = PAD; x <= cv.width - PAD; x++) { const v = shapeAt(cc, (x - PAD) / (cv.width - 2 * PAD)); if (x === PAD) cg.moveTo(x, py(v)); else cg.lineTo(x, py(v)); }
+        cg.stroke(); cg.lineTo(cv.width - PAD, py(0)); cg.lineTo(PAD, py(0)); cg.fill();
+        if (ramp) { cg.beginPath(); cg.moveTo(PAD, py(cc[0])); cg.lineTo(PAD - 6, py(0)); cg.stroke(); }
+        cc.forEach((v, j) => { cg.fillStyle = '#fff'; cg.beginPath(); cg.arc(px(j), py(v), 4, 0, Math.PI * 2); cg.fill(); });
+      }
+      drawCurve();
+      const changed = () => { st.hDirty = true; ctx.changed(); draw(); };
+      $('trkHH').oninput = e => { it.h = +e.target.value; $('trkHHV').textContent = it.h; changed(); };
+      $('trkHR').oninput = e => { it.r = +e.target.value; $('trkHRV').textContent = it.r; changed(); };
+      if (ramp) $('trkHW').oninput = e => { it.w = +e.target.value; $('trkHWV').textContent = it.w * 2; changed(); };
+      $('trkHS').onchange = e => { if (e.target.value) { it.c = e.target.value; changed(); updateSel(); } };
+      let dragJ = -1;
+      const cpos = e => { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) * cv.width / r.width, (e.clientY - r.top) * cv.height / r.height]; };
+      cv.onmousedown = e => {
+        const [x, y] = cpos(e), cc = shapeOf(it);
+        dragJ = -1; let bd = 14 * 14;
+        cc.forEach((v, j) => { const d = (px(j) - x) ** 2 + (py(v) - y) ** 2; if (d < bd) { bd = d; dragJ = j; } });
+        if (dragJ < 0) dragJ = Math.round((x - PAD) / ((cv.width - 2 * PAD) / 4));
+        dragJ = clampW(dragJ, 0, 4); cv.onmousemove(e);
+      };
+      cv.onmousemove = e => {
+        if (dragJ < 0 || !(e.buttons & 1)) { dragJ = -1; return; }
+        const [, y] = cpos(e), cc = shapeOf(it).slice();
+        cc[dragJ] = Math.round(clampW((cv.height - PAD - y) / (cv.height - 2 * PAD), 0, 1) * 100) / 100;
+        it.c = cc; drawCurve(); changed();
+        const sel = $('trkHS'); if (sel.value) { sel.insertAdjacentHTML('beforeend', '<option value="" selected>Custom</option>'); }
+      };
+      cv.onmouseup = cv.onmouseleave = () => { dragJ = -1; };
     }
     function setTool(t) {
       st.tool = t;
@@ -633,5 +758,5 @@ window.BKTracks = (function () {
     return { render, refreshGfx() { st.bgDirty = true; if (ctx.isActive()) { drawParts(); drawSeg(); draw(); } } };
   }
 
-  return { init, spline, at, nearest, paint, genEdges, defaultTrack, uses, beforeRun, heightHex, heightFn, newHeights, HG_W, HG_H, HG_CELL, TILE, FLAG, FLAG_NAMES, PARTS, ITEM_KINDS };
+  return { init, spline, at, nearest, paint, genEdges, defaultTrack, uses, beforeRun, heightHex, heightFn, newHeights, HG_W, HG_H, HG_CELL, TILE, FLAG, FLAG_NAMES, PARTS, ITEM_KINDS, ITEM_HILLS, SHAPES, shapeAt };
 })();
