@@ -2190,6 +2190,7 @@ display()                                   -- off</pre><p class="dim">The Help 
       }
       saveKey = snap.meta.saveKey || null; playingLevel = snap.meta.level | 0;
       gfxDirtyRT = true; mapDirtyRT = false;
+      toMainMenu();                    // every Bit does this on the same frame, so they stay in step
       s.hold = true; running = true;
       log(`▶ carrying on with "${c.name}" on ${st.np} Bits: you are player ${slot}`, 'sys');
     } else {
@@ -2555,9 +2556,14 @@ display()                                   -- off</pre><p class="dim">The Help 
     if (g.studio) newRouteSegment(playingLevel);
     bit.hold = true;
     log(`▶ Bit: carrying on with "${c.name || g.name}" (X on the home screen starts it over)`, 'sys');
+    toMainMenu();
     running = true; acc = 0; last = performance.now();
     screen.focus();
     return true;
+  }
+  // a paused game carries on from its main menu, not in the middle of play (game shell: _bk_resumed, Continue goes back)
+  function toMainMenu() {
+    const p = RT.stringToNewUTF8('if _bk_resumed then _bk_resumed() end'); RT._bkw_eval(p); RT._free(p);
   }
   function bitRestart(n) {
     const g = bit.games[n - 1];

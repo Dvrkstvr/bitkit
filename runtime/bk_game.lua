@@ -234,10 +234,23 @@ do
     else play() end
   end
 
+  local RESUMED = nil                -- the state a paused game was left in, until Continue goes back to it
   local function continue_game()
     -- with a save file but no checkpoint (played, but never reached one) the game starts from its beginning
     if can_resume() and not DIRTY and CFG.continue then CFG.continue(not linked() and KIT.cp or nil) end
-    play()
+    local back = RESUMED
+    RESUMED = nil
+    if back == "screen" then DIRTY = true; set_state("screen") else play() end
+  end
+
+  -- The host calls this when it carries on with a paused game (picked again on the Bit's home screen):
+  -- the game opens on its main menu, not in the middle of the match. Continue goes back to where it was.
+  -- (A race keeps running: its clock is shared with the other Bits.)
+  function _bk_resumed()
+    if not CFG or R or on_title() then return end
+    RESUMED = ST == "screen" and "screen" or nil
+    START_DOWN, COMBO = false, false   -- Start+Select left the game: don't let it open the pause menu now
+    set_state("title")
   end
 
   -- Delete save: forget the checkpoint, the win and the cart's own save(), keep volume and settings

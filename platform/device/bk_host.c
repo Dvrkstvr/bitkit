@@ -77,6 +77,8 @@ static uint32_t my_net_id(int n);
 static void handle_requests(void);
 static void capture_after_frame(uint16_t mask);
 static void restart_game(int how);
+/* the game shell (runtime/bk_game.lua): a paused game opens on its main menu; Continue goes back to where it was */
+static const char RESUMED_LUA[] = "if _bk_resumed then _bk_resumed() end";
 
 /* ------------------------------------------------------------ memory */
 static void *mrealloc(void *p, size_t n) {
@@ -503,6 +505,7 @@ int bk_host_launch(int n) {
   if (p) {
     BK = p->m; bk_ctx_put(&p->ctx); memset(&p->ctx, 0, sizeof(p->ctx));
     p->paused = 0; p->hold = 1; cur = p; mode = MODE_GAME;
+    bk_lua_eval(RESUMED_LUA);          /* it carries on from its main menu (game shell), not mid-match */
     char m[100]; snprintf(m, sizeof(m), "carrying on with \"%s\"", E[n - 1].name); say(m, 0);
     return 0;
   }
@@ -848,6 +851,7 @@ static void enter(uint32_t from, uint32_t sid, int np, int race, const uint32_t 
     }
     BK = p->m; bk_ctx_put(&p->ctx); memset(&p->ctx, 0, sizeof(p->ctx));
     p->paused = 0; p->link_np = 0; cur = p; mode = MODE_GAME;
+    bk_lua_eval(RESUMED_LUA);          /* it carries on from its main menu (game shell), not mid-match */
     LK.hold = 1;                       /* the button that carried on is ignored until it is let go */
     snprintf(m, sizeof(m), "carrying on with \"%s\" on %d Bits: this Bit is player %d", E[n - 1].name, np, me);
     say(m, 0);
