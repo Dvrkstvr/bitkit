@@ -43,6 +43,8 @@ jobs:
       - name: Install Playwright
         run: |
           npm install --no-save --no-package-lock playwright@1.49.1
-          npx playwright install --with-deps chromium
+          # the system packages come from the Ubuntu mirrors, which are sometimes unreachable from the runner;
+          # the runner image already has Chrome and its libraries, so fall back to the browser alone
+          npx playwright install --with-deps chromium || npx playwright install chromium
       - name: Linked Bits (browser)
         run: node tools/linktest.cjs
