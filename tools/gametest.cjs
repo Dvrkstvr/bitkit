@@ -38,6 +38,16 @@ require('../studio/runtime.js')({ onLog: (m, e) => { if (e) errors.push(m); else
   // the probe prints the shell state every frame from the cart's _draw
   const PROBE = 'local _pd = _draw\nfunction _draw() if _pd then _pd() end print("gs", GAME.state, setting("volume"), PLAYER and math.floor(PLAYER.x) or -1, score or -1, LEVEL or -1) end';
   const st = () => { const l = logs.filter(x => x.startsWith('gs')).pop(); return l ? l.split(/\s+/).slice(1) : []; };
+  // the menu on screen (GAME.items), and moving the cursor to one of its items
+  const IP = '\nlocal _pd2 = _draw\nfunction _draw() if _pd2 then _pd2() end print("items|" .. table.concat(GAME.items or {}, "|")) end';
+  const items = () => { const l = logs.filter(x => x.startsWith('items|')).pop(); return l ? l.split('|').slice(1) : []; };
+  const pick = name => {
+    const i = items().indexOf(name);
+    if (i < 0) { fail(`"${name}" is not in the menu: ${items().join(', ')}`); return; }
+    for (let k = 0; k < i; k++) tap('down');
+    tap('a'); run(1);
+  };
+  const savedStr = () => M.HEAP32[sv] > 0 ? Buffer.from(M.HEAPU8.slice((sv + 2) << 2, ((sv + 2) << 2) + M.HEAP32[sv])).toString() : '';
 
   // 0. the rules (studio/rules.js, the studio's Rules button): every built-in demo meets all of them
   for (const d of window.BK_DEMOS) {
@@ -88,23 +98,43 @@ require('../studio/runtime.js')({ onLog: (m, e) => { if (e) errors.push(m); else
   const s3 = st();
   if (s3[0] !== 'play' || Math.abs(+s3[2] - 120) > 4 || s3[3] !== '3') fail('Continue should put the player at the checkpoint (x 120, 3 drops), got ' + s3.join(' '));
 
-  // 4. Quit to title, then New game asks the host to load the cart again (sys 5, mode 2)
-  tap('start'); run(1);
-  for (let i = 0; i < 5; i++) tap('down');          // Resume, Back to checkpoint, Level select, Settings, How to play, [Quit to title]
-  tap('a'); run(1);
-  if (st()[0] !== 'title') fail('Quit to title should show the title screen, got ' + st()[0]);
+  // 4. a save file: once played, the title has Continue and no New game; Delete save in Settings wipes it
+  load('Sprout Hop', PROBE + IP);
+  run(2);
+  if (items()[0] !== 'Continue' || items().includes('New game')) fail('with a save the title should show Continue and no New game: ' + items().join(', '));
+  pick('Settings');
+  if (st()[0] !== 'settings' || !items().includes('Delete save')) fail('Settings should offer Delete save when there is a save: ' + items().join(', '));
+  pick('Delete save');
+  if (st()[0] !== 'confirm') fail('Delete save should ask first, got ' + st()[0]);
+  tap('a'); run(1);                                 // Cancel is selected first
+  if (st()[0] !== 'settings') fail('Cancel should go back to Settings, got ' + st()[0]);
   sysReq = null;
-  tap('down'); tap('a'); run(1);                    // Continue, [New game] -> confirm
-  if (st()[0] !== 'confirm') fail('New game with progress should ask first, got ' + st()[0]);
-  tap('up'); tap('a');                              // [Start over], Cancel
-  if (!sysReq || sysReq[0] !== 5 || sysReq[1] !== 2) fail('New game after playing should ask the host to restart (5, 2), got ' + sysReq);
-  load('Sprout Hop', PROBE, 'GAME_BOOT = 2\n');
+  pick('Delete save'); tap('up'); tap('a'); run(1); // [Delete save], Cancel
+  if (st()[0] !== 'title') fail('after deleting the save the title screen should show, got ' + st()[0]);
+  if (/"cp"\]|"started"\]|"won"\]=true/.test(savedStr())) fail('Delete save should wipe the checkpoint and progress: ' + savedStr().slice(0, 160));
+  if (!/"vol"\]=7/.test(savedStr())) fail('Delete save should keep the volume: ' + savedStr().slice(0, 160));
+  load('Sprout Hop', PROBE + IP);
   run(2);
-  if (st()[0] !== 'play') fail('GAME_BOOT = 2 should go straight into play, got ' + st()[0]);
-  load('Sprout Hop', PROBE);
+  if (items()[0] !== 'New game' || items().includes('Continue')) fail('after Delete save the title should show New game again: ' + items().join(', '));
+  pick('Settings');
+  if (items().includes('Delete save')) fail('with no save Settings should not offer Delete save');
+  tap('b'); run(1);
+  pick('New game'); run(2);
+  if (st()[0] !== 'play' || st()[3] !== '0') fail('New game after deleting the save should start with no checkpoint: ' + st().join(' '));
+  // quitting to the title in the same session: Continue (no New game), and Delete save asks the host to reload the cart
+  tap('start'); run(5); tap('start'); run(1);       // Start skips the intro, then pauses
+  pick('Quit to title');
+  if (st()[0] !== 'title' || items().includes('New game')) fail('after playing, the title should not offer New game: ' + items().join(', '));
+  sysReq = null;
+  pick('Settings'); pick('Delete save'); tap('up'); tap('a'); run(1);
+  if (!sysReq || sysReq[0] !== 5 || sysReq[1] !== 1) fail('Delete save after playing should ask the host to reload to the title (5, 1), got ' + sysReq);
+  // a run started from an editor (GAME_BOOT = 3) doesn't make a save file
+  M.HEAP32[sv] = -1;
+  load('Sprout Hop', PROBE + IP, 'GAME_BOOT = 3\n');
+  run(5);
+  load('Sprout Hop', PROBE + IP);
   run(2);
-  tap('a'); run(2);
-  if (st()[0] !== 'play' || st()[3] !== '0') fail('after starting over there should be no checkpoint (New game first): ' + st().join(' '));
+  if (items()[0] !== 'New game') fail('a test run from the editor should not make a save file: ' + items().join(', '));
 
   // 5. reaching the goal shows the goal screen once the ending cutscene is over
   load('Sprout Hop', PROBE + '\nlocal _u = _update\nfunction _update() _u() if GAME.state == "play" and not w then w = true emit("win") end end', 'GAME_BOOT = 3\n');
@@ -112,18 +142,23 @@ require('../studio/runtime.js')({ onLog: (m, e) => { if (e) errors.push(m); else
   if (st()[0] !== 'won') fail('game_win() should show the goal screen, got ' + st()[0]);
   if (errors.length) { errors.forEach(e => fail('Sprout Hop: ' + e)); errors = []; }
 
-  // 6. Beacon Keeper keeps its own save: Continue when there is one, New game wipes it
+  // 6. Beacon Keeper keeps its own save: Continue when there is one, Delete save wipes it
   M.HEAP32[sv] = -1;
-  const BP = 'local _pd = _draw\nfunction _draw() if _pd then _pd() end print("gs", GAME.state, G.docked, G.coins) end';
+  const BP = 'local _pd = _draw\nfunction _draw() if _pd then _pd() end print("gs", GAME.state, G.docked, G.coins) end' + IP;
   load('Beacon Keeper', BP);
   run(2);
   if (st()[0] !== 'title') fail('Beacon Keeper should start on the title screen, got ' + st()[0]);
   tap('a'); run(400);                            // New game, then play a little (it saves every 300 frames)
-  load('Beacon Keeper', BP + '\nlocal _i = _init\nfunction _init() _i() if not once then once = true G.coins = 77 end end');
+  load('Beacon Keeper', BP);
   run(2);
-  tap('down'); tap('a'); run(1);                  // Continue, [New game] -> confirm
-  if (st()[0] !== 'confirm') fail('Beacon Keeper New game with a save should ask first, got ' + st()[0]);
-  tap('up'); tap('a'); run(2);
+  if (items()[0] !== 'Continue' || items().includes('New game')) fail('Beacon Keeper with a save should show Continue only: ' + items().join(', '));
+  sysReq = null;
+  pick('Settings'); pick('Delete save'); tap('up'); tap('a'); run(1);
+  if (!sysReq || sysReq[0] !== 5) fail('Beacon Keeper Delete save should reload the cart, got ' + sysReq);
+  load('Beacon Keeper', BP);
+  run(2);
+  if (items()[0] !== 'New game') fail('Beacon Keeper after Delete save should show New game: ' + items().join(', '));
+  tap('a'); run(2);
   if (st()[0] !== 'play' || st()[2] !== '0') fail('Beacon Keeper New game should start over with 0 coins, got ' + st().join(' '));
   if (errors.length) { errors.forEach(e => fail('Beacon Keeper: ' + e)); errors = []; }
 
@@ -144,5 +179,5 @@ require('../studio/runtime.js')({ onLog: (m, e) => { if (e) errors.push(m); else
   if (st()[0] !== 'play' || !['loading', 'count'].includes(st()[1])) fail('Kart Lab Continue should go straight to a race, got ' + st().join(' '));
   if (errors.length) { errors.forEach(e => fail('Kart Lab: ' + e)); errors = []; }
 
-  if (!process.exitCode) console.log('ok: game shell (title, pause, settings, checkpoints, Continue, goal) in every demo passed');
+  if (!process.exitCode) console.log('ok: game shell (title, pause, settings, checkpoints, Continue, save files, goal) in every demo passed');
 });

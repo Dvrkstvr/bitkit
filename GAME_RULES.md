@@ -4,7 +4,7 @@ Every BitKit game has the same five things, whether it ships with BitKit or come
 
 | # | Rule | In short |
 |---|---|---|
-| 1 | **Main menu** | A title screen with Continue, New game and Settings. |
+| 1 | **Main menu** | A title screen with New game (Continue once there is a save file) and Settings. |
 | 2 | **One playable level, start to end** | At least one level you can play from the start to a finish. |
 | 3 | **Quick resume** | Continue puts you straight back into play, or at your last checkpoint. |
 | 4 | **Pause menu with settings** | Start pauses. The pause menu has Resume, Settings (at least the volume) and Quit to title. |
@@ -57,9 +57,8 @@ end
 
 The game opens on a title screen, not in the middle of the action. It shows the game's name and goal and offers:
 
-- **Continue**, first and already selected, when there is something to continue.
-- **New game**. If there is progress, it asks before throwing it away.
-- **Settings**.
+- **New game** the very first time, or **Continue** once the game has a save file (see below). Never both.
+- **Settings**, with **Delete save** when there is a save file.
 - **How to play**, if you pass `help`.
 
 `game{title = "...", goal = "..."}` draws all of it over your game's first frame, so the title screen looks like your game with no extra art.
@@ -75,9 +74,17 @@ When the player reaches the goal, call `game_win("what they did")`. It shows the
 Picking the game up again takes one button press. Two things make that happen:
 
 - **Pausing on the Bit.** Leaving a game with Start+Select (or the home screen) keeps it exactly where it was. Picking it again on the home screen carries on mid-jump. The Bit does this for every game; you don't need any code.
-- **Continue from a checkpoint.** After a reload or a restart, Continue on the title screen goes straight back into play: call `checkpoint({...})` whenever the player reaches a safe spot (a new level, a checkpoint flag, a finished race), and give `game{}` a `continue = function(cp) ... end` that puts the player back there. Games that already keep their own `save()` pass `can_continue = function() return saved() ~= nil end` instead, plus `new_game` to wipe it.
+- **Continue from a checkpoint.** After a reload or a restart, Continue on the title screen goes straight back into play: call `checkpoint({...})` whenever the player reaches a safe spot (a new level, a checkpoint flag, a finished race), and give `game{}` a `continue = function(cp) ... end` that puts the player back there. Games that already keep their own `save()` pass `can_continue = function() return saved() ~= nil end` instead, plus `new_game` to reset the game.
 
 Continue never goes through extra screens: no "press start", no level select, no garage. Straight into the game.
+
+### Save files
+
+Every game has a save file, kept by the shell. The first time the player starts playing (New game, or a level picked from a level select), the save file is made, and from then on the title screen shows **Continue** instead of **New game**. Continue goes back to the last checkpoint, or to the start of the game if the player never reached one.
+
+To start over, the player opens **Settings** (from the title or the pause menu) and picks **Delete save**. It asks first ("Delete your save? Your progress in this game is gone for good."), then wipes the checkpoint, the goal star and everything the game keeps with `save()`, and goes back to the title screen with **New game**. Volume and the game's own settings stay. If the game was already running, the Bit loads it again so nothing from the old save is left in memory.
+
+You don't need any code for this. Runs started from an editor (▶ play level, ▶ race it) don't make a save file, and linked Bits ignore it (see Multiplayer).
 
 ### 4. Pause menu with settings
 
@@ -97,7 +104,7 @@ One sentence, shown on the title screen and in How to play, that says what winni
 
 ## Multiplayer
 
-Linked Bits run the same game in lockstep, so the shell keeps every Bit identical: menus are driven by the players' buttons only, saved checkpoints and game settings are ignored while linked (volume still applies on each Bit), and Continue and Quit to title are hidden. Your game should do the same: when `ME > 0`, don't let one Bit's save change the game.
+Linked Bits run the same game in lockstep, so the shell keeps every Bit identical: menus are driven by the players' buttons only, saved checkpoints, save files and game settings are ignored while linked (volume still applies on each Bit), and Continue, Delete save and Quit to title are hidden. Your game should do the same: when `ME > 0`, don't let one Bit's save change the game.
 
 Games for more Bits than lockstep can carry (10 to 20) use network events instead (`net_send`, `net_recv`, `NET_ID`; see the studio's Help tab). Those Bits aren't kept identical, so the shell treats them like single-player games: each Bit has its own menus, and the pause menu doesn't stop the match for the others. Sweep Storm is the example.
 
@@ -112,7 +119,7 @@ game{
   can_continue = function() return ... end,    -- Continue for games that keep their own save (optional)
   new_game = function() ... end,               -- reset such a game (optional)
   pause = {{"Back to checkpoint", fn}},        -- extra pause menu items (optional)
-  menu = {{"Levels", fn}},                     -- extra title screen items, after New game (optional)
+  menu = {{"Levels", fn}},                     -- extra title screen items, after New game / Continue (optional)
   settings = {                                 -- extra settings (optional)
     {key = "laps", name = "Laps", min = 1, max = 5, value = 3},
     {key = "ai", name = "Rivals", values = {"Easy", "Normal", "Hard"}, value = 2},
@@ -131,6 +138,7 @@ game{
 | `game_screen()` | Hand the screen to your own menu, like a level select: `_update` and `_draw` run, the shell draws nothing and Start does nothing. It isn't gameplay yet, so Continue on the title still works. Leave with `game_play()` or `game_title()`. |
 | `game_title()` | Back to the title screen. |
 | `GAME.state` | `"title"`, `"play"`, `"screen"`, `"pause"`, `"settings"`, `"help"`, `"confirm"` or `"won"`. |
+| `GAME.items` | The names in the menu on screen, top to bottom (handy for tests). |
 
 Sprout Hop shows how the pieces fit together for a level select: **Levels** on the title (`menu`) and in the pause menu (`pause`) opens a `game_screen()` that lists the levels you have reached with your stats for each (kept with `save()`), and starting one calls `game_play()`. Continue still skips it and goes straight back to the checkpoint.
 

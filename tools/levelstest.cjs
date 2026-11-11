@@ -63,9 +63,9 @@ require('../studio/runtime.js')({ onLog: (m, e) => { if (e) errors.push(m); else
   load();
   run(3);
   if (st()[OPEN2] !== 'true' || st()[CLEARS] !== '1') fail('the stats and the unlock should survive a reload, got ' + st().join(' '));
-  // title: Continue, New game, [Levels]
-  tap('down'); tap('down'); tap('a'); run(1);
-  if (st()[MODE] !== 'levels') fail('Levels should be third on the title once there is a checkpoint, got ' + st().join(' '));
+  // title: Continue, [Levels] (a save file: no New game)
+  tap('down'); tap('a'); run(1);
+  if (st()[MODE] !== 'levels') fail('Levels should be second on the title once there is a save, got ' + st().join(' '));
   tap('down'); tap('down'); tap('a'); run(1);   // Sunny Meadow, Mossy Cave, [Skip cutscenes]
   if (st()[SKIP] !== 'true') fail('A on the switch should turn skipping on, got ' + st()[SKIP]);
   tap('down'); tap('a'); run(4);                // wraps to [Sunny Meadow] (cleared): no cutscene

@@ -84,7 +84,7 @@ function _draw()   cls(1) circfill(x, y, 4 + press("r") / 32, 9) end
 
 ## 📏 Game rules
 
-Every BitKit game, built-in or from the community, has a **main menu**, **one level you can play from start to end**, **quick resume** (Continue goes straight back into play or to your checkpoint), a **pause menu with settings** such as the volume, and **a clear goal**. One call gives your game all the menus:
+Every BitKit game, built-in or from the community, has a **main menu**, **one level you can play from start to end**, **quick resume** (a save file from the first play, so Continue goes straight back into play or to your checkpoint; Delete save in Settings starts over), a **pause menu with settings** such as the volume, and **a clear goal**. One call gives your game all the menus:
 
 ```lua
 function _init()
@@ -138,7 +138,7 @@ A minesweeper battle royale for up to 20 Bits, with bots filling the empty spots
 - Fog of war: you only see the ground near cells you dug yourself, and you can only walk where you can see (over dug or undug cells). Digging clears fog, and so does standing on dug ground (yours or another player's), so you can follow paths others solved. Undug ground never clears it, so when the storm comes you have to dig or find a path. It can be turned off in Settings.
 - A mine costs one of your 3 hearts and stuns you. After 40 seconds a storm closes in from the shore and standing in it costs hearts too.
 - **Goal:** have the most points when the storm closes or the time runs out (the last digger standing gets a bonus).
-- **Play together:** open more studio windows, load Sweep Storm in each and pick New game. They find each other in the lobby and any of them can start. This uses network events (`net_send` / `net_recv`), not lockstep, so it scales to 20 PocketBits over ESP-NOW. Play alone and Continue takes you back to the match.
+- **Play together:** open more studio windows, load Sweep Storm in each and pick New game (or Continue). They find each other in the lobby and any of them can start. This uses network events (`net_send` / `net_recv`), not lockstep, so it scales to 20 PocketBits over ESP-NOW. Play alone and Continue takes you back to the match.
 
 ### Crossgate
 

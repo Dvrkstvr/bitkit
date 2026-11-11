@@ -27,6 +27,10 @@
 --                   or game_title()
 --   game_title()    back to the title screen
 --   GAME.state      "title", "play", "screen", "pause", "settings", "help", "confirm" or "won"
+--   GAME.items      the names in the menu on screen
+--
+-- Save file: the first play makes one. From then on the title screen shows Continue instead of New game,
+-- and Settings has Delete save (it asks first), which wipes the progress and brings New game back.
 --
 -- Start opens the pause menu (Start+Select still goes to the Bit's home screen). Volume scales every
 -- sfx() and tone(). The settings and the checkpoint are kept in the cart's save, next to (not inside)
@@ -37,13 +41,14 @@ do
   local ST, BACK = "off", "title"  -- menu state, and where B goes back to
   local SEL, ITEMS = 1, {}
   local DIRTY = false              -- gameplay has run since the cart loaded
+  local TRIAL = false              -- started from an editor (GAME_BOOT 3): a test run doesn't make a save
   local CART_UPDATE, CART_DRAW = nil, nil
   local START_DOWN, COMBO = false, false
   local WIN_TEXT, WIN_PENDING = nil, false
   local CONFIRM = nil
   local raw_save, raw_saved, raw_sfx, raw_tone = save, saved, sfx, tone
 
-  GAME = { state = "off", won = false }
+  GAME = { state = "off", won = false, items = {} }
 
   local function linked() return (ME or 0) > 0 end
   local function players() return math.max(1, math.min(PLAYERS or 1, 8)) end
@@ -86,8 +91,17 @@ do
     SEL = 1
   end
 
+  -- ------------------------------------------------ the save file
+  -- A game has a save file once it has been played (or holds a checkpoint, a win, or can_continue() says so).
+  -- From then on the title screen offers Continue instead of New game; Delete save in Settings wipes it.
+  local function has_save()
+    if linked() then return false end
+    if KIT.started or KIT.cp ~= nil or KIT.won then return true end
+    return CFG.can_continue and CFG.can_continue() and true or false
+  end
+
   -- ------------------------------------------------ menus
-  local function can_continue()
+  local function can_resume()      -- there is somewhere to carry on from, not just a save file
     if DIRTY then return true end
     if KIT.cp ~= nil and not linked() then return true end
     return CFG.can_continue and CFG.can_continue() and true or false
@@ -95,6 +109,7 @@ do
 
   local function play()
     DIRTY = true
+    if not KIT.started and not TRIAL and not linked() then KIT.started = true; persist() end
     set_state("play")
   end
 
@@ -107,28 +122,37 @@ do
   end
 
   local function continue_game()
-    if not DIRTY and CFG.continue then CFG.continue(not linked() and KIT.cp or nil) end
+    -- with a save file but no checkpoint (played, but never reached one) the game starts from its beginning
+    if can_resume() and not DIRTY and CFG.continue then CFG.continue(not linked() and KIT.cp or nil) end
     play()
+  end
+
+  -- Delete save: forget the checkpoint, the win and the cart's own save(), keep volume and settings
+  local function delete_save()
+    local had = DIRTY or cart_value() ~= nil
+    KIT.cp, KIT.won, KIT.started = nil, false, nil
+    GAME.won = false
+    raw_save({ _bitkit_game = 1, _g = KIT, _c = nil })
+    set_state("title")
+    if had then _restart(1) end    -- the game in memory still has the old progress: the host loads it again
   end
 
   local function confirm(text, yes, fn)
     CONFIRM = { text = text, fn = fn, from = ST }
     set_state("confirm")
     ITEMS = { { yes, fn }, { "Cancel", function() set_state(CONFIRM.from) end } }
+    GAME.items = { yes, "Cancel" }
     SEL = 2
   end
 
   local function build()
     ITEMS = {}
-    local add = function(name, fn) ITEMS[#ITEMS + 1] = { name, fn } end
+    GAME.items = {}
+    local add = function(name, fn) ITEMS[#ITEMS + 1] = { name, fn }; GAME.items[#ITEMS] = name end
     if ST == "title" then
       BACK = "title"
-      if can_continue() then add("Continue", continue_game) end
-      add("New game", function()
-        if KIT.cp ~= nil or DIRTY or (CFG.can_continue and CFG.can_continue()) then
-          confirm("Start over? Your progress here is lost.", "Start over", start_new)
-        else start_new() end
-      end)
+      if DIRTY or has_save() then add("Continue", continue_game)
+      else add("New game", start_new) end           -- no save file yet: the first play makes one
       for _, it in ipairs(CFG.menu or {}) do add(it[1], it[2]) end
       add("Settings", function() BACK = "title"; set_state("settings") end)
       if CFG.help then add("How to play", function() BACK = "title"; set_state("help") end) end
@@ -146,6 +170,11 @@ do
       add("Volume", nil)
       if CFG.music then add("Music", nil) end
       for _, s in ipairs(CFG.settings or {}) do add(s.name or s.key, nil) end
+      if has_save() then
+        add("Delete save", function()
+          confirm("Delete your save? Your progress in this game is gone for good.", "Delete save", delete_save)
+        end)
+      end
       add("Back", function() set_state(BACK) end)
     elseif ST == "help" then
       add("Back", function() set_state(BACK) end)
@@ -369,6 +398,7 @@ do
           KIT.cp = g.cp
         end
         KIT.won = g.won and true or false
+        KIT.started = g.started and true or nil
       end
       GAME.won = KIT.won
       for _, s in ipairs(CFG.settings or {}) do
@@ -377,6 +407,7 @@ do
       adopt()
       local boot = GAME_BOOT
       GAME_BOOT = nil
+      TRIAL = boot == 3
       if boot == 2 then KIT.cp = nil; persist(); play()
       elseif boot then play()
       else set_state("title") end

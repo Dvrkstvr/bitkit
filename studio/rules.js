@@ -9,7 +9,7 @@
   };
   const RULES = [
     { id: 'menu', name: 'Main menu',
-      about: 'A title screen with Continue, New game and Settings. Call game{title = "...", ...} in _init.',
+      about: 'A title screen with New game (Continue once there is a save file) and Settings. Call game{title = "...", ...} in _init.',
       test: src => /\bgame\s*[{(]/.test(src) && !!field(src, 'title') },
     { id: 'goal', name: 'A clear goal',
       about: 'One sentence the player reads on the title screen: game{goal = "Reach the flag."}.',
