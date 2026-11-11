@@ -76,9 +76,47 @@ function copy(t)
 end
 function save_progress() checkpoint(copy(S)) end
 
+-- the title screen (game{title_draw = ...}): your plane circles over the sea, with the Drowned Belltower on
+-- the horizon. It is the plane from your save, in your paint, so it changes as you build.
+local TITLE_M = nil
+function draw_title(t)
+  local g0 = gt
+  gt = t * 3
+  draw_sky(96, t * 0.2)
+  gt = g0
+  rectfill(0, 96, 320, 144, 20)
+  for r = 0, 15 do                                            -- the sea
+    local y = 98 + r * r * 0.55
+    local gap = 18 + r * 5
+    for x = -(t * (0.1 + r * 0.05)) % gap - gap, 320, gap do line(x, y, x + 2 + r, y, r % 2 == 0 and 21 or 22) end
+  end
+  sspr(240, 196, 96 - 40, 3, 8, 0.62)                         -- the Drowned Belltower, far away
+  for i = 0, 2 do                                             -- pigeons
+    local x = (i * 140 + t * 0.6) % 420 - 50
+    local y = 40 + i * 13 + math.sin(t / 20 + i) * 3
+    local w = (t // 6 + i) % 2 == 0 and 2 or -1
+    line(x - 3, y - w, x, y, 1) line(x, y, x + 3, y - w, 1)
+  end
+  local s = S or new_state()
+  if not TITLE_M then TITLE_M = plane_model(s.shape or default_shape()) end
+  local paint = PAINTS[(s.sel and s.sel.p) or 2].c
+  local v0 = {}
+  for k, v in pairs(VIEW) do v0[k] = v end
+  setview(0, 0, 0, 50, 96, 160, 160)
+  local u = t / 170
+  local P = { x = 52 + math.cos(u) * 10, y = 12 + math.sin(u) * 16, z = 36 + math.sin(u * 2) * 4,
+              h = u + math.pi / 2, pitch = math.cos(u * 2) * 0.06, bank = 0.5 }
+  local sx, sy, k = proj(P.x, P.y, 0)                         -- its shadow on the water
+  if sx then for j = -2, 2 do rectfill(sx - (10 - j * j) * k, sy + j, (20 - j * j * 2) * k, 1, 19) end end
+  draw_model(TITLE_M, P, paint, t * 0.9, true, 4.6)
+  for k2, v in pairs(v0) do VIEW[k2] = v end
+end
+
 function _init()
   game{
     title = "Tinwing",
+    title_draw = draw_title,          -- its own animated title screen (above)
+    look = { title = 12, shadow = 19, panel = 19, edge = 22, hi = 20, text = 23, pick = 27, goal = 22, footer = 22, menu = "left" },
     goal = "Build an RC plane, find the mail satchel lost past the Drowned Belltower and fly it home to Perch.",
     help = {
       "Hangar: pick a corner with the D-pad, A grabs it, move it, A drops it. L / R or X: next page.",

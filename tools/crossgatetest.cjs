@@ -133,7 +133,7 @@ const runtime = require('../studio/runtime.js');
   // the title screen comes up first without GAME_BOOT
   {
     errors = []; logs = [];
-    load(M, 'local _d = _draw\nfunction _draw() _d() print("gs", GAME.state) end', 1, 0, 0);
+    load(M, 'local _d = _bk_overlay\nfunction _bk_overlay() _d() print("gs", GAME.state) end', 1, 0, 0);
     for (let f = 0; f < 5; f++) M._bkw_frame(0, 0);
     if ((logs.pop() || '').split(/\s+/)[1] !== 'title') fail('Crossgate should open on its title screen');
     shot('title');

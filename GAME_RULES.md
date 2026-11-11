@@ -63,6 +63,44 @@ The game opens on a title screen, not in the middle of the action. It shows the 
 
 `game{title = "...", goal = "..."}` draws all of it over your game's first frame, so the title screen looks like your game with no extra art.
 
+### Your own title screen
+
+Every game deserves a title screen of its own. Give `game{}` a `title_draw` function and the shell calls it every frame on the title screen, instead of your `_draw`, and puts the name, the goal and the menu on top. `t` counts the frames since the title screen opened, so anything can move:
+
+```lua
+function draw_title(t)
+  cls(19)
+  for i = 0, 30 do pset((i * 73) % 320, (i * 37 + t // 2) % 240, 13) end   -- falling snow
+  spr(1, 150, 150 + math.sin(t / 20) * 6, 2, 2)                            -- your hero, bobbing
+end
+
+function _init()
+  game{
+    title = "Snowfall",
+    goal = "Find the lost mitten.",
+    title_draw = draw_title,
+    look = {title = 23, shadow = 1, panel = 19, edge = 22, text = 13, pick = 27, menu = "right"},
+  }
+end
+```
+
+- The art keeps moving behind Settings and How to play opened from the title, a little darker so the menu stays readable.
+- Draw in screen space: the camera and `clip()` are reset before `title_draw`. Shaders work as usual (`wave()`, `ripple()`, `tint()`...).
+- Don't change the game in `title_draw`: it only draws. If you borrow drawing functions that read a game timer, set the timer to `t` and put it back after (Crossgate and Tinwing do).
+- `look` gives every menu of your game (title, pause, settings, goal complete) your colours, and moves things around on the title screen:
+
+| `look` field | What it sets | Default |
+|---|---|---|
+| `title`, `shadow` | Colour of the game's name and its shadow (`shadow = false`: no shadow) | 27, 1 |
+| `panel`, `edge` | Menu box fill and border (`false`: none) | 1, 13 |
+| `text`, `pick`, `hi` | Menu text, the picked item, and the bar behind it | 13, 27, 2 |
+| `goal`, `footer` | The goal line and the hint at the bottom | 17 / `text`, 29 |
+| `name_y`, `scale` | Where the name sits and how big (1-4). `name_y = false` hides it, for a logo you draw yourself | 30, by length |
+| `goal_y` | Top of the goal box | under the name |
+| `menu`, `menu_y` | `"center"`, `"left"` or `"right"`, and the top of the title menu | `"center"`, above the footer |
+
+Every built-in game has its own: Sprout Hop hops through a scrolling meadow and grows saplings into trees, Beacon Keeper's beam turns and lights up ships, Sweep Storm digs its island while the storm closes in, Kart Lab races into the sunset, Wren and Rook trade bolts in Crossgate, your own plane circles the sea in Tinwing, and Deepglow's sonar finds pearls in the dark.
+
 ### 2. One playable level, start to end
 
 There is at least one level that a player can finish: from New game, through the level, to an ending. "Endless" games (idle games, high-score chasers) still need a goal you can reach, like "guide 100 ships home"; the game can carry on afterwards.
@@ -125,6 +163,8 @@ game{
     {key = "ai", name = "Rivals", values = {"Easy", "Normal", "Hard"}, value = 2},
   },
   music = true,                                -- adds the Music level, for notes played with mus()
+  title_draw = function(t) ... end,            -- your own animated title screen (optional, see above)
+  look = {title = 27, panel = 1, menu = "right"},   -- your menus' colours and layout (optional)
 }
 ```
 

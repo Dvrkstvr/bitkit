@@ -40,9 +40,61 @@ STUN = tune("Stun time (frames)", 100, 30, 300, 10)
 DX = { -1, 0, 1, -1, 1, -1, 0, 1 }
 DY = { -1, -1, -1, 0, 0, 1, 1, 1 }
 
+-- the title screen (game{title_draw = ...}): the island seen from above, dug a little more every second
+-- while the storm closes in, with rain and lightning
+function draw_title(t)
+  cls(19)
+  local cyc = t % 720
+  local sr = 10.5 - cyc / 720 * 7                             -- the storm's edge, in cells
+  for gy = 0, 14 do for gx = 0, 19 do
+    local dx, dy = gx - 9.5, gy - 7
+    local d = math.sqrt(dx * dx + dy * dy)
+    local n = 80                                               -- water
+    if d < 8.3 + math.sin(gx * 1.3 + gy * 0.7) * 0.9 then
+      local h = (gx * 7 + gy * 13 + gx * gy * 3) % 31
+      if (h * 29) % 720 < cyc * 1.1 then                       -- dug: a number, or a blown mine
+        local num = (gx * 3 + gy * 5 + gx * gy) % 5
+        n = h == 3 and 79 or 70 + num
+      else
+        local z = d < 3 and 2 or (d < 5.5 and 1 or 0)
+        n = (h % 9 == 4) and 67 + z or 64 + z                  -- hidden, or flagged
+      end
+    elseif ((gx + gy * 3 + t // 30) % 11) == 0 then n = 80 end
+    if d > sr then n = n + 32 end                               -- in the storm
+    spr(n, gx * 16, gy * 16, 1, 1, false, false, 2)
+  end end
+  circ(160, 120, sr * 16 + 4, 5) circ(160, 120, sr * 16 + 6, 3)
+  local cols = { 26, 21, 17, 27, 5 }
+  for k = 1, 5 do                                             -- diggers heading for the middle
+    local a = t / (70 + k * 11) + k * 1.3
+    local r = 16 + (k * 13) % 50 + math.sin(t / 50 + k) * 8
+    local x = (160 + math.cos(a) * r) // 16 * 16
+    local y = (120 + math.sin(a) * r * 0.8) // 16 * 16
+    rect(x - 1, y - 1, 18, 18, cols[k])
+    if (t // 8 + k) % 2 == 0 then rect(x - 2, y - 2, 20, 20, 13) end
+  end
+  for i = 0, 70 do                                            -- rain
+    local x, y = (i * 53 + t * 2) % 340 - 10, (i * 97 + t * 6) % 260 - 10
+    line(x, y, x - 2, y + 6, 22)
+  end
+  local fl = t % 300
+  if fl < 10 then                                             -- lightning
+    local x = 40 + (t // 300 * 97) % 240
+    local y = 0
+    while y < 150 do
+      local nx, ny = x + ((y * 7 + t // 300) % 19) - 9, y + 14
+      line(x, y, nx, ny, 13) line(x + 1, y, nx + 1, ny, 23)
+      x, y = nx, ny
+    end
+    if fl < 3 then tint(13, 0.35) end
+  end
+end
+
 function _init()
   game{
     title = "Sweep Storm",
+    title_draw = draw_title,          -- its own animated title screen (above)
+    look = { title = 27, shadow = 1, panel = 1, edge = 5, hi = 3, text = 13, pick = 27, goal = 22, footer = 29 },
     goal = "Dig the most ground before the storm closes in. The middle is worth more.",
     help = {
       "D-pad: walk over dug ground and aim at the next cell. A: dig. B: flag a mine.",

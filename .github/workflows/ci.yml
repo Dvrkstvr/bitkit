@@ -22,6 +22,8 @@ jobs:
         run: node tools/harbourtest.cjs
       - name: Game shell and game rules
         run: node tools/gametest.cjs
+      - name: Title screens
+        run: node tools/titletest.cjs
       - name: Sprout Hop levels screen and stats
         run: node tools/levelstest.cjs
       - name: Sweep Storm and network events
