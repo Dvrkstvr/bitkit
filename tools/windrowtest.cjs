@@ -138,7 +138,7 @@ require('../studio/runtime.js')({ onLog: (m, e) => { (e ? errors : logs).push(m)
   check('A closes the report', get('ui'), 'nil');
 
   // 7. the goal: three steps of the mill, then the game is won and carries on
-  ev('G.coins = 9999 G.inv = { wood = 99, stone = 99, fibre = 99, barley = 16 } G.bag = 3 px, py, dx, dy = 26 * 16 + 8, 4 * 16 + 14, 0, -1');
+  ev('G.coins = 9999 G.inv = { wood = 99, stone = 99, fibre = 99, barley = 16, millstone = 1 } G.bag = 3 px, py, dx, dy = 26 * 16 + 8, 4 * 16 + 14, 0, -1');
   tap('a'); check('A at the ruin opens the mill', get('ui'), 'mill');
   shot('windrow-mill');
   tap('a'); check('step 1: the frame', get('G.mill, G.inv.wood'), '1 83');
@@ -191,6 +191,57 @@ require('../studio/runtime.js')({ onLog: (m, e) => { (e ? errors : logs).push(m)
   check('the animals are in the save', get('#G.an, G.an[2].k, G.coop, G.shed, G.pail, #ANIM'), '2 g 1 1 1 2');
   if (errors.length) { errors.forEach(e => fail('animals: ' + e)); errors = []; }
 
+  // 7c. the old mine: a pickaxe opens it, rocks break into ore, a ladder leads down, things bite from floor 4,
+  // and the mill's stone waits in the chest at the bottom
+  load(null); run(5);
+  ev('G.area, px, py, dx, dy = 2, 11 * 16 + 8, 2 * 16 + 14, 0, -1');
+  tap('a'); check('the boards hold without a pickaxe', get('G.mine, G.area'), '0 2');
+  ev('G.pick = 1 toast_t = 0');
+  tap('a'); check('the pickaxe pries them off', num('G.mine'), 1);
+  tap('a', 70); check('A goes down into the mine', get('G.area, mine_n, mine_hp'), '3 1 3');
+  // every floor has a way down, and no rock is walled in
+  for (let n = 1; n <= 10; n++) {
+    ev(`mine_floor(${n})`);
+    const ok = get('(function() local seen, q, n = {}, { { 2, 1 } }, 0 seen[2 + 20] = true ' +
+      'while #q > 0 do local c = table.remove(q) for _, d in ipairs({ { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }) do local x, y = c[1] + d[1], c[2] + d[2] ' +
+      'local ch = tile(3, x, y) if ch ~= "#" and not seen[x + y * 20] then seen[x + y * 20] = true if ch ~= "<" and ch ~= "H" then q[#q + 1] = { x, y } end end end end ' +
+      `local want = ${n} < 10 and seen[mine_down.x + mine_down.y * 20] or (${n} == 10 and seen[10 + 7 * 20]) return want and #MOBS or -1 end)()`);
+    if (Number(ok) < 0) fail('mine floor ' + n + ' has no way on');
+    if (n <= 3 && Number(ok) !== 0) fail('floors 1 to 3 should be quiet');
+    if (n >= 5 && Number(ok) < 1) fail('floor ' + n + ' should have something living on it');
+  }
+  ev('G.deep = 0 mine_floor(1) MINE[2][2] = "C" px, py, dx, dy = 2 * 16 + 8, 1 * 16 + 14, 0, 1');
+  tap('a'); tap('a'); check('copper takes three blows', get('MINE[2][2], have("copper")'), 'C 0');
+  tap('a'); check('and then it is yours', get('MINE[2][2], have("copper")'), '. 1');
+  ev('MINE[2][2] = "R" mine_down = { x = 2, y = 2 }');
+  tap('a'); tap('a'); check('the ladder down hides under a rock', get('MINE[2][2]'), '>');
+  shot('windrow-mine');
+  tap('a', 70); check('A on the ladder goes one floor down', get('mine_n, G.deep'), '2 2');
+  ev('mine_floor(6) MOBS = { { x = 2 * 16 + 8, y = 2 * 16 + 12, hp = 2, bat = false, hit = 0 } } px, py, dx, dy = 2 * 16 + 8, 1 * 16 + 14, 0, 1');
+  ev('hurt_t = 999'); tap('a'); tap('a');
+  check('two blows of the pickaxe see a gloomling off', get('#MOBS, have("dust")'), '0 1');
+  ev('MOBS = { { x = px, y = py + 4, hp = 9, bat = true, hit = 0 } } hurt_t = 0');
+  run(3); check('a bite costs a heart', num('mine_hp'), 2);
+  if (shotDir) {
+    ev('SX, SY, SM = px, py, MOBS G.lamp = 1 px, py = 9 * 16 + 8, 7 * 16 + 14 for y = 6, 8 do for x = 8, 11 do MINE[y][x] = "." end end MINE[8][8] = ">" MINE[6][11] = "Q" hurt_t = 0 ' +
+       'MOBS = { { x = 12 * 16, y = 9 * 16, hp = 2, bat = false, hit = 0 }, { x = 6 * 16, y = 5 * 16, hp = 2, bat = true, hit = 0 }, { x = 13 * 16, y = 5 * 16 + 8, hp = 2, bat = false, hit = 0 } }');
+    ev('floats = {}'); run(1); shot('windrow-dungeon');
+    ev('px, py, MOBS, G.lamp = SX, SY, SM, 0');
+  }
+  ev('G.inv.copper = 10 mine_hp = 1 hurt_t = 0 MOBS[1].x, MOBS[1].y = px, py + 4');
+  const dayIn = num('G.day');
+  run(80);
+  check('out of hearts: you wake at home the next morning with half the ore', get('G.area, G.day, G.inv.copper'), `1 ${dayIn + 1} 5`);
+  ev('G.area, mine_hp = 3, 3 mine_floor(10) px, py, dx, dy = 10 * 16 + 8, 6 * 16 + 14, 0, 1 MOBS = {}');
+  tap('a'); check('the chest at the bottom holds the millstone', get('have("millstone"), G.gotms, G.deep'), '1 1 10');
+  ev('persist()');
+  load(getSave()); run(3);
+  check('a save made underground wakes at the mine door', get('G.area, G.mine, G.deep, have("millstone")'), '2 1 10 1');
+  ev('px, py, dx, dy = 11 * 16 + 8, 2 * 16 + 14, 0, -1');
+  tap('a'); check('the winch offers the floors you reached', get('ui, #lift_floors()'), 'lift 3');
+  tap('down'); tap('a', 70); check('and takes you there', get('G.area, mine_n'), '3 5');
+  if (errors.length) { errors.forEach(e => fail('mine: ' + e)); errors = []; }
+
   // 8. all four seasons draw, with rain, snow and nightfall
   load(null);
   for (const [d, name] of [[3, 'spring'], [10, 'summer'], [17, 'autumn'], [24, 'winter']]) {
@@ -209,6 +260,7 @@ require('../studio/runtime.js')({ onLog: (m, e) => { (e ? errors : logs).push(m)
   for (let f = 0; f < 16000; f++) {
     if (f % 12 === 0) mask = (1 << rand(4)) | (rand(3) === 0 ? 1 << (4 + rand(6)) : 0);
     if (f === 8000) ev('G.area, px, py = 2, 20 * 16, 10 * 16 + 12');
+    if (f === 12000) ev('G.area, mine_hp = 3, 3 mine_floor(7)');
     if (M._bkw_frame(mask, 0)) { fail('random play stopped at frame ' + f + ': ' + errors.join(' ')); break; }
   }
   if (num('G.day') < 5) fail('days should pass on their own: day ' + get('G.day'));
