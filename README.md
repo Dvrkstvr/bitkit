@@ -128,7 +128,14 @@ BitKit's flagship game, and it is growing. You arrive in the valley of Windrow w
 - **The tractor (mid game).** A rusted tractor stands by the Long acre. Mend it with iron and copper from the mine, and Marrow sells implements for it: a plough, a seed drill, a water tank and a reaper. **A** climbs on, holding **A** works the cell under you and the one on either side as you drive, **L** changes the implement, **R** the seed, **B** fills the tank at the pond (or honks), and **Y** hops off.
 - **While the Bit is off**, the farm carries on (`save()`, `saved()` and `clock()`): up to three days pass, and what you watered keeps growing.
 - **Goal:** rebuild the old windmill in three steps, with wood, stone, fibre, coins, crops for the builders and the lost millstone. With the sails up, grain sells for double.
-- Coming next: visits and trades between linked Bits, and a little automation for the very late game.
+- **Very late: the tractor drives itself.** Once the mill turns, build the silo and buy the clockwork driver
+  from Marrow. Press Y beside the tractor and teach it a route by driving it once, working as you go. It
+  then drives that route by itself, every morning if you like (also on days that pass while the Bit is
+  off), unloads what it reaps at the silo as it passes, and fills its tank at the pond. The silo sells at
+  the day's prices and tops up an empty trough.
+
+  ![The tractor on its route beside the silo](docs/media/windrow-route.png)
+- Coming next: visits and trades between linked Bits.
 
 ### Beacon Keeper
 

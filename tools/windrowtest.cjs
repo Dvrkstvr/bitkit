@@ -283,6 +283,63 @@ require('../studio/runtime.js')({ onLog: (m, e) => { (e ? errors : logs).push(m)
   check('the tractor and its implements are in the save', get('G.trac, G.imp[4], riding'), '1 1 false');
   if (errors.length) { errors.forEach(e => fail('tractor: ' + e)); errors = []; }
 
+  // 7e. very late: the silo, the clockwork driver, and a route the tractor drives by itself
+  load(null); run(5);
+  ev('G.coins = 9000 G.inv = { wood = 30, stone = 30, iron = 10 } G.plots = { true, true, true } G.trac, G.imp, G.impsel = 1, { 1, 1, 1, 1 }, 1 ' +
+     'G.tx, G.ty = 4 * 16 + 8, 20 * 16 + 12 px, py, dx, dy = 13 * 16 + 8, 21 * 16 + 14, 0, -1');
+  tap('a'); check('the silo waits for the mill', get('ui, G.silo_b'), 'nil 0');
+  ev('G.mill = #MILL toast_t = 0'); run(20); tap('a'); check('then A at the footings offers to build it', get('ui, ui_kind'), 'build silo');
+  tap('a'); check('the silo takes wood, stone, iron and coins', get('G.silo_b, G.coins, have("stone")'), '1 7500 0');
+  ev('ui = "shop" local L = shop_items() for i, it in ipairs(L) do if it.name == "Clockwork driver" then ui_sel = i end end');
+  tap('a'); tap('b');
+  check('Marrow sells the clockwork driver once the silo stands', get('G.auto, G.coins'), '1 5000');
+  // teach it: Y at the tractor, drive one row of the Long acre with the plough down, hop off
+  ev('for i, f in ipairs(FIELD[3]) do f.k, f.c = (i % 2), 0 end toast_t = 0 px, py, dx, dy = 4 * 16 + 8, 21 * 16 + 14, 0, -1');
+  tap('y'); check('Y at the tractor opens the clockwork driver', get('ui'), 'auto');
+  tap('a'); check('teaching puts you on the tractor', get('riding, teaching'), 'true true');
+  ev('px, py, dx, dy = 5 * 16 + 8, 18 * 16 + 12, 1, 0');
+  run(150, (1 << B.right) | (1 << B.a));
+  const dug2 = num('(function() local n = 0 for i, f in ipairs(FIELD[3]) do if f.k == 4 then n = n + 1 end end return n end)()');
+  tap('y');
+  const len = num('route_len()');
+  check('hopping off ends the lesson', get('riding, teaching'), 'false false');
+  if (len < 15 || len > 22) fail('the route should be the cells driven: ' + len);
+  // send it round: it ploughs the same cells by itself
+  ev('for i, f in ipairs(FIELD[3]) do f.k, f.c = (i % 2), 0 end toast_t = 0 px, py = 11 * 16, 20 * 16 + 8 route_start()');
+  check('the tractor sets off alone', get('auto_i ~= nil, riding'), 'true false');
+  run(90); shot('windrow-route');
+  run(400);
+  check('and ploughs what you ploughed', num('(function() local n = 0 for i, f in ipairs(FIELD[3]) do if f.k == 4 then n = n + 1 end end return n end)()'), dug2);
+  check('then stops at the end of the route', get('auto_i, fl(G.tx / 16) > 15'), 'nil true');
+  // a reaping round past the silo, taught the same way
+  ev('toast_t = 0 G.impsel = 4 px, py, dx, dy = G.tx, G.ty + 20, 0, -1'); run(20);
+  tap('y'); tap('a');
+  ev('px, py, dx, dy = 5 * 16 + 8, 18 * 16 + 12, 1, 0');
+  run(150, (1 << B.right) | (1 << B.a)); tap('y');
+  ev('for i, f in ipairs(FIELD[3]) do f.k, f.c, f.age, f.wet = 4, 1, 9, true end G.inv = {} G.daily = 1 toast_t = 0');
+  const before = num('G.grown');
+  ev('new_day(true)');
+  const reaped = num('G.grown') - before;
+  if (reaped < 40) fail('a morning round while the Bit is off should reap three rows: ' + reaped);
+  check('what it reaps goes to the silo, not your bag', get('silo_count() + hopper_count(), have("radish"), auto_i'), reaped + ' 0 nil');
+  if (num('silo_count()') < 20) fail('it should unload as it passes the silo: ' + get('silo_count()'));
+  ev('for i, f in ipairs(FIELD[3]) do f.k, f.c, f.age, f.wet = 4, 1, 9, true end new_day(false)');
+  check('after a night at home the round starts in the morning', get('auto_i ~= nil'), 'true');
+  tap('a', 5); ev('if not riding then mount() end');
+  check('climbing on stops the round', get('auto_i, riding'), 'nil true');
+  ev('dismount()');
+  // the silo sells at today's prices, and feeds the animals when the trough is empty
+  ev('G.silo = { radish = 10 } G.an = {} G.coop = 1 add_animal("hen") G.feed = 0 animals_night()');
+  check('an empty trough is filled from the silo', get('G.silo.radish, G.an[1].p > 0 or G.feed > 0'), '9 true');
+  ev('toast_t = 0 ui = nil px, py, dx, dy = 13 * 16 + 8, 21 * 16 + 14, 0, -1'); run(20);
+  const c0 = num('G.coins');
+  tap('a'); check('A at the silo shows what it holds', get('ui'), 'silo');
+  shot('windrow-silo');
+  tap('a'); check('and sells it all', get('ui, silo_count(), G.coins'), 'nil 0 ' + (c0 + 9 * num('price("radish")')));
+  ev('G.silo = { pea = 3 } persist()'); load(getSave()); run(3);
+  check('the silo, the driver and the route are in the save', get('G.silo_b, G.auto, G.daily, G.silo.pea, route_len() > 10'), '1 1 1 3 true');
+  if (errors.length) { errors.forEach(e => fail('route: ' + e)); errors = []; }
+
   // 8. all four seasons draw, with rain, snow and nightfall
   load(null);
   for (const [d, name] of [[3, 'spring'], [10, 'summer'], [17, 'autumn'], [24, 'winter']]) {
