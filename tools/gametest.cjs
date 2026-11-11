@@ -148,7 +148,7 @@ require('../studio/runtime.js')({ onLog: (m, e) => { if (e) errors.push(m); else
   load('Beacon Keeper', BP);
   run(2);
   if (st()[0] !== 'title') fail('Beacon Keeper should start on the title screen, got ' + st()[0]);
-  tap('a'); run(400);                            // New game, then play a little (it saves every 300 frames)
+  tap('a'); run(5); tap('a'); run(400);         // New game, A in the boat yard, then play a little (it saves every 300 frames)
   load('Beacon Keeper', BP);
   run(2);
   if (items()[0] !== 'Continue' || items().includes('New game')) fail('Beacon Keeper with a save should show Continue only: ' + items().join(', '));
