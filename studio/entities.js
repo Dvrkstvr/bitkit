@@ -154,13 +154,39 @@ window.BKEntities = (function () {
   // ------------------------------------------------------------ editor
   function init(ctx) {
     const { cart, $, toast, changed, getAtlas, escapeHtml, tileThumb } = ctx;
-    const st = { sel: 0, anim: 0, tile: 1, mode: 'ent', fx: 0 };
+    let savedPage = 'look';
+    try { savedPage = localStorage.getItem('bitkit.entPage') || 'look'; } catch (e) {}
+    const st = { sel: 0, anim: 0, tile: 1, mode: 'ent', fx: 0, page: savedPage };
     cart.entities.effects = cart.entities.effects || [];
     const listEl = $('entList'), formEl = $('entForm'), treeEl = $('entTree');
     const prev = $('entPreview'), pctx = prev.getContext('2d');
     const sheet = $('entSheet'), sctx = sheet.getContext('2d');
 
     function cur() { return cart.entities.types[st.sel]; }
+    const subBtns = [...document.querySelectorAll('#entForm .subtabs [data-sub]')];
+    function showPage() {
+      subBtns.forEach(b => b.classList.toggle('active', b.dataset.sub === st.page));
+      document.querySelectorAll('#entForm .subpage').forEach(pg => { pg.hidden = pg.dataset.page !== st.page; });
+    }
+    subBtns.forEach(b => b.onclick = () => {
+      st.page = b.dataset.sub; showPage();
+      try { localStorage.setItem('bitkit.entPage', st.page); } catch (e) {}
+      if (st.page === 'behavior') renderTree();
+    });
+    function countSteps(n) { let k = 0; walk(n, () => k++); return k; }
+    function renderHead() {
+      const t = cur(); if (!t) return;
+      const c = $('entHeadThumb'), x = c.getContext('2d');
+      x.clearRect(0, 0, c.width, c.height); x.imageSmoothingEnabled = false;
+      const f = (t.anims.find(a => a.frames.length) || { frames: [0] }).frames[0];
+      const th = thumb(t, f, 32);
+      const sc = Math.min(c.width / th.width, c.height / th.height);
+      x.drawImage(th, (c.width - th.width * sc) / 2, (c.height - th.height * sc) / 2, th.width * sc, th.height * sc);
+      const n = cart.entities.placed.filter(p => p.type === t.name).length;
+      $('entPlaced').textContent = n ? `${n} on the map` : 'not on the map yet';
+      const k = t.tree ? countSteps(t.tree) : 0;
+      $('entStepCount').textContent = k ? k : '';
+    }
     // picture of a whole multi-tile sprite starting at tile f
     function thumb(t, f, px) {
       const w = t.sw || 1, h = t.sh || 1, s = Math.max(1, Math.floor(px / (8 * Math.max(w, h))));
@@ -221,7 +247,7 @@ window.BKEntities = (function () {
     $('entNew').onclick = () => {
       const t = newType(uniqueName('enemy'));
       t.anims[0].frames = [st.tile];
-      cart.entities.types.push(t); st.sel = cart.entities.types.length - 1; st.anim = 0; st.mode = 'ent';
+      cart.entities.types.push(t); st.sel = cart.entities.types.length - 1; st.anim = 0; st.mode = 'ent'; st.page = 'look';
       changed(); render();
     };
     $('entDup').onclick = () => {
@@ -243,8 +269,10 @@ window.BKEntities = (function () {
       const t = cur();
       formEl.hidden = !t || st.mode !== 'ent';
       $('fxForm').hidden = st.mode !== 'fx';
+      $('entEmpty').hidden = !(st.mode === 'ent' && !t);
       if (st.mode === 'fx') { renderFx(); return; }
       if (!t) return;
+      showPage(); renderHead();
       $('entPlayer').checked = !!t.player; $('entStomp').checked = !!t.stomp; $('entHurt').value = t.hurt ?? (t.player ? 60 : 15);
       $('entTouchFx').innerHTML = '<option value="">none</option>' + cart.entities.effects.map(f => `<option${f.name === t.touch_fx ? ' selected' : ''}>${escapeHtml(f.name)}</option>`).join('');
       renderStats(t);
@@ -265,7 +293,7 @@ window.BKEntities = (function () {
       changed(); renderList(); renderTree();
     });
     function bindProp(id, key, conv) {
-      $(id).addEventListener('change', e => { const t = cur(); if (!t) return; t[key] = conv(e.target); changed(); renderList(); drawPreview(); });
+      $(id).addEventListener('change', e => { const t = cur(); if (!t) return; t[key] = conv(e.target); changed(); renderList(); renderHead(); drawPreview(); });
     }
     bindProp('entW', 'sw', el => +el.value); bindProp('entH', 'sh', el => +el.value);
     bindProp('entGrav', 'grav', el => el.checked); bindProp('entCollide', 'collide', el => el.checked);
@@ -299,6 +327,7 @@ window.BKEntities = (function () {
       $('fxName').value = f.name; $('fxDur').value = f.dur; $('fxStack').value = f.stack || 'refresh';
       $('fxHp').value = f.hp || 0; $('fxEvery').value = f.every || 0; $('fxTick').value = f.tick || 0; $('fxTint').value = f.tint ?? -1;
       $('fxTintSw').style.background = f.tint >= 0 ? palHex(f.tint) : 'transparent';
+      $('fxHeadSw').style.background = f.tint >= 0 ? palHex(f.tint) : 'transparent';
       const box = $('fxMods'); box.innerHTML = '';
       const statNames = new Set(['speed', 'jump', 'damage', 'hp']);
       cart.entities.types.forEach(t => (t.stats || []).forEach(q => statNames.add(q.name)));
@@ -347,20 +376,19 @@ window.BKEntities = (function () {
         row.innerHTML = `<input class="a-name" value="${escapeHtml(a.name)}" title="Animation name (idle, walk and jump play automatically)">
           <label class="dim small">speed <input class="a-speed" type="number" min="1" max="60" value="${a.speed}" title="Frames per picture (lower is faster)"></label>
           <span class="a-frames"></span>
-          <button class="tiny a-add" title="Add the tile picked on the right">+ tile</button>
-          <button class="tiny a-del" title="Delete animation">✕</button>`;
+          <span class="a-ctl"><button class="tiny a-add" title="Add the tile picked on the right">+ tile</button><button class="tiny a-del" title="Delete animation">✕</button></span>`;
         const fr = row.querySelector('.a-frames');
         a.frames.forEach((f, k) => {
           const c = thumb(t, f, 16);
           c.title = `tile ${f} (click to remove)`;
-          c.onclick = ev => { ev.stopPropagation(); a.frames.splice(k, 1); changed(); renderAnims(); renderList(); };
+          c.onclick = ev => { ev.stopPropagation(); a.frames.splice(k, 1); changed(); renderAnims(); renderList(); renderHead(); };
           fr.appendChild(c);
         });
         if (!a.frames.length) fr.innerHTML = '<span class="dim small">no frames</span>';
         row.onclick = () => { if (st.anim !== i) { st.anim = i; renderAnims(); } };
         row.querySelector('.a-name').onchange = e => { a.name = e.target.value.trim().replace(/\W/g, '_') || 'anim'; e.target.value = a.name; changed(); renderTree(); };
         row.querySelector('.a-speed').onchange = e => { a.speed = Math.max(1, +e.target.value || 8); changed(); };
-        row.querySelector('.a-add').onclick = ev => { ev.stopPropagation(); a.frames.push(st.tile); st.anim = i; changed(); renderAnims(); renderList(); };
+        row.querySelector('.a-add').onclick = ev => { ev.stopPropagation(); a.frames.push(st.tile); st.anim = i; changed(); renderAnims(); renderList(); renderHead(); };
         row.querySelector('.a-del').onclick = ev => { ev.stopPropagation(); t.anims.splice(i, 1); st.anim = 0; changed(); renderAnims(); };
         animsEl.appendChild(row);
       });
@@ -453,11 +481,9 @@ window.BKEntities = (function () {
       const head = document.createElement('div');
       head.className = 'bt-head';
       head.innerHTML = `<span class="bt-tag">${{ Flow: '◆', Check: '?', Sense: '◎', Do: '▶' }[meta.g]}</span>
-        <select class="bt-type" title="${escapeHtml(meta.help || '')}">${typeOptions(n.t)}</select>
-        ${(meta.p || []).map(pp => paramInput(n, pp, t)).join('')}
-        <span class="grow"></span>
-        ${meta.kids ? '<button class="tiny bt-add" title="Add a step inside">+ step</button>' : ''}
-        ${parent ? '<button class="tiny bt-up" title="Move up">↑</button><button class="tiny bt-down" title="Move down">↓</button><button class="tiny bt-del" title="Delete">✕</button>' : ''}`;
+        <span class="bt-params"><select class="bt-type" title="${escapeHtml(meta.help || '')}">${typeOptions(n.t)}</select>
+        ${(meta.p || []).map(pp => paramInput(n, pp, t)).join('')}</span>
+        <span class="bt-ctl">${meta.kids ? '<button class="tiny bt-add" title="Add a step inside">+ step</button>' : ''}${parent ? '<button class="tiny bt-up" title="Move up">↑</button><button class="tiny bt-down" title="Move down">↓</button><button class="tiny bt-del" title="Delete step">✕</button>' : ''}</span>`;
       el.appendChild(head);
       head.querySelector('.bt-type').onchange = e => {
         const nn = node(e.target.value);
@@ -494,6 +520,7 @@ window.BKEntities = (function () {
     function renderTree() {
       const t = cur();
       treeEl.innerHTML = '';
+      if (t) renderHead();
       $('entTreeBox').hidden = !t;
       if (!t) return;
       if (!t.tree) {
@@ -503,7 +530,7 @@ window.BKEntities = (function () {
       }
       treeEl.appendChild(nodeEl(t.tree, null, 0, t));
       const clear = document.createElement('button');
-      clear.className = 'tiny'; clear.textContent = 'Remove behavior';
+      clear.className = 'tiny danger bt-clear'; clear.textContent = 'Remove behavior';
       clear.onclick = () => { t.tree = null; changed(); renderTree(); };
       treeEl.appendChild(clear);
     }
