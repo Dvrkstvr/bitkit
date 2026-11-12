@@ -1714,6 +1714,8 @@ display()                                   -- off</pre><p class="dim">The Help 
           const k = tr[ptr.track], n = tr[ptr.track + 1]; tr[ptr.track + 2] = 0;
           if (k === -2) bit.sel = n; else if (k === -1) { bitRestart(n); break; }
           else if (k === -3) bit.racePick = n === 1;   // Select on the home screen: race or play together
+          else if (k === -4) voteSet(n);               // A while Bits are linked: vote for game n (0 takes it back)
+          else if (k === -5) voteSet(0, n === 1);      // B: pass, or stop passing
         }
         if (tr[ptr.sys]) { const cmd = tr[ptr.sys], arg = tr[ptr.sys + 1]; tr[ptr.sys] = 0; bitRequest(cmd, arg); break; }
         if (acc >= STEP) acc -= STEP;
@@ -1723,7 +1725,7 @@ display()                                   -- off</pre><p class="dim">The Help 
       if (ticks && activeTab === 'map' && route.show && (++routeTick % 10) === 0) drawMap();
     }
     last = now;
-    if (bit.playing === 'home' && running) homeRoster();
+    if (bit.playing === 'home' && running) { voteTick(); if (bit.playing === 'home') homeRoster(); }
     bitCombo(); captureCombo();
     if (now - fpsT >= 1000) { $('fps').textContent = running ? `${fpsCount} fps` : ''; fpsCount = 0; fpsT = now; }
     updateInputUI();
@@ -1938,7 +1940,8 @@ display()                                   -- off</pre><p class="dim">The Help 
   // back from there and fast-forwards to the others.
   const MAXP = 8, CK_EVERY = 600, DELAY = 3;
   const link = { id: Date.now().toString(36).slice(-4) + Math.random().toString(36).slice(2, 8), num: BIT_NO,
-    ch: null, inbox: null, out: new Map(), peers: new Map(), s: null, running: false, early: new Map() };
+    ch: null, inbox: null, out: new Map(), peers: new Map(), s: null, running: false, early: new Map(),
+    vote: null, pass: false, voteWin: null, voteAt: 0, prefer: null };   // the home screen's vote (see "voting")
   function linkSend(o) { if (link.ch) { o.from = link.id; link.ch.postMessage(o); } }
   function linkSendTo(id, o) {           // to one Bit (big messages like checkpoints go only where they are needed)
     if (!link.ch) return;
@@ -1948,7 +1951,9 @@ display()                                   -- off</pre><p class="dim">The Help 
   }
   function myState() { return link.s ? 'game' : bit.playing === 'app:Share' ? 'share' : (bit.playing === 'home' || bit.playing === 'boot') ? 'home' : running ? 'game' : 'idle'; }
   function linkHi(to) {
-    const o = { t: 'hi', num: link.num, pick: picks[0], st: myState(), sid: link.s ? link.s.sid : null, name: myName(), ncol: myColor() };
+    const st = myState();
+    if (st !== 'home') { link.vote = null; link.pass = false; }   // a vote lasts while this Bit is home
+    const o = { t: 'hi', num: link.num, pick: picks[0], st, sid: link.s ? link.s.sid : null, name: myName(), ncol: myColor(), vote: link.vote, pass: link.pass };
     if (to) linkSendTo(to, o); else linkSend(o);
   }
   function linkOpen() {
@@ -1969,8 +1974,9 @@ display()                                   -- off</pre><p class="dim">The Help 
   // who plays when this Bit starts a game: itself, then every Bit on its home screen (or idle, or in this Bit's game)
   function linkRoster() {
     const s = link.s;
+    const pref = id => link.prefer && link.prefer.includes(id) ? 0 : 1;   // after a vote, its voters sit first
     const others = [...link.peers].filter(([id, p]) => p.st === 'home' || p.st === 'idle' || (s && p.sid === s.sid))
-      .sort((a, b) => a[1].num - b[1].num || (a[0] < b[0] ? -1 : 1)).map(x => x[0]);
+      .sort((a, b) => pref(a[0]) - pref(b[0]) || a[1].num - b[1].num || (a[0] < b[0] ? -1 : 1)).map(x => x[0]);
     return [link.id].concat(others).slice(0, MAXP);
   }
   function linkWanted() { return !!link.ch && linkRoster().length > 1; }
@@ -2028,6 +2034,7 @@ display()                                   -- off</pre><p class="dim">The Help 
       const pickChanged = JSON.stringify(p.pick) !== JSON.stringify(m.pick || null), stChanged = p.st !== m.st || p.num !== (m.num | 0);
       p.num = m.num | 0; p.pick = m.pick || null; p.st = m.st; p.sid = m.sid || null;
       p.name = typeof m.name === 'string' ? m.name.replace(/[^\x20-\x7e]/g, '').slice(0, 10) : ''; p.ncol = m.ncol | 0;
+      p.vote = m.st === 'home' && typeof m.vote === 'string' ? m.vote.slice(0, 200) : null; p.pass = m.st === 'home' && !!m.pass;
       if (p.isNew !== false) { p.isNew = false; peersChanged(); }
       else {
         if (pickChanged) { buildPickers(); if (chooser.open) chooserDraw(); }
@@ -2109,6 +2116,7 @@ display()                                   -- off</pre><p class="dim">The Help 
     const st = { t: 'start', sid: Date.now().toString(36) + '-' + link.id, roster, nums: roster.map(peerNum), np, cart: o.cart,
       names: roster.map(id => who(id).name || ''), ncols: roster.map(id => who(id).ncol || 27),
       level: o.level | 0, extra: o.extra || '', saveKey: o.saveKey || null, gameId: o.key.id, fp: o.key.fp, studio: !!o.studio, resume: o.resume || null };
+    link.prefer = null;
     linkSend(st);
     linkEnter(st);
   }
@@ -2139,6 +2147,7 @@ display()                                   -- off</pre><p class="dim">The Help 
     const who = id => id === link.id ? { name: myName(), ncol: myColor() } : (link.peers.get(id) || {});
     const st = { t: 'start', race: o.race, sid: Date.now().toString(36) + '-' + link.id, roster, nums: roster.map(peerNum), np: roster.length,
       cart: o.cart, names: roster.map(id => who(id).name || ''), ncols: roster.map(id => who(id).ncol || 27), gameId: o.key.id, fp: o.key.fp };
+    link.prefer = null;
     linkSend(st);
     raceEnter(st);
   }
@@ -2320,13 +2329,69 @@ display()                                   -- off</pre><p class="dim">The Help 
   /* home screen and link bar */
   // the home screen reads the linked Bits from map row 0 and 1 (it has no map of its own):
   // (0,0) how many Bits, (1,0) which one is this, (1+i,0) Bit i's number, (1+i,1) 1 home, 2 in a game, 3 idle
+  // and the vote from rows 2-4 (home.js has the whole list): (1+i,2) Bit i's vote (a game's number here, 0 none,
+  // 998 a game this Bit doesn't have, 999 passes), (1+i,3) its name colour, row 4+i its name,
+  // (0,4) frames until the winner starts, (1,4) the winner, (2,4) the wait, (3,4) votes it takes,
+  // (4,4) Bits that don't pass, (5,4) Bits on their home screens
   function homeRoster() {
     const b = bitsSorted(), base = ptr.map >> 1, H16 = RT.HEAPU16;
     H16[base] = b.length; H16[base + 1] = b.findIndex(x => x[0] === link.id) + 1;
     b.slice(0, 40).forEach((x, i) => {
       const p = link.peers.get(x[0]), st = p ? p.st : 'home';
       H16[base + 2 + i] = x[1]; H16[base + MAPW + 2 + i] = st === 'home' ? 1 : (st === 'game' || st === 'share') ? 2 : 3;
+      const v = bitVote(x[0]);
+      H16[base + 2 * MAPW + 2 + i] = st !== 'home' ? 0 : v.pass ? VOTE_PASS : v.vote ? (bit.vkeys.get(v.vote) || VOTE_ELSE) : 0;
+      H16[base + 3 * MAPW + 2 + i] = (p ? p.ncol : myColor()) || 27;
+      const nm = (p ? p.name : myName()) || '';
+      for (let c = 0; c < 10; c++) H16[base + (5 + i) * MAPW + c] = c < nm.length ? nm.charCodeAt(c) & 0x7f : 0;
     });
+    const t = voteTally(), r = base + 4 * MAPW, on = t.win && t.win === link.voteWin;
+    H16[r] = on ? Math.max(1, Math.ceil((VOTE_WAIT - (performance.now() - link.voteAt)) / STEP)) : 0;
+    H16[r + 1] = t.win ? (bit.vkeys.get(t.win) || VOTE_ELSE) : 0;
+    H16[r + 2] = Math.round(VOTE_WAIT / STEP); H16[r + 3] = t.need; H16[r + 4] = t.nonpass; H16[r + 5] = t.home;
+  }
+  /* voting: with two or more Bits on their home screens, A on a game votes for it instead of starting it, B passes
+     (home.js). A game wins once at least 75% of the Bits that don't pass voted for it, so if every other Bit passes,
+     one vote wins. The winner shows for a second, then the first of its voters (in number order) starts it as if A
+     was pressed there, and its voters get the seats first (linkRoster). A net_send game starts on every Bit by
+     itself and they meet in its lobby. The hellos carry each Bit's vote, so Bits that come or go, and changed
+     votes, count straight away. The same rules as bk_host.c "voting". */
+  const VOTE_WAIT = 1000, VOTE_ELSE = 998, VOTE_PASS = 999;
+  function bitVote(id) { if (id === link.id) return { vote: link.vote, pass: link.pass }; const p = link.peers.get(id) || {}; return { vote: p.vote || null, pass: !!p.pass }; }
+  function voteTally() {
+    const t = { home: 0, nonpass: 0, need: 1, votes: 0, win: null, starter: null, voters: [] };
+    if (!link.ch) return t;
+    const b = bitsSorted().map(([id]) => Object.assign({ id, home: id === link.id ? myState() === 'home' : (link.peers.get(id) || {}).st === 'home' }, bitVote(id)))
+      .filter(x => x.home);
+    t.home = b.length;
+    const yes = b.filter(x => !x.pass);
+    t.nonpass = yes.length; t.need = Math.max(1, Math.ceil(t.nonpass * 3 / 4));
+    if (t.home < 2 || myState() !== 'home') return t;   // a vote takes two Bits on their home screens, this one too
+    for (const x of yes) {
+      if (!x.vote) continue;
+      const c = yes.filter(y => y.vote === x.vote).length;
+      t.votes = Math.max(t.votes, c);
+      if (!t.win && c * 4 >= t.nonpass * 3) t.win = x.vote;
+    }
+    if (t.win) { t.voters = yes.filter(x => x.vote === t.win).map(x => x.id).slice(0, MAXP); t.starter = t.voters[0]; }
+    return t;
+  }
+  function voteSet(n, pass) {   // the home screen's track(-4, n) / track(-5, pass)
+    if (pass !== undefined) { link.pass = !!pass; if (pass) link.vote = null; }
+    else { const g = bit.games[n - 1]; link.vote = g && g.vkey ? g.vkey : null; if (link.vote) link.pass = false; }
+    linkHi();
+  }
+  function voteTick() {        // has a game won? its first voter starts it
+    const t = voteTally(), now = performance.now();
+    if (!t.win || t.win !== link.voteWin) { link.voteWin = t.win; link.voteAt = now; return; }
+    if (now - link.voteAt < VOTE_WAIT || bit.busy) return;
+    const n = bit.vkeys.get(t.win), g = n && bit.games[n - 1];
+    if (!g) return;
+    const net = (() => { try { return !g.app && isNetGame((g.studio ? cart : g.demo ? demoCart(g.demo) : decodeCart(g.data)).code); } catch (e) { return false; } })();
+    if (!net && t.starter !== link.id) return;   // the starter's start brings this Bit in
+    log(`🗳 "${g.name}" won the vote`, 'sys');
+    link.voteWin = null; link.vote = null; link.pass = false; link.prefer = t.voters;
+    bitRequest(1, n);
   }
   let homeRefreshT = 0;
   function refreshHomeSoon() {     // paused badges depend on who is linked: draw the home screen again
@@ -2479,7 +2544,7 @@ display()                                   -- off</pre><p class="dim">The Help 
     el.textContent = cartFile ? `💾 ${cartFile}` : '';
     el.title = cartFile ? `Saves to ${cartFile} on the Bit (${BKStore.label()}). Ctrl+S saves.` : '';
   }
-  const bit = { on: false, playing: null, games: [], sel: 1, cur: null, hold: false, busy: false, racePick: false };
+  const bit = { on: false, playing: null, games: [], sel: 1, cur: null, hold: false, busy: false, racePick: false, vkeys: new Map() };
   const NO_PRESS = new Uint8Array(12);
   let comboHeld = false;
   const START = 1 << 10, SELECT = 1 << 11;
@@ -2609,6 +2674,7 @@ display()                                   -- off</pre><p class="dim">The Help 
     const paused = await BKSnap.list();   // linked: a game is paused when every player's Bit kept it
     const tiles = new Uint8Array(TILES * 64);
     const COLORS = [3, 8, 15, 20, 25, 4, 9, 16];
+    const vkeys = new Map();   // a game's vote key (its id and fingerprint, the same on every Bit that has it) -> its number
     const rows = bit.games.slice(0, 96).map((g, i) => {
       const slot = Math.floor(i / 8) * 32 + (i % 8) * 2 + 0;
       let c = null;
@@ -2617,10 +2683,13 @@ display()                                   -- off</pre><p class="dim">The Help 
       const has = c && iconFor(c, slot, tiles);
       const plan = c && !g.app ? linkPlan(c.code) : null, np = plan && plan.mode === 'together' ? plan.np : 1;
       const pl = plan ? `, pmin=${plan.p.min}, pmax=${plan.p.max}, race=${plan.p.race ? luaStr(plan.p.race) : 'nil'}, net=${isNetGame(c.code)}` : '';
-      const k = gameKey(g), p = np > 1 ? Array.from({ length: np }, (_, j) => paused.get(linkSnapId(np, k.id, j + 1)) === k.fp).every(Boolean) : paused.get(k.id) === k.fp;
+      const k = gameKey(g);
+      if (!g.app) { g.vkey = k.id + '#' + k.fp; vkeys.set(g.vkey, i + 1); }
+      const p = np > 1 ? Array.from({ length: np }, (_, j) => paused.get(linkSnapId(np, k.id, j + 1)) === k.fp).every(Boolean) : paused.get(k.id) === k.fp;
       return `{name=${luaStr(g.name)}, file=${luaStr(g.file || '')}, studio=${g.studio ? 'true' : 'false'}, paused=${p}, ${has || g.app ? `icon=${slot}` : `color=${COLORS[i % COLORS.length]}`}${g.app ? `, app=true, sub=${luaStr(g.app.sub || '')}` : ''}${pl}}`;
     });
     if (bit.sel > bit.games.length) bit.sel = 1;
+    bit.vkeys = vkeys; link.prefer = null;
     const me = { name: myName(), color: myColor(), bit: String(bitSet.bit || '').slice(0, 14) };
     const data = `BIT = { games = {${rows.join(',')}}, sel = ${bit.sel}, studio = ${!IS_BIT2}, link = true, race_pick = ${!!bit.racePick}, source = ${luaStr(BKStore.state === 'folder' ? BKStore.label() : '')},
       theme = ${BKThemes.toLua(bitTheme)}, me = ${BKThemes.toLua(me)} }`;

@@ -73,7 +73,7 @@ jobs:
         run: platform/sim/build.sh
       - name: Play every game and app on the device host
         run: platform/sim/build/bitsim --test build/device-flash build/device-data --frames 1200 --report build/device-report.md
-      - name: Two linked Bits (lockstep, pause together, net_send) with packets lost
+      - name: Two linked Bits (lockstep, pause together, net_send, voting for a game) with packets lost
         run: platform/sim/build/bitsim --link build/device-flash build/device-link --loss 15
       - name: Two linked Bits playing Mind Laps (race or team in lockstep) with packets lost
         run: platform/sim/build/bitsim --link build/device-flash build/device-link-ml --loss 15 --game "Mind Laps"
@@ -131,6 +131,8 @@ jobs:
           npx playwright install --with-deps chromium || npx playwright install chromium
       - name: Linked Bits (browser)
         run: node tools/linktest.cjs
+      - name: Voting for a game on linked Bits (browser)
+        run: node tools/votetest.cjs
       - name: Emulator apps (browser)
         run: node tools/emubrowsertest.cjs
       - name: Share hub (browser)

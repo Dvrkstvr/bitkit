@@ -70,4 +70,7 @@ int  bk_host_racing(void);                           /* 1 while this Bit plays i
 void bk_host_set_race_pick(int on);                  /* Select on the home screen: race games that can also be played together */
 uint32_t bk_host_link_sync(uint32_t *frame);         /* lockstep frames run and a hash of their buttons and rnd() state */
 int  bk_host_shared(void);                            /* Share app transfers finished (sent or received) */
+int  bk_host_selected(void);                         /* the game picked on the home screen (1-based) */
+int  bk_host_vote(void);                             /* this Bit's vote: a game (1-based), 0 none, -1 passes */
+int  bk_host_votes_for(int n);                       /* Bits on their home screens voting for game n, this one too */
 int  bk_host_net_heard(void);                        /* net_send() events from other Bits so far */                       /* the game shell's _restart(): 1 title, 2 new game, 3 play */
