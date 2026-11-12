@@ -232,5 +232,20 @@ require('../studio/runtime.js')({ onLog: (m, e) => { if (e) errors.push(m); else
     if (errors.length) { errors.forEach(e => fail('Puffball after-match: ' + e)); errors = []; }
   }
 
+  // 10. a game of matches (game{matches = true}, Sweep Storm): the title always has Play (a fresh lobby), and
+  //     Continue only while there is a match to go back to, even with a save file
+  {
+    M.HEAP32[sv] = -1;
+    load('Sweep Storm', PROBE + IP);
+    run(3);
+    if (items()[0] !== 'Play') fail('Sweep Storm title should start with Play, got ' + items().join(', '));
+    pick('Play'); run(5);
+    tap('start'); run(2);                          // the lobby: Start doesn't pause
+    if (st()[0] !== 'play') fail('Start in the Sweep Storm lobby should not pause, got ' + st()[0]);
+    const p = s('game_title()'); M._bkw_eval(p); M._free(p); run(2);
+    if (items().slice(0, 2).join('|') !== 'Continue|Play') fail('Sweep Storm title after playing: ' + items().join(', '));
+    if (errors.length) { errors.forEach(e => fail('Sweep Storm title: ' + e)); errors = []; }
+  }
+
   if (!process.exitCode) console.log('ok: game shell (title, pause, settings, checkpoints, Continue, save files, goal) in every demo passed');
 });

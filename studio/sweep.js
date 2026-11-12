@@ -94,6 +94,8 @@ function _init()
   game{
     title = "Sweep Storm",
     in_menu = function() return scene == "lobby" end,   -- the lobby isn't a match yet: Start doesn't pause there
+    matches = true,                   -- the title has Play (a fresh lobby), and Continue only back into a match
+    pause = { { "Leave match", function() checkpoint(nil) to_lobby() end } },
     players = {1, 20},                -- net_send: every Bit plays its own copy
     title_draw = draw_title,          -- its own animated title screen (above)
     look = { title = 27, shadow = 1, panel = 1, edge = 5, hi = 3, text = 13, pick = 27, goal = 22, footer = 29 },
@@ -976,6 +978,7 @@ end
 texts{
   de = {
     ["Back to lobby"] = "Zurück zur Lobby",
+    ["Leave match"] = "Spiel verlassen",
     ["Shield"] = "Schild",
     ["the next mine can't hurt you"] = "die nächste Mine tut dir nichts",
     ["Scan"] = "Scan",
