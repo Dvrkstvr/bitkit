@@ -99,6 +99,7 @@ function topbar(app, screens, cur, col)
   text(app, 3, 2, col)
   local x = #app * 8 + 12
   for i, n in ipairs(screens) do
+    n = tr(n)
     if i == cur then rectfill(x - 2, 1, #n * 8 + 4, 10, col); text(n, x, 2, 1) else text(n, x, 2, 28) end
     x = x + #n * 8 + 8
   end
@@ -112,6 +113,51 @@ function hint(s)
   if FULL > 0 then FULL = FULL - 1; text("SAVE FULL: delete a song", 3, 230, 26) return end
   text(s, 3, 230, 28)
 end
+-- the music makers' words in the Bit's language (the music words themselves stay: SONG, PATTERN, ATTACK...)
+texts{
+  de = {
+    ["SAVE FULL: delete a song"] = "SPEICHER VOLL: lösche einen Song", ["YES"] = "JA", ["NO"] = "NEIN", ["(KEEP)"] = "(BLEIBT)", ["FULL"] = "VOLL",
+    ["NONE"] = "KEINER", ["A+DIR EDIT X CLEAR Y LOOP L/R POS"] = "A+RICHT. ÄNDERN X LEER Y LOOP L/R POS",
+    ["A+DIR CHANGE  < ORDER"] = "A+RICHT. ÄNDERN  < ABFOLGE", ["A+DIR PAT Y ADD X DEL L LOOP"] = "A+RICHT. PAT Y NEU X WEG L LOOP",
+    ["A+DIR CHANGE  < LIST"] = "A+RICHT. ÄNDERN  < LISTE", ["A HEAR  X DELETE  > EDIT"] = "A HÖREN  X LÖSCHEN  > ÄNDERN",
+    ["A+UP/DOWN: PICK A SOUND"] = "A+HOCH/RUNTER: KLANG WÄHLEN", ["Y: ADD IT"] = "Y: HINZUFÜGEN", ["A+DIR PICK  Y ADD"] = "A+RICHT. WÄHLEN  Y NEU",
+    ["ORDER"] = "ABFOLGE", ["INSTRUMENTS"] = "INSTRUMENTE",
+    ["A+</> LENGTH  A+UP/DN PITCH"] = "A+</> LÄNGE  A+HOCH/RUNTER TON", ["A NOTE X DEL B+DIR JUMP Y+</> LOOP"] = "A NOTE X WEG B+RICHT. SPRUNG Y+</> LOOP",
+    ["NO DRUM SOUNDS IN THIS SONG"] = "KEINE DRUMS IN DIESEM SONG", ["ADD ONE ON TRACKS OR IN HEXBEAT"] = "FÜGE SIE BEI SPUREN/HEXBEAT HINZU",
+    ["A HIT  A+</> PAINT  X CLEAR  Y+</> LOOP"] = "A SCHLAG  A+</> MALEN  X LEER  Y+</>",
+    ["L/R TRACK"] = "L/R SPUR", ["A+UD LOOP Y ADD X DEL R COPY L LOOP"] = "A+HR LOOP Y NEU X WEG R KOPIE L LOOP",
+    ["TRACKS AND SONG"] = "SPUREN UND SONG", ["A+DIR SOUND  Y KEYS/DRUMS  X MUTE"] = "A+RICHT. KLANG  Y TASTEN/DRUMS  X STUMM",
+    ["A+DIR CHANGE  A DO IT"] = "A+RICHT. ÄNDERN  A LOS", ["TRACKS"] = "SPUREN", ["KEYS"] = "TASTEN",
+  },
+  fr = {
+    ["SAVE FULL: delete a song"] = "MÉMOIRE PLEINE : efface un morceau", ["YES"] = "OUI", ["NO"] = "NON", ["(KEEP)"] = "(GARDE)", ["FULL"] = "MAX",
+    ["NONE"] = "AUCUN", ["A+DIR EDIT X CLEAR Y LOOP L/R POS"] = "A+DIR MODIF X VIDER Y BOUCLE L/R POS",
+    ["A+DIR CHANGE  < ORDER"] = "A+DIR CHANGER  < ORDRE", ["A+DIR PAT Y ADD X DEL L LOOP"] = "A+DIR PAT Y AJOUT X SUPPR L BOUCLE",
+    ["A+DIR CHANGE  < LIST"] = "A+DIR CHANGER  < LISTE", ["A HEAR  X DELETE  > EDIT"] = "A ÉCOUTER  X SUPPR  > MODIF",
+    ["A+UP/DOWN: PICK A SOUND"] = "A+HAUT/BAS : CHOISIS UN SON", ["Y: ADD IT"] = "Y : AJOUTER", ["A+DIR PICK  Y ADD"] = "A+DIR CHOISIR  Y AJOUT",
+    ["ORDER"] = "ORDRE", ["INSTRUMENTS"] = "INSTRUMENTS",
+    ["A+</> LENGTH  A+UP/DN PITCH"] = "A+</> DURÉE  A+HAUT/BAS HAUTEUR", ["A NOTE X DEL B+DIR JUMP Y+</> LOOP"] = "A NOTE X SUPPR B+DIR SAUT Y+</> BOUCLE",
+    ["NO DRUM SOUNDS IN THIS SONG"] = "PAS DE BATTERIE DANS CE MORCEAU", ["ADD ONE ON TRACKS OR IN HEXBEAT"] = "AJOUTES-EN DANS PISTES OU HEXBEAT",
+    ["A HIT  A+</> PAINT  X CLEAR  Y+</> LOOP"] = "A FRAPPE  A+</> PEINDRE  X VIDER  Y+</>",
+    ["L/R TRACK"] = "L/R PISTE", ["A+UD LOOP Y ADD X DEL R COPY L LOOP"] = "A+HB BOUCLE Y AJOUT X SUPPR R COPIE L",
+    ["TRACKS AND SONG"] = "PISTES ET MORCEAU", ["A+DIR SOUND  Y KEYS/DRUMS  X MUTE"] = "A+DIR SON  Y NOTES/BATTERIE  X MUET",
+    ["A+DIR CHANGE  A DO IT"] = "A+DIR CHANGER  A VALIDER", ["TRACKS"] = "PISTES", ["KEYS"] = "NOTES", ["DRUMS"] = "BATTERIE",
+  },
+  es = {
+    ["SAVE FULL: delete a song"] = "MEMORIA LLENA: borra una canción", ["YES"] = "SÍ", ["NO"] = "NO", ["(KEEP)"] = "(IGUAL)", ["FULL"] = "MÁX",
+    ["NONE"] = "NINGUNO", ["A+DIR EDIT X CLEAR Y LOOP L/R POS"] = "A+DIR EDITAR X BORRAR Y BUCLE L/R POS",
+    ["A+DIR CHANGE  < ORDER"] = "A+DIR CAMBIAR  < ORDEN", ["A+DIR PAT Y ADD X DEL L LOOP"] = "A+DIR PAT Y AÑADIR X QUITAR L BUCLE",
+    ["A+DIR CHANGE  < LIST"] = "A+DIR CAMBIAR  < LISTA", ["A HEAR  X DELETE  > EDIT"] = "A OÍR  X BORRAR  > EDITAR",
+    ["A+UP/DOWN: PICK A SOUND"] = "A+ARRIBA/ABAJO: ELIGE UN SONIDO", ["Y: ADD IT"] = "Y: AÑADIR", ["A+DIR PICK  Y ADD"] = "A+DIR ELEGIR  Y AÑADIR",
+    ["ORDER"] = "ORDEN", ["INSTRUMENTS"] = "INSTRUMENTOS",
+    ["A+</> LENGTH  A+UP/DN PITCH"] = "A+</> DURACIÓN  A+ARR/ABA TONO", ["A NOTE X DEL B+DIR JUMP Y+</> LOOP"] = "A NOTA X QUITAR B+DIR SALTO Y+</> BUCLE",
+    ["NO DRUM SOUNDS IN THIS SONG"] = "NO HAY BATERÍA EN ESTA CANCIÓN", ["ADD ONE ON TRACKS OR IN HEXBEAT"] = "AÑADE UNA EN PISTAS O EN HEXBEAT",
+    ["A HIT  A+</> PAINT  X CLEAR  Y+</> LOOP"] = "A GOLPE  A+</> PINTAR  X BORRAR  Y+</>",
+    ["L/R TRACK"] = "L/R PISTA", ["A+UD LOOP Y ADD X DEL R COPY L LOOP"] = "A+AA BUCLE Y AÑADIR X QUITAR R COPIA",
+    ["TRACKS AND SONG"] = "PISTAS Y CANCIÓN", ["A+DIR SOUND  Y KEYS/DRUMS  X MUTE"] = "A+DIR SONIDO  Y NOTAS/BATERÍA  X MUDO",
+    ["A+DIR CHANGE  A DO IT"] = "A+DIR CAMBIAR  A HACER", ["TRACKS"] = "PISTAS", ["KEYS"] = "NOTAS", ["DRUMS"] = "BATERÍA",
+  },
+}
 
 -- a list of settings: {label, get(), change(d, big), act()}
 function list_draw(items, sel, x, y, w, focus)
@@ -119,7 +165,7 @@ function list_draw(items, sel, x, y, w, focus)
     local yy = y + (i - 1) * 11
     if i == sel and focus then rectfill(x - 2, yy - 2, w + 4, 11, 2) end
     text(it[1], x, yy, it[4] and 27 or (i == sel and focus and 13 or 29))
-    if it[2] then local v = tostring(it[2]()) text(v, x + w - #v * 8, yy, 13) end
+    if it[2] then local v = tr(tostring(it[2]())) text(v, x + w - #v * 8, yy, 13) end
   end
 end
 function list_input(items, st)
@@ -813,7 +859,8 @@ LOOK_ABOUT = {
   vivid = {"Punchy colour and contrast,", "no lines."},
 }
 -- name, color, bit: the owner's profile. Other Bits see the name in linked games (player_name() in games).
-S = {look = "theme", strength = 10, bright = 10, volume = 10, name = "", color = 27, bit = ""}
+-- lang: the Bit's language (lang(), tr() and texts{} in every game; LANGUAGES in runtime/bk_lang.lua)
+S = {look = "theme", strength = 10, bright = 10, volume = 10, name = "", color = 27, bit = "", lang = lang()}
 COLORS = {27, 10, 26, 25, 5, 4, 21, 22, 17, 16, 18, 12, 13, 29}
 local PAGES = {"SCREEN", "USER"}
 local SCREEN_ITEMS = {
@@ -823,6 +870,7 @@ local SCREEN_ITEMS = {
   {key = "volume", name = "VOLUME", min = 0, max = 10, about = {"Sound for every game and app.", "Games have their own on top."}},
 }
 local USER_ITEMS = {
+  {key = "lang", name = "LANGUAGE", about = {"Menus and games in your language", "(games that know it: others stay)."}},
   {key = "name", name = "YOUR NAME", text = 10, about = {"Other players see it when Bits", "link up, and games show it."}},
   {key = "color", name = "YOUR COLOUR", about = {"Your colour next to your name."}},
   {key = "bit", name = "BIT NAME", text = 14, about = {"This Bit's own name: on the home", "screen and when it switches on."}},
@@ -833,6 +881,7 @@ local function items() return page == 1 and SCREEN_ITEMS or USER_ITEMS end
 local function look_index() for i, l in ipairs(LOOKS) do if l == S.look then return i end end return 1 end
 local function show_look() if S.look == "game" or S.look == "theme" then display() else display(S.look) end end
 local function color_index() for i, c in ipairs(COLORS) do if c == S.color then return i end end return 1 end
+local function lang_index() for i, l in ipairs(LANGUAGES) do if l[1] == S.lang then return i end end return 1 end
 
 function _init()
   local d = saved()
@@ -848,6 +897,8 @@ local function change(d)
     show_look()
   elseif it.key == "color" then
     S.color = COLORS[(color_index() - 1 + d) % #COLORS + 1]
+  elseif it.key == "lang" then
+    S.lang = LANGUAGES[(lang_index() - 1 + d) % #LANGUAGES + 1][1]   -- the Bit switches to it as soon as it's saved
   elseif it.text then
     return
   else
@@ -869,7 +920,7 @@ function _update()
   if btnp("up") then sel = (sel - 2) % n + 1; sfx("G5", 4, 0.15, 3) end
   local it = items()[sel]
   if it.text and btnp("a") then
-    kb_open(it.name, S[it.key], it.text, function(v) S[it.key] = v stored() end)
+    kb_open(tr(it.name), S[it.key], it.text, function(v) S[it.key] = v stored() end)
     return
   end
   if btnp("right") or btnp("a") then change(1) end
@@ -877,9 +928,10 @@ function _update()
 end
 
 local function value_of(it)
-  if it.key == "look" then return LOOK_NAMES[look_index()] end
+  if it.key == "look" then return tr(LOOK_NAMES[look_index()]) end
+  if it.key == "lang" then return LANGUAGES[lang_index()][2] end
   if it.key == "color" then return "" end
-  if it.text then return S[it.key] == "" and "(A TO TYPE)" or S[it.key] end
+  if it.text then return S[it.key] == "" and tr("(A TO TYPE)") or S[it.key] end
   return S[it.key]
 end
 
@@ -916,20 +968,24 @@ local function name_card(x, y, w, h)
   rectfill(px, py, 12, 16, S.color) rectfill(px + 3, py + 4, 2, 3, 1) rectfill(px + 8, py + 4, 2, 3, 1)
   local bit = S.bit == "" and "PocketBit" or S.bit
   text(bit, x + w // 2 - #bit * 4, y + 8, 13)
-  text("LINKED PLAY", x + w // 2 - 44, y + h - 20, 18)
+  local lp = tr("LINKED PLAY")
+  text(lp, x + w // 2 - #lp * 4, y + h - 20, 18)
   rect(x, y, w, h, 13)
 end
 
 function _draw()
   cls(1)
   rectfill(0, 0, 320, 14, 31)
-  text("SETTINGS", 6, 4, 13)
-  local x = 90
+  local ttl = tr("SETTINGS")
+  text(ttl, 6, 4, 13)
+  local x = math.max(90, 6 + #ttl * 8 + 14)
   for i, n in ipairs(PAGES) do
+    n = tr(n)
     if i == page then rectfill(x - 3, 2, #n * 8 + 6, 11, 21) text(n, x, 4, 1) else text(n, x, 4, 28) end
     x = x + #n * 8 + 14
   end
-  text("L R page", 314 - 8 * 8, 4, 28)
+  local lr = tr("L R page")
+  text(lr, 314 - #lr * 8, 4, 28)
   for i, it in ipairs(items()) do
     local y = 24 + (i - 1) * 34
     local on = i == sel
@@ -959,9 +1015,90 @@ function _draw()
   for k, line_ in ipairs(about or {}) do text(line_, 12, 168 + (k - 1) * 12, 29) end
   if flash > 0 then text("saved", 312 - 5 * 8, 206, 17) end
   rectfill(0, 222, 320, 18, 31)
-  text(page == 1 and "UP DOWN choose   LEFT RIGHT change" or (it.text and "A type   UP DOWN choose" or "LEFT RIGHT change"), 8, 227, 29)
+  text(page == 1 and "UP DOWN choose   LEFT RIGHT change" or (it.text and "A type   UP DOWN choose" or "UP DOWN choose   LEFT RIGHT change"), 8, 227, 29)
   kb_draw()
 end
+
+texts{
+  de = {
+    ["SETTINGS"] = "EINSTELLUNGEN", ["SCREEN"] = "BILD", ["USER"] = "DU", ["L R page"] = "L R Seite",
+    ["SCREEN LOOK"] = "BILDSTIL", ["LOOK STRENGTH"] = "STÄRKE DES STILS", ["BRIGHTNESS"] = "HELLIGKEIT", ["VOLUME"] = "LAUTSTÄRKE",
+    ["LANGUAGE"] = "SPRACHE", ["YOUR NAME"] = "DEIN NAME", ["YOUR COLOUR"] = "DEINE FARBE", ["BIT NAME"] = "NAME DES BITS",
+    ["THEME'S"] = "VOM DESIGN", ["GAME'S OWN"] = "VOM SPIEL", ["OFF"] = "AUS", ["CRT"] = "RÖHRE", ["ARCADE"] = "ARCADE",
+    ["OLD TV"] = "ALTER FERNSEHER", ["HANDHELD"] = "HANDHELD", ["SEPIA"] = "SEPIA", ["NIGHT"] = "NACHT", ["VIVID"] = "KRÄFTIG",
+    ["(A TO TYPE)"] = "(A ZUM TIPPEN)", ["LINKED PLAY"] = "GEMEINSAM", ["saved"] = "gespeichert",
+    ["UP DOWN choose   LEFT RIGHT change"] = "OBEN UNTEN wählen  LINKS RECHTS ändern", ["A type   UP DOWN choose"] = "A tippen   OBEN UNTEN wählen",
+    ["How strong the look is."] = "Wie stark der Stil wirkt.", ["10 is the full look."] = "10 ist der volle Stil.",
+    ["The screen's backlight."] = "Die Beleuchtung des Bildschirms.",
+    ["Sound for every game and app."] = "Ton für jedes Spiel und jede App.", ["Games have their own on top."] = "Spiele haben ihren eigenen dazu.",
+    ["Menus and games in your language"] = "Menüs und Spiele in deiner Sprache", ["(games that know it: others stay)."] = "(in Spielen, die sie kennen).",
+    ["Other players see it when Bits"] = "Andere Spieler sehen ihn, wenn Bits", ["link up, and games show it."] = "sich verbinden, und Spiele zeigen ihn.",
+    ["Your colour next to your name."] = "Deine Farbe neben deinem Namen.",
+    ["This Bit's own name: on the home"] = "Der Name dieses Bits: auf dem Start-", ["screen and when it switches on."] = "bildschirm und beim Einschalten.",
+    ["The look your theme picks"] = "Der Stil, den dein Design wählt", ["(Themes app, Utilities row)."] = "(App Designs, Reihe Werkzeuge).",
+    ["Each game picks its own look."] = "Jedes Spiel wählt seinen Stil.", ["Most play with no shader."] = "Die meisten ohne Shader.",
+    ["A clean picture, even in games"] = "Ein klares Bild, auch in Spielen,", ["that ask for a look."] = "die einen Stil wollen.",
+    ["Scanlines and curved glass,"] = "Bildzeilen und gewölbtes Glas,", ["like a home TV from the 80s."] = "wie ein Fernseher aus den 80ern.",
+    ["Bright scanlines and strong"] = "Helle Bildzeilen und kräftige", ["colour, like an arcade cabinet."] = "Farben, wie ein Spielautomat.",
+    ["A worn set: soft, grainy,"] = "Ein altes Gerät: weich, körnig,", ["faded colour, dark corners."] = "blasse Farben, dunkle Ecken.",
+    ["A dim early handheld LCD,"] = "Ein dunkles frühes Handheld-LCD", ["with washed out colour."] = "mit verwaschenen Farben.",
+    ["Brown and warm, like an old"] = "Braun und warm, wie ein altes", ["photograph."] = "Foto.",
+    ["Cool and dark, easy on the"] = "Kühl und dunkel, schont die", ["eyes late at night."] = "Augen spät in der Nacht.",
+    ["Punchy colour and contrast,"] = "Kräftige Farben und Kontrast,", ["no lines."] = "keine Linien.",
+  },
+  fr = {
+    ["SETTINGS"] = "PARAMÈTRES", ["SCREEN"] = "ÉCRAN", ["USER"] = "TOI", ["L R page"] = "L R page",
+    ["SCREEN LOOK"] = "STYLE D'ÉCRAN", ["LOOK STRENGTH"] = "FORCE DU STYLE", ["BRIGHTNESS"] = "LUMINOSITÉ", ["VOLUME"] = "VOLUME",
+    ["LANGUAGE"] = "LANGUE", ["YOUR NAME"] = "TON NOM", ["YOUR COLOUR"] = "TA COULEUR", ["BIT NAME"] = "NOM DU BIT",
+    ["THEME'S"] = "DU THÈME", ["GAME'S OWN"] = "DU JEU", ["OFF"] = "AUCUN", ["CRT"] = "CATHODIQUE", ["ARCADE"] = "ARCADE",
+    ["OLD TV"] = "VIEILLE TÉLÉ", ["HANDHELD"] = "CONSOLE", ["SEPIA"] = "SÉPIA", ["NIGHT"] = "NUIT", ["VIVID"] = "VIF",
+    ["(A TO TYPE)"] = "(A POUR ÉCRIRE)", ["LINKED PLAY"] = "JEU RELIÉ", ["saved"] = "enregistré",
+    ["UP DOWN choose   LEFT RIGHT change"] = "HAUT BAS choisir  GAUCHE DROITE changer", ["A type   UP DOWN choose"] = "A écrire   HAUT BAS choisir",
+    ["How strong the look is."] = "La force du style.", ["10 is the full look."] = "10 : le style complet.",
+    ["The screen's backlight."] = "Le rétroéclairage de l'écran.",
+    ["Sound for every game and app."] = "Le son de chaque jeu et appli.", ["Games have their own on top."] = "Les jeux ont aussi le leur.",
+    ["Menus and games in your language"] = "Menus et jeux dans ta langue", ["(games that know it: others stay)."] = "(si le jeu la connaît).",
+    ["Other players see it when Bits"] = "Les autres joueurs le voient quand", ["link up, and games show it."] = "les Bits sont reliés, et en jeu.",
+    ["Your colour next to your name."] = "Ta couleur à côté de ton nom.",
+    ["This Bit's own name: on the home"] = "Le nom de ce Bit : sur l'accueil", ["screen and when it switches on."] = "et quand il s'allume.",
+    ["The look your theme picks"] = "Le style choisi par ton thème", ["(Themes app, Utilities row)."] = "(appli Thèmes, rangée Outils).",
+    ["Each game picks its own look."] = "Chaque jeu choisit son style.", ["Most play with no shader."] = "La plupart sans shader.",
+    ["A clean picture, even in games"] = "Une image nette, même dans les", ["that ask for a look."] = "jeux qui veulent un style.",
+    ["Scanlines and curved glass,"] = "Lignes et verre bombé, comme", ["like a home TV from the 80s."] = "une télé des années 80.",
+    ["Bright scanlines and strong"] = "Lignes vives et couleurs fortes,", ["colour, like an arcade cabinet."] = "comme une borne d'arcade.",
+    ["A worn set: soft, grainy,"] = "Un vieux poste : doux, granuleux,", ["faded colour, dark corners."] = "couleurs passées, coins sombres.",
+    ["A dim early handheld LCD,"] = "Un vieil écran LCD de console,", ["with washed out colour."] = "aux couleurs délavées.",
+    ["Brown and warm, like an old"] = "Brun et chaud, comme une vieille", ["photograph."] = "photographie.",
+    ["Cool and dark, easy on the"] = "Froid et sombre, doux pour les", ["eyes late at night."] = "yeux tard le soir.",
+    ["Punchy colour and contrast,"] = "Couleurs et contraste forts,", ["no lines."] = "sans lignes.",
+  },
+  es = {
+    ["SETTINGS"] = "AJUSTES", ["SCREEN"] = "PANTALLA", ["USER"] = "TÚ", ["L R page"] = "L R página",
+    ["SCREEN LOOK"] = "ESTILO DE PANTALLA", ["LOOK STRENGTH"] = "FUERZA DEL ESTILO", ["BRIGHTNESS"] = "BRILLO", ["VOLUME"] = "VOLUMEN",
+    ["LANGUAGE"] = "IDIOMA", ["YOUR NAME"] = "TU NOMBRE", ["YOUR COLOUR"] = "TU COLOR", ["BIT NAME"] = "NOMBRE DEL BIT",
+    ["THEME'S"] = "DEL TEMA", ["GAME'S OWN"] = "DEL JUEGO", ["OFF"] = "NINGUNO", ["CRT"] = "TUBO", ["ARCADE"] = "ARCADE",
+    ["OLD TV"] = "TELE VIEJA", ["HANDHELD"] = "PORTÁTIL", ["SEPIA"] = "SEPIA", ["NIGHT"] = "NOCHE", ["VIVID"] = "VIVO",
+    ["(A TO TYPE)"] = "(A PARA ESCRIBIR)", ["LINKED PLAY"] = "CONECTADOS", ["saved"] = "guardado",
+    ["UP DOWN choose   LEFT RIGHT change"] = "ARRIBA ABAJO elegir  IZQ. DER. cambiar", ["A type   UP DOWN choose"] = "A escribir   ARRIBA ABAJO elegir",
+    ["How strong the look is."] = "La fuerza del estilo.", ["10 is the full look."] = "10 es el estilo completo.",
+    ["The screen's backlight."] = "La luz de la pantalla.",
+    ["Sound for every game and app."] = "Sonido de todo juego y app.", ["Games have their own on top."] = "Los juegos tienen el suyo además.",
+    ["Menus and games in your language"] = "Menús y juegos en tu idioma", ["(games that know it: others stay)."] = "(si el juego lo tiene).",
+    ["Other players see it when Bits"] = "Los demás lo ven cuando los Bits", ["link up, and games show it."] = "se conectan, y en los juegos.",
+    ["Your colour next to your name."] = "Tu color junto a tu nombre.",
+    ["This Bit's own name: on the home"] = "El nombre de este Bit: en el inicio", ["screen and when it switches on."] = "y al encenderse.",
+    ["The look your theme picks"] = "El estilo que elige tu tema", ["(Themes app, Utilities row)."] = "(app Temas, fila Utilidades).",
+    ["Each game picks its own look."] = "Cada juego elige su estilo.", ["Most play with no shader."] = "Casi todos sin shader.",
+    ["A clean picture, even in games"] = "Una imagen limpia, incluso en", ["that ask for a look."] = "juegos que piden un estilo.",
+    ["Scanlines and curved glass,"] = "Líneas y cristal curvo, como", ["like a home TV from the 80s."] = "una tele de los años 80.",
+    ["Bright scanlines and strong"] = "Líneas brillantes y color fuerte,", ["colour, like an arcade cabinet."] = "como una máquina recreativa.",
+    ["A worn set: soft, grainy,"] = "Una tele gastada: suave, con grano,", ["faded colour, dark corners."] = "color apagado, esquinas oscuras.",
+    ["A dim early handheld LCD,"] = "Un LCD portátil antiguo y oscuro,", ["with washed out colour."] = "con colores desvaídos.",
+    ["Brown and warm, like an old"] = "Marrón y cálido, como una foto", ["photograph."] = "antigua.",
+    ["Cool and dark, easy on the"] = "Frío y oscuro, descansa la", ["eyes late at night."] = "vista por la noche.",
+    ["Punchy colour and contrast,"] = "Color y contraste intensos,", ["no lines."] = "sin líneas.",
+  },
+}
 `;
 
   // 16x16 icons: one character per pixel, '.' transparent, others palette colours
@@ -983,7 +1120,7 @@ end
   window.BK_APPS = [
     { name: 'Hexbeat', code: HEXBEAT, icon: HEXBEAT_ICON, saveKey: 'Music', sub: 'tracker', about: 'A tracker: rows of notes and hex effects, played with buttons.' },
     { name: 'Loopbox', code: LOOPBOX, icon: LOOPBOX_ICON, saveKey: 'Music', sub: 'loops and piano roll', about: 'Loops, a piano roll and a drum grid, played with buttons.' },
-    { name: 'Settings', code: SETTINGS, icon: SETTINGS_ICON, saveKey: 'Bit settings', sub: 'screen, sound, your name', settings: true,
+    { name: 'Settings', code: SETTINGS, icon: SETTINGS_ICON, saveKey: 'Bit settings', sub: 'screen, sound, language, name', settings: true,
       about: 'The Bit itself: a retro screen look for every game, brightness, volume, and your name for linked play.' },
   ];
 })();

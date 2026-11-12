@@ -58,7 +58,12 @@ static uint16_t err_last;
 /* a race (a one-player game with game{race = ...} started on linked Bits): every Bit plays its own run, nothing
    in lockstep; the game shell (bk_game.lua) gets RACE and tells the others how its run goes with net events,
    under the race's own key (its sid). */
-static struct { int on, kind; uint32_t sid; char extra[512]; } RC;
+static struct {
+  int on, kind; uint32_t sid; char extra[512];
+  /* the Bit that started it sends its START again until every other Bit says it is in a game (or 3 s are up):
+     the race START has no answer of its own, and a Bit that missed every copy would be left out */
+  int np, host; uint32_t ids[BK_MAX_PLAYERS], at, last; uint8_t in_game[BK_MAX_PLAYERS];
+} RC;
 
 /* linked Bits (the section "linked Bits" below) */
 static void link_home_rows(void);
@@ -211,6 +216,19 @@ static void take_save(void) {
   if (!strcmp(cur->save_key, "Bit theme")) read_theme(BK->save.data, (size_t)BK->save.len);
 }
 
+/* the host's own few words (error screen, linked Bits' banner) in the Bit's language; UTF-8, the font reads it */
+static const char *host_tr(const char *en) {
+  static const char *W[][4] = {   /* en, de, fr, es */
+    {"THE GAME STOPPED", "DAS SPIEL HAT ANGEHALTEN", "LE JEU S'EST ARRÊTÉ", "EL JUEGO SE DETUVO"},
+    {"A: back to the home screen", "A: zurück zum Startbildschirm", "A : retour à l'accueil", "A: volver al inicio"},
+    {"WAITING FOR BIT %d   START+SELECT LEAVES", "WARTE AUF BIT %d   START+SELECT: RAUS", "ON ATTEND LE BIT %d   START+SELECT: QUITTER", "ESPERANDO AL BIT %d   START+SELECT: SALIR"},
+  };
+  const char *l = bk_lang_get();
+  int k = !strcmp(l, "de") ? 1 : !strcmp(l, "fr") ? 2 : !strcmp(l, "es") ? 3 : 0;
+  for (size_t i = 0; i < sizeof(W) / sizeof(W[0]); i++) if (!strcmp(W[i][0], en)) return W[i][k];
+  return en;
+}
+
 /* ------------------------------------------------------------ the Bit's settings ("Bit settings") and theme ("Bit theme") */
 static void str_field(lua_State *l, const char *k, char *out, size_t n) {
   if (lua_getfield(l, -1, k) == LUA_TSTRING) snprintf(out, n, "%s", lua_tostring(l, -1));
@@ -229,11 +247,13 @@ static int lua_table_of(lua_State *l, const char *data, size_t len) {
 static void read_settings(const char *data, size_t len) {
   bk_bit_settings n = bs;
   snprintf(n.look, sizeof(n.look), "theme"); n.strength = n.bright = n.volume = 10; n.color = 27; n.name[0] = n.bit[0] = 0;
+  snprintf(n.lang, sizeof(n.lang), "en");
   lua_State *l = luaL_newstate();
   if (l && data && lua_table_of(l, data, len)) {
     str_field(l, "look", n.look, sizeof(n.look));
     str_field(l, "name", n.name, sizeof(n.name));
     str_field(l, "bit", n.bit, sizeof(n.bit));
+    str_field(l, "lang", n.lang, sizeof(n.lang));
     const char *k[4] = { "strength", "bright", "volume", "color" };
     int *v[4] = { &n.strength, &n.bright, &n.volume, &n.color };
     for (int i = 0; i < 4; i++) {
@@ -244,6 +264,7 @@ static void read_settings(const char *data, size_t len) {
   }
   if (l) lua_close(l);
   bs = n;
+  bk_lang_set(bs.lang);          /* every cart from now on, and the one that runs (the Settings app shows it at once) */
 }
 static void read_theme(const char *data, size_t len) {
   snprintf(bs.theme_look, sizeof(bs.theme_look), "game"); snprintf(bs.theme_boot, sizeof(bs.theme_boot), "rise"); bs.boottext[0] = 0;
@@ -334,14 +355,14 @@ static void show_error(const char *msg) {
   bk_reset_draw_state();
   bk_cls(1);
   bk_rectfill(0, 0, BK_W, 18, 8);
-  bk_text("THE GAME STOPPED", 8, 5, 7, 1);
+  bk_text(host_tr("THE GAME STOPPED"), 8, 5, 7, 1);
   int y = 28, col = 0; char line[41];
   for (const char *p = errmsg; *p && y < BK_H - 24; p++) {
     if (*p == '\n' || col == 38) { line[col] = 0; bk_text(line, 8, y, 6, 1); y += 10; col = 0; if (*p == '\n') continue; }
     line[col++] = *p == '\t' ? ' ' : *p;
   }
   if (col && y < BK_H - 24) { line[col] = 0; bk_text(line, 8, y, 6, 1); }
-  bk_text("A: back to the home screen", 8, BK_H - 14, 13, 1);
+  bk_text(host_tr("A: back to the home screen"), 8, BK_H - 14, 13, 1);
   for (int c = 0; c < BK_CHANNELS; c++) BK->voice[c].len = 0;
   mode = MODE_ERROR;
 }
@@ -927,6 +948,8 @@ static void enter(uint32_t from, uint32_t sid, int np, int race, const uint32_t 
     for (int k = 0; k < np && o < sizeof(RC.extra); k++) { char q[40]; lua_str(q, sizeof(q), names[k]); o += (size_t)snprintf(RC.extra + o, sizeof(RC.extra) - o, "%s%s", k ? ", " : "", q); }
     if (o < sizeof(RC.extra)) snprintf(RC.extra + o, sizeof(RC.extra) - o, "} }\n");
     RC.on = 1; RC.kind = race; RC.sid = sid;
+    RC.host = from == LK.id; RC.np = np; RC.at = RC.last = lk_now();
+    memcpy(RC.ids, ids, sizeof(uint32_t) * (size_t)np); memset(RC.in_game, 0, sizeof(RC.in_game));
     sel = n;
     if (home_slot) slot_close(home_slot);
     snprintf(m, sizeof(m), "racing \"%s\" on %d Bits: everyone plays their own run", E[n - 1].name, np);
@@ -1025,7 +1048,7 @@ static void banner_on(void) {
   char t[64]; int miss = 0;
   for (int k = 0; k < LK.np && !miss; k++) if (LK.in[k][LK.f % LK_RING].f1 != LK.f + 1) miss = k + 1;
   const lk_peer *p = miss ? find_peer(LK.ids[miss - 1]) : NULL;
-  snprintf(t, sizeof(t), "WAITING FOR BIT %d   START+SELECT LEAVES", p ? p->num : 0);
+  snprintf(t, sizeof(t), host_tr("WAITING FOR BIT %d   START+SELECT LEAVES"), p ? p->num : 0);
   bk_machine *keep = BK;
   BK = sysm;                           /* draw the text on the error screen's machine, then copy its pixels */
   bk_reset_draw_state();
@@ -1212,6 +1235,18 @@ static void link_tick(void) {
       LK.peer[i] = LK.peer[--LK.npeers]; i--;
       if (LK.on) for (int k = 0; k < LK.np; k++) if (LK.ids[k] == id) { say("a player's Bit is gone, so the linked game ended", 1); link_leave(0); break; }
     }
+  /* a race this Bit started: its START again (every 250 ms, for 3 s) until every other Bit is in a game */
+  if (RC.on && RC.host && mode == MODE_GAME && LK.start_pkt.n && now - RC.at < 3000 && now - RC.last >= 250) {
+    int all = 1;
+    for (int k = 0; k < RC.np; k++) {
+      if (RC.ids[k] == LK.id) continue;
+      const lk_peer *q = find_peer(RC.ids[k]);
+      if (q && q->st == 2) RC.in_game[k] = 1;
+      all &= RC.in_game[k];
+    }
+    RC.last = now;
+    if (!all) C.radio_send(LK.start_pkt.b, LK.start_pkt.n);
+  }
   /* the paused badges depend on how many Bits would play: draw the home screen again when that changes */
   const int n = link_roster_n();
   if (mode == MODE_HOME && n != LK.home_n && LK.ticks > 2) { LK.home_n = n; boot_home(); }

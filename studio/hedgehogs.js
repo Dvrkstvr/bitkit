@@ -56,8 +56,8 @@ end
 -- ---------------------------------------------------------------- helpers
 function sgn(v) return v > 0 and 1 or (v < 0 and -1 or 0) end
 function mid(a, v, b) return math.max(a, math.min(v, b)) end
-function ctext(s, y, c, sc) sc = sc or 1 text(s, 160 - #s * 4 * sc, y, c, sc) end
-function stext(s, y, c, sc) sc = sc or 1 text(s, 161 - #s * 4 * sc, y + sc, 1, sc) ctext(s, y, c, sc) end
+function ctext(s, y, c, sc) sc = sc or 1 s = tr(s) text(s, 160 - #s * 4 * sc, y, c, sc) end   -- (tr: texts{} at the end)
+function stext(s, y, c, sc) sc = sc or 1 s = tr(s) text(s, 161 - #s * 4 * sc, y + sc, 1, sc) ctext(s, y, c, sc) end
 function idx(x, y) return y * W + x + 1 end
 function inb(x, y) return x >= 0 and x < W and y >= 0 and y < H end
 function opp(d) return (d + 1) % 4 + 1 end
@@ -432,7 +432,7 @@ function _update()
     winner = rank[1].id
     sfx("C5", 1, 0.4, 8) sfx("E5", 1, 0.4, 16) sfx("G5", 1, 0.4, 30)
     if rank[1].pl > 0 then
-      game_win(hog_name(rank[1]) .. (NP == 1 and " have" or " has") .. " the most land: " .. percent(rank[1].team) .. "% of the garden!")
+      game_win(NP == 1 and tr("You have the most land: %d%% of the garden!", percent(rank[1].team)) or tr("%s has the most land: %d%% of the garden!", hog_name(rank[1]), percent(rank[1].team)))
     end
   end
 end
@@ -515,7 +515,7 @@ function _draw()
       local x = 52 + (i - 1) * 112
       rectfill(x, 110, 104, 26, i == sel and 15 or 2)
       rect(x, 110, 104, 26, i == sel and 13 or 30)
-      text(m[1], x + 52 - #m[1] * 4, 119, i == sel and 27 or 29)
+      local mn = tr(m[1]) text(mn, x + 52 - #mn * 4, 119, i == sel and 27 or 29)
     end
     ctext(MODES[sel][2], 144, 13)
     ctext(NP == 1 and "1 player" or NP .. " players", 156, 29)
@@ -533,7 +533,7 @@ function _draw()
       stext("THE MOLES WIN", 80, 26, 2)
       ctext("Garden " .. lvl .. ", " .. percent(1) .. "% fenced off", 106, 13)
     else
-      stext(hog_name(rank[1]) .. (hog_name(rank[1]) == "You" and " win!" or " wins!"), 78, 27, 2)
+      stext(hog_name(rank[1]) == "You" and tr("You win!") or tr("%s wins!", hog_name(rank[1])), 78, 27, 2)
       for i = 1, math.min(4, #rank) do
         local h = rank[i]
         rectfill(96, 100 + (i - 1) * 12, 6, 8, PC[h.id])
@@ -586,6 +586,45 @@ function draw_title(t)
     clip()
   end
 end
+-- this game's words in other languages (the Bit's language, LANGUAGE in Settings; runtime/bk_lang.lua)
+texts{
+  de = {
+    ["Next garden"] = "Nächster Garten",
+    ["Fence off #% of all # gardens together, or end a Land Grab with the most land."] = "Umzäunt zusammen #% aller # Gärten, oder beende einen Landraub mit dem meisten Land.",
+    ["D-pad: walk. Off your own land you keep walking."] = "Steuerkreuz: laufen. Außerhalb deines Landes läufst du immer weiter.",
+    ["Leave your land to plant a hedge line. Walk back onto your land and all you fenced off is yours."] = "Verlass dein Land, um eine Hecke zu pflanzen. Läufst du zurück auf dein Land, gehört dir alles Umzäunte.",
+    ["Garden: a mole that touches an unfinished line costs a heart. Land without moles in it fills in."] = "Garten: Ein Maulwurf an einer unfertigen Hecke kostet ein Herz. Land ohne Maulwürfe wird ausgefüllt.",
+    ["Land Grab: cross a rival's unfinished line to send them home. Most land at the end wins."] = "Landraub: Kreuz die unfertige Hecke eines Gegners, um ihn heimzuschicken. Das meiste Land am Ende gewinnt.",
+    ["CPU hogs"] = "Computer-Igel",
+    ["Land Grab minutes"] = "Minuten Landraub",
+    ["GARDEN"] = "GARTEN",
+    ["Together: fence off the garden."] = "Zusammen: umzäunt den Garten.",
+    ["LAND GRAB"] = "LANDRAUB",
+    ["Everyone for themselves."] = "Jeder für sich.",
+    ["CPU #"] = "CPU #",
+    ["All # gardens are fenced off!"] = "Alle # Gärten sind umzäunt!",
+    ["You have the most land: %d%% of the garden!"] = "Du hast das meiste Land: %d%% des Gartens!",
+    ["%s has the most land: %d%% of the garden!"] = "%s hat das meiste Land: %d%% des Gartens!",
+    ["GARDEN #"] = "GARTEN #",
+    ["need #%"] = "nötig #%",
+    ["PICK A GAME"] = "WÄHL EIN SPIEL",
+    ["1 player"] = "1 Spieler",
+    ["# players"] = "# Spieler",
+    ["left / right: pick    A: play"] = "Wahl: links/rechts  A: spielen",
+    ["Fence off #%. Mind the moles!"] = "Umzäun #%. Pass auf die Maulwürfe auf!",
+    ["Most land wins!"] = "Das meiste Land gewinnt!",
+    ["GARDEN # DONE!"] = "GARTEN # FERTIG!",
+    ["Every garden is in bloom."] = "Jeder Garten blüht.",
+    ["On to the next garden."] = "Weiter zum nächsten Garten.",
+    ["A: next garden   B: pick a game"] = "A: nächster Garten   B: anderes Spiel",
+    ["THE MOLES WIN"] = "DIE MAULWÜRFE GEWINNEN",
+    ["Garden #, #% fenced off"] = "Garten #, #% umzäunt",
+    ["You win!"] = "Du gewinnst!",
+    ["%s wins!"] = "%s gewinnt!",
+    ["A: try again   B: pick a game"] = "A: nochmal   B: anderes Spiel",
+    ["A: again   B: pick a game"] = "A: nochmal   B: anderes Spiel",
+  },
+}
 `;
 
   // ---- tiles: the ground is drawn with the map, so every kind of cell is one 8x8 tile

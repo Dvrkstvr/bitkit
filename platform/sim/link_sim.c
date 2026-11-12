@@ -48,6 +48,7 @@ static int lk_ready(void) { return bk_host_link_ready() == 2 && !strcmp(bk_host_
 static int lk_in_game(void) { return bk_host_link_players() == 2; }
 static int lk_racing(void) { return bk_host_racing(); }
 static int lk_at_home(void) { return !strcmp(bk_host_playing(), "home") && !bk_host_link_players(); }
+static int lk_home_or_game(void) { return lk_at_home() || lk_in_game(); }
 /* the home screen, with real buttons: pick game n with Right, then press a button */
 static void lk_press(uint16_t b) { for (int i = 0; i < 3; i++) lk_tick(b); for (int i = 0; i < 3; i++) lk_tick(0); }
 static int lk_pick(int n) {
@@ -73,6 +74,7 @@ static int link_bit(int is_a, const char *flash, const char *data, const char *r
   rs ^= is_a ? 0x1234567u : 0x7654321u;
   if (bk_host_init(&cfg)) { FAIL("host did not start"); return 1; }
   const char *me = is_a ? "Bit A" : "Bit B";
+  who = is_a ? "Bit A: " : "Bit B: ";
   FILE *out = fopen(result, "w");
   uint32_t h1 = 0, f1 = 0, h2 = 0, f2 = 0;
   const int cross = find_game(lk_game), sweep = find_game("Sweep Storm"), windrow = find_game("Windrow"), deep = find_game("Deepglow");
@@ -81,7 +83,9 @@ static int link_bit(int is_a, const char *flash, const char *data, const char *r
 
   /* 1. they find each other; then A starts Crossgate for both */
   if (!lk_until(lk_two, lk_none, 6)) FAIL("%s: never saw the other Bit", me);
-  lk_until(lk_at_home, lk_none, 3);
+  /* (B can hear A's hello and A's START in the same batch of packets: then it is in the game already, and waiting
+     for its home screen here would let A play the whole first game and pause it while B stands by) */
+  lk_until(lk_home_or_game, lk_none, 3);
   if (is_a) { if (!lk_until(lk_ready, lk_none, 6)) FAIL("Bit A: Bit B is not on its home screen"); bk_host_launch(cross); }
   if (!lk_until(lk_in_game, lk_none, 6)) FAIL("%s: the linked game did not start", me);
   /* 2. play in lockstep; A pauses with Start+Select after frame 600 */
@@ -125,7 +129,8 @@ static int link_bit(int is_a, const char *flash, const char *data, const char *r
     } else {
       /* B stays home while A plays Windrow alone */
       const double t = now_us() + 1.0e6;
-      while (now_us() < t) { lk_tick(0); if (strcmp(bk_host_playing(), "home")) { FAIL("Bit B: left home for A's one-player game (%s)", bk_host_playing()); break; } }
+      /* (A's race START can come before the second is up when this Bit is slow: that is not Windrow) */
+      while (now_us() < t) { lk_tick(0); if (strcmp(bk_host_playing(), "home") && !bk_host_racing()) { FAIL("Bit B: left home for A's one-player game (%s)", bk_host_playing()); break; } }
     }
     if (!lk_until(lk_racing, lk_none, 8)) FAIL("%s: the race did not start", me);
     else {
@@ -151,7 +156,8 @@ static int link_bit(int is_a, const char *flash, const char *data, const char *r
     else { lk_tick(0); if (!lk_home_shows_vote(theirs)) FAIL("%s: the home screen doesn't show the other Bit's vote", me); }
     /* 1 of 2 votes each: nothing may start */
     const double t = now_us() + (is_a ? 1.5e6 : 3.0e6);
-    while (now_us() < t) { lk_tick(0); if (bk_host_link_players() || bk_host_racing() || strcmp(bk_host_playing(), "home")) { FAIL("%s: a game started with 1 of 2 votes", me); break; } }
+    /* (on a busy computer the other Bit's clock can run ahead of this one's: once it has changed its vote, a start is right) */
+    while (now_us() < t && bk_host_votes_for(mine) < 2) { lk_tick(0); if (bk_host_link_players() || bk_host_racing() || strcmp(bk_host_playing(), "home")) { FAIL("%s: a game started with 1 of 2 votes", me); break; } }
     if (!is_a) {   /* B changes its mind: both votes for A's game, so it starts on both */
       if (!lk_pick(cross)) FAIL("Bit B: could not pick the linked game");
       lk_press(A);

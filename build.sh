@@ -16,7 +16,7 @@ emcc -O2 -std=gnu99 '-Dluai_makeseed(L)=0x2545F491u' -I$LUA -Iruntime \
   runtime/bk_core.c runtime/bk_capture.c runtime/bk_lua.c runtime/bk_emu.c platform/web/main_web.c $LUA_SRC \
   -sMODULARIZE=1 -sEXPORT_NAME=BitKitRuntime -sENVIRONMENT=web,node \
   -sALLOW_MEMORY_GROWTH=1 -sSINGLE_FILE=1 $ENC \
-  -sEXPORTED_FUNCTIONS=_malloc,_free,_bkw_init,_bkw_load,_bkw_load_ex,_bkw_eval,_bkw_stop,_bkw_frame,_bkw_render,_bkw_audio,_bkw_palette,_bkw_tiles,_bkw_flags,_bkw_map,_bkw_screen,_bkw_default_palette,_bkw_error,_bkw_track,_bkw_sys,_bkw_save,_bkw_input,_bkw_players,_bkw_net,_bkw_display,_bkw_cap_buf,_bkw_cap_len,_bkw_cap_free,_bkw_shot,_bkw_clip_begin,_bkw_clip_frame,_bkw_clip_end,_bkw_emu_rom_alloc,_bkw_emu_start,_bkw_emu_error,_bkw_emu_sram,_bkw_emu_sram_loaded,_bkw_emu_state_load,_bkw_emu_notify,_bkw_emu_kind,_bkw_emu_close \
+  -sEXPORTED_FUNCTIONS=_malloc,_free,_bkw_init,_bkw_load,_bkw_load_ex,_bkw_eval,_bkw_stop,_bkw_frame,_bkw_render,_bkw_audio,_bkw_palette,_bkw_tiles,_bkw_flags,_bkw_map,_bkw_screen,_bkw_default_palette,_bkw_error,_bkw_track,_bkw_sys,_bkw_save,_bkw_input,_bkw_players,_bkw_net,_bkw_display,_bkw_cap_buf,_bkw_cap_len,_bkw_cap_free,_bkw_shot,_bkw_clip_begin,_bkw_clip_frame,_bkw_clip_end,_bkw_emu_rom_alloc,_bkw_emu_start,_bkw_emu_error,_bkw_emu_sram,_bkw_emu_sram_loaded,_bkw_emu_state_load,_bkw_emu_notify,_bkw_emu_kind,_bkw_emu_close,_bkw_lang \
   -sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAPU16,HEAPU32,HEAP32,HEAPF32,UTF8ToString$([ $OLD = 1 ] && echo ,lengthBytesUTF8,stringToUTF8 || echo ,stringToNewUTF8) \
   -o studio/runtime.js
 echo "built studio/runtime.js ($(du -h studio/runtime.js | cut -f1))"

@@ -111,11 +111,6 @@ do
     local s = math.max(0, v) / 60
     return string.format("%d:%04.1f", math.floor(s / 60), s % 60)
   end
-  local function nth(n)
-    local k = n % 100
-    local suf = (k >= 11 and k <= 13) and "th" or ({ "st", "nd", "rd" })[n % 10] or "th"
-    return n .. suf
-  end
   local function race_send()
     local v = R.done and R.val or (R.kind == "score" and R.score or R.t)
     R.res[R.seat] = { done = R.done, v = v, at = R.f }
@@ -128,7 +123,7 @@ do
     local e = R.res[seat]
     local was = e and e.done
     R.res[seat] = { done = done == 1, v = v or 0, at = R.f }
-    if done == 1 and not was then R.news = race_name(seat) .. " FINISHED  " .. race_fmt(v or 0); R.newst = 180 end
+    if done == 1 and not was then R.news = tr("%s FINISHED  %s", race_name(seat), race_fmt(v or 0)); R.newst = 180 end
   end
   local function race_init()
     if type(RACE) ~= "table" then return end
@@ -203,6 +198,7 @@ do
 
   local WON_T = 0                  -- frames since the goal screen (or the after-match menu) came up
   local OVER = nil                 -- the after-match menu's items, from game_over()
+  local OVER_COLS = 2              -- its columns (drawn in two, one when a word is too long)
   local function set_state(s)
     if s == "won" or s == "over" then WON_T = 0 end
     if s == "title" and ST ~= "title" and ST ~= "settings" and ST ~= "help" and ST ~= "confirm" then TT = 0 end
@@ -378,8 +374,9 @@ do
       local was = SEL
       if any_btnp("left") then SEL = (SEL - 2) % #ITEMS + 1 end
       if any_btnp("right") then SEL = SEL % #ITEMS + 1 end
-      if any_btnp("up") and SEL > 2 then SEL = SEL - 2 end
-      if any_btnp("down") and SEL + 2 <= #ITEMS then SEL = SEL + 2 end
+      local c = OVER_COLS
+      if any_btnp("up") then if c == 1 then SEL = (SEL - 2) % #ITEMS + 1 elseif SEL > c then SEL = SEL - c end end
+      if any_btnp("down") then if c == 1 then SEL = SEL % #ITEMS + 1 elseif SEL + c <= #ITEMS then SEL = SEL + c end end
       if SEL ~= was then raw_sfx("E5", 0, 0.15 * vol(), 3) end
     else
       if any_btnp("up") then SEL = (SEL - 2) % #ITEMS + 1; raw_sfx("E5", 0, 0.15 * vol(), 3) end
@@ -411,19 +408,22 @@ do
   end
 
   -- ------------------------------------------------ drawing (screen space, over the game and its overlay)
+  -- every word the shell draws goes through tr(): the Bit's language (bk_lang.lua), the game's texts{} first
   local function center(s, y, c, sc)
     sc = sc or 1
+    s = tr(s)
     text(s, 160 - #s * 4 * sc, y, c, sc)
   end
   local function shadow(s, y, c, sc)
     sc = sc or 1
+    s = tr(s)
     local sh = lk("shadow", 1)
     if sh then text(s, 161 - #s * 4 * sc, y + sc, sh, sc) end
     center(s, y, c, sc)
   end
   local function wrap(s, w)
     local lines, line = {}, ""
-    for word in tostring(s):gmatch("%S+") do
+    for word in tr(tostring(s)):gmatch("%S+") do
       if #line + #word + 1 > w and #line > 0 then lines[#lines + 1] = line; line = word
       else line = #line > 0 and (line .. " " .. word) or word end
     end
@@ -449,14 +449,14 @@ do
       local y = y0 + (i - 1) * 14
       local on = i == SEL
       if on then rectfill(x + 4, y - 3, w - 8, 13, lk("hi", 2)) end
-      local name = it[1]
+      local name = tr(it[1])
       if ST == "settings" then
         local r = setting_row(i)
         if r then
           text(name, x + 14, y, on and PC or TC)
           local v = row_value(r) or r.min
           if r.values then
-            local s = "< " .. tostring(r.values[v] or v) .. " >"
+            local s = "< " .. tr(tostring(r.values[v] or v)) .. " >"
             text(s, x + w - 14 - #s * 8, y, on and PC or TC)
           elseif r.max <= 10 then bar(x + w - 14 - r.max * 7, y, v - r.min, r.max - r.min, on)
           else local s = "< " .. v .. " >"; text(s, x + w - 14 - #s * 8, y, on and PC or TC) end
@@ -481,11 +481,11 @@ do
     elseif not CFG.title_draw then dim(ST == "title" or ST == "help")
     elseif ST ~= "title" then dim(not on_title() or ST == "help") end   -- the art stays bright on the title itself
     if ST == "title" then
-      local t = CFG.title or "BitKit game"
+      local t = tr(CFG.title or "BitKit game")
       local ny = lk("name_y", 30)
       local sc = lk("scale", #t <= 12 and 3 or (#t <= 19 and 2 or 1))
       if ny then shadow(t, ny, lk("title", 27), sc) end
-      local g = wrap("Goal: " .. (CFG.goal or "?"), 34)
+      local g = wrap(tr("Goal:") .. " " .. tr(CFG.goal or "?"), 34)
       local gy = lk("goal_y", ny and ny + 8 * sc + 10 or 64)
       panel(16, gy, 288, #g * 10 + 10)
       for i, l in ipairs(g) do center(l, gy + 6 + (i - 1) * 10, lk("goal", lk("text", 13))) end
@@ -495,7 +495,7 @@ do
       local my = lk("menu_y", 236 - 22 - h)
       panel(mx, my, 160, h)
       draw_items(my + 8, 160, mx)
-      if GAME.won then text("* goal done *", 8, 228, lk("pick", 17)) end
+      if GAME.won then text(tr("* goal done *"), 8, 228, lk("pick", 17)) end
       footer("A: choose")
     elseif ST == "won" and R then
       local rows = race_rows()
@@ -507,15 +507,15 @@ do
       for i, r in ipairs(rows) do if r.seat == R.seat then mine = i end end
       local all = true
       for _, r in ipairs(rows) do if not r.done and not r.gone then all = false end end
-      shadow(all and (nth(mine) .. " OF " .. R.n .. "!") or "FINISHED!", y + 8, lk("goal", 17), 2)
+      shadow(all and tr("%s OF %d!", lang_nth(mine), R.n) or "FINISHED!", y + 8, lk("goal", 17), 2)
       for i = 1, shown do
         local r = rows[i]
         local yy = y + 28 + (i - 1) * 11
         local me = r.seat == R.seat
         local c = me and lk("pick", 27) or lk("text", 13)
         text((r.done and (i .. ".") or "-"), 60, yy, c)
-        text(race_name(r.seat) .. (me and " (YOU)" or ""), 80, yy, c)
-        local v = r.done and race_fmt(r.v) or (r.gone and "left" or (R.kind == "score" and r.heard and (race_fmt(r.v) .. "..") or "racing"))
+        text(race_name(r.seat) .. (me and tr(" (YOU)") or ""), 80, yy, c)
+        local v = r.done and race_fmt(r.v) or (r.gone and tr("left") or (R.kind == "score" and r.heard and (race_fmt(r.v) .. "..") or tr("racing")))
         text(v, 260 - #v * 8, yy, r.done and c or lk("footer", 29))
       end
       draw_items(y + 34 + shown * 11, 220)
@@ -533,8 +533,12 @@ do
       footer(ST == "won" and "hold A: choose" or "A: choose   B: back to the game")
     elseif ST == "over" then
       -- two columns along the bottom, so the game's own results stay readable above it
+      -- (one column when a word is too long for half the screen, like some translations)
       local n = #ITEMS
-      local rows = (n + 1) // 2
+      local cols = 2
+      for _, it in ipairs(ITEMS) do if #tr(it[1]) > 17 then cols = 1 end end
+      OVER_COLS = cols
+      local rows = (n + cols - 1) // cols
       local top = 240 - rows * 13 - 14
       local f = lk("panel", 1)
       if f then rectfill(0, top, 320, 240 - top, f) end
@@ -542,15 +546,16 @@ do
       if e then rectfill(0, top, 320, 1, e) end
       local TC, PC = lk("text", 13), lk("pick", 27)
       for i, it in ipairs(ITEMS) do
-        local x = ((i - 1) % 2) * 160
-        local y = top + 4 + ((i - 1) // 2) * 13
+        local cw = 320 // cols
+        local x = ((i - 1) % cols) * cw
+        local y = top + 4 + ((i - 1) // cols) * 13
         local on = i == SEL
         if on then
-          rectfill(x + 4, y - 2, 152, 12, lk("hi", 2))
+          rectfill(x + 4, y - 2, cw - 8, 12, lk("hi", 2))
           local h = WON_T >= 45 and hold_fill("a") or 0
-          if h > 0 then rectfill(x + 4, y + 9, math.min(152, 152 * h // 45), 1, PC) end
+          if h > 0 then rectfill(x + 4, y + 9, math.min(cw - 8, (cw - 8) * h // 45), 1, PC) end
         end
-        text(it[1], x + 18, y, on and PC or TC)
+        text(tr(it[1]), x + 18, y, on and PC or TC)
         if on then text(">", x + 8, y, PC) end
       end
       center(WON_T < 45 and "..." or "hold A: choose", 240 - 10, lk("footer", 29))
@@ -564,7 +569,7 @@ do
     elseif ST == "help" then
       local lines = {}
       for _, l in ipairs(CFG.help or {}) do for _, w in ipairs(wrap(l, 34)) do lines[#lines + 1] = w end end
-      local g = wrap("Goal: " .. (CFG.goal or "?"), 34)
+      local g = wrap(tr("Goal:") .. " " .. tr(CFG.goal or "?"), 34)
       local h = (#lines + #g) * 10 + 60
       local y = math.max(4, 120 - h // 2)
       panel(16, y, 288, math.min(h, 232 - y))
@@ -656,14 +661,14 @@ do
     if R and (ST == "play" or ST == "pause") then
       camera() clip()
       if R.cd > 0 or R.t < 45 then
-        local s = R.cd > 0 and tostring((R.cd + 59) // 60) or "GO!"
+        local s = R.cd > 0 and tostring((R.cd + 59) // 60) or tr("GO!")
         rectfill(160 - #s * 16 - 10, 88, #s * 32 + 20, 48, lk("panel", 1) or 1)
         shadow(s, 96, lk("title", 27), 4)
         if R.cd > 0 then center("RACE ON " .. R.n .. " BITS", 142, lk("text", 13)) end
       end
       local nd = 0
       for s = 1, R.n do local e = R.res[s] if e and e.done then nd = nd + 1 end end
-      local hud = "RACE " .. race_fmt(R.done and R.val or (R.kind == "score" and R.score or R.t)) .. "  " .. nd .. "/" .. R.n .. " IN"
+      local hud = tr("RACE " .. race_fmt(R.done and R.val or (R.kind == "score" and R.score or R.t)) .. "  " .. nd .. "/" .. R.n .. " IN")
       rectfill(320 - #hud * 8 - 6, 228, #hud * 8 + 6, 12, 1)
       text(hud, 320 - #hud * 8 - 3, 230, R.done and 27 or 13)
       if R.newst > 0 and R.news then

@@ -51,9 +51,9 @@ end
 
 -- ---------------------------------------------------------------- helpers
 function mid(a, v, b) return math.max(a, math.min(v, b)) end
-function ctext(s, y, c, sc) sc = sc or 1 text(s, 160 - #s * 4 * sc, y, c, sc) end
-function stext(s, y, c, sc) sc = sc or 1 text(s, 161 - #s * 4 * sc, y + sc, 1, sc) ctext(s, y, c, sc) end
-function ttext(s, x, y, c, sc) sc = sc or 1 text(s, x - #s * 4 * sc, y, c, sc) end
+function ctext(s, y, c, sc) sc = sc or 1 s = tr(s) text(s, 160 - #s * 4 * sc, y, c, sc) end
+function stext(s, y, c, sc) sc = sc or 1 s = tr(s) text(s, 161 - #s * 4 * sc, y + sc, 1, sc) ctext(s, y, c, sc) end
+function ttext(s, x, y, c, sc) sc = sc or 1 s = tr(s) text(s, x - #s * 4 * sc, y, c, sc) end
 function shuffle(t) for i = #t, 2, -1 do local j = rnd(i) t[i], t[j] = t[j], t[i] end return t end
 function today() return clock and (clock() // 86400) or 0 end
 
@@ -180,16 +180,16 @@ function finish_run()
     if m == 3 then S.golds = S.golds + 1 end
     keep_stats()
     checkpoint({ mode = "menu" })
-    if m == 3 then game_win("A gold medal jog: " .. run.total .. " points!") end
+    if m == 3 then game_win(tr("A gold medal jog: %d points!", run.total)) end
   elseif run.mode == "team" then
-    if m == 3 then game_win("Gold together: " .. run.total .. " points as a team!") end
+    if m == 3 then game_win(tr("Gold together: %d points as a team!", run.total)) end
   elseif run.mode == "race" then
     local best, who = -999, {}
     for p = 1, NP do
       if run.pts[p] > best then best, who = run.pts[p], { p } elseif run.pts[p] == best then who[#who + 1] = p end
     end
     run.winners = who
-    if #who == 1 then game_win(player_name(who[1], 10) .. " won the race with " .. best .. " points!") end
+    if #who == 1 then game_win(tr("%s won the race with %d points!", player_name(who[1], 10), best)) end
   end
   sfx("C5", 1, 0.4, 8) sfx("E5", 1, 0.4, 16) sfx("G5", 1, 0.4, 30)
 end
@@ -577,7 +577,7 @@ function draw_q()
     end
     if q.done > 0 then
       local s = q.ok and (q.rt and (q.rt * 1000 // 60) .. " ms" or "WELL HELD!") or (q.red and "OOPS, RED!" or "MISSED!")
-      if q.who and q.who > 0 and NP > 1 and q.ok and q.rt then s = player_name(q.who, 8) .. "  " .. s end
+      if q.who and q.who > 0 and NP > 1 and q.ok and q.rt then s = player_name(q.who, 8) .. "  " .. tr(s) end
       stext(s, 172, q.ok and 17 or 26, 2)
     end
     for p = 1, NP do
@@ -602,7 +602,7 @@ function draw_hud()
   end
   local w = 132 * math.max(0, lap.left) // LAP_T
   rectfill(72, 6, 132, 8, 30) rectfill(72, 6, w, 8, lap.left < 300 and 26 or 22)
-  local s = EX[lap.e].name
+  local s = tr(EX[lap.e].name)
   text(s, 314 - #s * 8, 6, 13)
   if NP == 1 or run.mode == "team" then
     local p = lap.pts[1]
@@ -654,7 +654,7 @@ function _draw()
     end
     if SOLO then
       local h = S.hist[today()]
-      ctext(sel == 1 and (h and ("today: " .. h .. " points, " .. MEDAL[medal(h)][1]) or "five laps, a new jog every day") or "one exercise at a time", 90, 13)
+      ctext(sel == 1 and (h and tr("today: %d points, %s", h, tr(MEDAL[medal(h)][1])) or "five laps, a new jog every day") or "one exercise at a time", 90, 13)
       ctext("days in a row: " .. ((S.last >= today() - 1) and S.streak or 0) .. "   (best " .. S.top .. ")", 106, 23)
       draw_week(124)
       ctext("best jog " .. S.jog_best .. "    golds " .. S.golds, 150, 29)
@@ -675,7 +675,7 @@ function _draw()
       rectfill(40, y, 240, 22, i == psel and 20 or 2)
       text(x.name, 48, y + 3, i == psel and 27 or 13)
       text(x.kind, 48, y + 12, 29)
-      local s = "lv " .. S.lv[i] .. "  best " .. S.best[i]
+      local s = tr("lv " .. S.lv[i] .. "  best " .. S.best[i])
       text(s, 272 - #s * 8, y + 7, 23)
     end
     ctext(EX[psel].how, 186, 13)
@@ -689,7 +689,7 @@ function _draw()
     draw_card(30, 40, 260, 110)
     stext((run.mode == "practice" and "PRACTICE" or ("LAP " .. run.n .. " OF " .. #run.laps)), 48, 22)
     stext(x.name, 66, 27, 3)
-    ctext(x.kind .. ", level " .. lap.lv, 96, 29)
+    ctext(tr("%s, level %d", tr(x.kind), lap.lv), 96, 29)
     ctext(x.how, 112, 13)
     local c = 3 - state_t // 50
     if c > 0 then stext(tostring(c), 128, 13, 2) end
@@ -702,7 +702,7 @@ function _draw()
   end
   if state == "lapdone" then
     draw_card(40, 50, 240, 120)
-    stext(EX[lap.e].name .. " DONE", 60, 27, 1)
+    stext(tr("%s DONE", tr(EX[lap.e].name)), 60, 27, 1)
     if run.mode == "race" then
       local y = 80
       for p = 1, NP do
@@ -783,6 +783,87 @@ function draw_title(t)
     end
   end
 end
+-- this game's words in other languages (the Bit's language, LANGUAGE in Settings; runtime/bk_lang.lua)
+texts{
+  de = {
+    ["Change exercise"] = "Übung wechseln",
+    ["Back to today"] = "Zurück zu heute",
+    ["Seconds per lap"] = "Sekunden pro Runde",
+    ["QUICK SUMS"] = "KOPFRECHNEN",
+    ["Press the direction of the right answer."] = "Drück die Richtung der Antwort.",
+    ["ARROW ECHO"] = "PFEIL-ECHO",
+    ["Watch the arrows, then press them in the same order."] = "Pfeile merken, dann gleich nachdrücken.",
+    ["NEXT UP"] = "WAS KOMMT?",
+    ["What comes next? Press the direction of it."] = "Was kommt als Nächstes? Drück dorthin.",
+    ["FIREFLY JARS"] = "GLÜHWÜRMCHEN",
+    ["Which jar has more fireflies? Left or right."] = "Wo sind mehr Glühwürmchen? Links/rechts",
+    ["LANTERNS"] = "LATERNEN",
+    ["A as soon as a lantern glows green. Not on red!"] = "A, sobald es grün leuchtet. Nie bei Rot!",
+    ["maths"] = "Rechnen",
+    ["memory"] = "Gedächtnis",
+    ["logic"] = "Logik",
+    ["counting"] = "Zählen",
+    ["reaction"] = "Reaktion",
+    ["Run a Daily Jog of five brain laps and earn a gold medal (# points)."] = "Lauf einen Tageslauf aus fünf Denkrunden und hol eine Goldmedaille (# Punkte).",
+    ["Five laps of 30 seconds, one exercise each: maths, memory, logic, counting and reaction."] = "Fünf Runden à 30 Sekunden, je eine Übung: Rechnen, Gedächtnis, Logik, Zählen und Reaktion.",
+    ["Answers sit on the d-pad: press the direction of the right one. Lanterns: A on green, never on red."] = "Die Antworten liegen auf dem Steuerkreuz: Drück die Richtung der richtigen. Laternen: A bei Grün, nie bei Rot.",
+    ["Daily Jog: a new jog every day, the same for everybody. Run one every day to grow your streak."] = "Tageslauf: jeden Tag ein neuer Lauf, für alle gleich. Lauf jeden Tag, damit deine Serie wächst.",
+    ["Practice: one exercise at a time. Each exercise gets harder as you get better at it."] = "Training: eine Übung nach der anderen. Jede Übung wird schwerer, je besser du wirst.",
+    ["Together: Race (the first right answer scores, a wrong one locks you out of that question) or Team."] = "Zusammen: Rennen (die erste richtige Antwort punktet, eine falsche sperrt dich für diese Frage) oder Team.",
+    ["NO MEDAL"] = "KEINE MEDAILLE",
+    ["BRONZE"] = "BRONZE",
+    ["SILVER"] = "SILBER",
+    ["GOLD"] = "GOLD",
+    ["A gold medal jog: %d points!"] = "Ein Lauf für Gold: %d Punkte!",
+    ["Gold together: %d points as a team!"] = "Gold zusammen: %d Punkte als Team!",
+    ["%s won the race with %d points!"] = "%s gewinnt das Rennen mit %d Punkten!",
+    ["WATCH"] = "AUFPASSEN",
+    ["RIGHT!"] = "RICHTIG!",
+    ["THE ARROWS WERE"] = "DIE PFEILE WAREN",
+    ["YOUR TURN"] = "DU BIST DRAN",
+    ["A ON GREEN"] = "A BEI GRÜN",
+    ["# ms"] = "# ms",
+    ["WELL HELD!"] = "GUT GEHALTEN!",
+    ["OOPS, RED!"] = "UPS, ROT!",
+    ["MISSED!"] = "VERPASST!",
+    ["TOO SOON"] = "ZU FRÜH",
+    ["RED!"] = "ROT!",
+    ["TODAY'S JOG"] = "TAGESLAUF",
+    ["PICK A GAME"] = "WÄHL EIN SPIEL",
+    ["DAILY JOG"] = "TAGESLAUF",
+    ["PRACTICE"] = "TRAINING",
+    ["RACE"] = "RENNEN",
+    ["TEAM"] = "TEAM",
+    ["today: %d points, %s"] = "heute: %d Punkte, %s",
+    ["five laps, a new jog every day"] = "fünf Runden, täglich neu",
+    ["one exercise at a time"] = "eine Übung nach der anderen",
+    ["days in a row: #   (best #)"] = "Tage am Stück: #   (Rekord #)",
+    ["days in a row: #!"] = "Tage am Stück: #!",
+    ["best jog #    golds #"] = "bester Lauf #    Gold #",
+    ["First right answer scores."] = "Erste richtige Antwort punktet.",
+    ["Every right answer counts for all."] = "Richtige Antworten zählen für alle.",
+    ["A wrong one locks you out of it."] = "Falsch? Dann bist du raus.",
+    ["Earn a medal together."] = "Holt zusammen eine Medaille.",
+    ["# players"] = "# Spieler",
+    ["left / right: pick    A: go"] = "links / rechts: wählen    A: los",
+    ["lv #  best #"] = "Lv #  Rekord #",
+    ["A: go    B: back"] = "A: los    B: zurück",
+    ["LAP # OF #"] = "RUNDE # VON #",
+    ["%s, level %d"] = "%s, Level %d",
+    ["%s DONE"] = "%s FERTIG",
+    ["# right, # wrong"] = "# richtig, # falsch",
+    ["best #   next level #"] = "Rekord #   nächstes Level #",
+    ["A: on"] = "A: weiter",
+    ["RACE OVER"] = "RENNEN VORBEI",
+    ["a tie at the top!"] = "Gleichstand an der Spitze!",
+    ["PRACTICE DONE"] = "TRAINING FERTIG",
+    ["TEAM JOG DONE"] = "TEAMLAUF FERTIG",
+    ["JOG DONE"] = "LAUF FERTIG",
+    ["# POINTS"] = "# PUNKTE",
+    ["already counted today: come back tomorrow"] = "heute schon gezählt: komm morgen wieder",
+    ["A: again    B: back"] = "A: nochmal    B: zurück",
+  },
+}
 `;
 
   // the icon: the round runner in a headband

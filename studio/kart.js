@@ -631,7 +631,7 @@ function drift_tier(k)
   return 0
 end
 
-function popup(k, s, c) k.pop_s, k.pop_c, k.pop_t = s, c, 50 end
+function popup(k, s, c) k.pop_s, k.pop_c, k.pop_t = tr(s), c, 50 end   -- (tr: the Bit's language, texts{} at the end)
 -- a kart someone plays (and, on linked Bits, the one this Bit plays: only its sounds play here)
 function mine(k) return k.human and ((ME or 0) == 0 or k.pn == ME) end
 
@@ -1716,7 +1716,7 @@ function draw_world()
   camera()
 end
 
-function place_str(n) return n .. ({"st", "nd", "rd", "th"})[math.min(n, 4)] end
+function place_str(n) return lang() == "en" and (n .. ({"st", "nd", "rd", "th"})[math.min(n, 4)]) or lang_nth(n) end
 function tstr(f)
   local s = f / 60
   return string.format("%d:%05.2f", math.floor(s / 60), s % 60)
@@ -1816,7 +1816,7 @@ function draw_hud()
     local w = #player.pop_s * 16
     shadow_text(player.pop_s, 160 - w // 2, 150 - (50 - player.pop_t) // 3, player.pop_c, 2)
   end
-  if player.done and mode == "race" then shadow_text("FINISHED " .. place_str(player.place), 80, 100, 27, 2) end
+  if player.done and mode == "race" then shadow_text(tr("FINISHED %s", place_str(player.place)), 80, 100, 27, 2) end
   -- minimap
   rectfill(MM.x - 2, MM.y - 2, 92, 48, 1)
   for i = 1, NWP, 2 do
@@ -1866,7 +1866,7 @@ function draw_hud_small()
   if player.pop_t > 0 then
     shadow_text(player.pop_s, W // 2 - #player.pop_s * 4, H // 2 + 10 - (50 - player.pop_t) // 4, player.pop_c)
   end
-  if player.done and mode == "race" then shadow_text("FINISHED " .. place_str(player.place), W // 2 - 40, H // 2 - 10, 27) end
+  if player.done and mode == "race" then shadow_text(tr("FINISHED %s", place_str(player.place)), W // 2 - 40, H // 2 - 10, 27) end
   camera()
 end
 
@@ -1882,7 +1882,7 @@ function _draw()
       text("A: back", 20, 140, 29)
       return
     end
-    text("Building " .. (GMODE == "rumble" and ARENAS[ARENA_I].name or TRACKS[sel.track].name) .. "...", 60, 108, 13)
+    text(tr("Building %s...", tr(GMODE == "rumble" and ARENAS[ARENA_I].name or TRACKS[sel.track].name)), 60, 108, 13)
     rectfill(60, 124, 200, 6, 2)
     rectfill(60, 124, 200 * load_p, 6, 17)
     return
@@ -1935,7 +1935,7 @@ function _draw()
     end
     if #humans > 1 then
       local p = humans[(ME or 0) > 0 and ME or 1]
-      if (ME or 0) > 0 and p then text("You: " .. place_str(p.place), 200, top + ph - 12, 27) end
+      if (ME or 0) > 0 and p then text(tr("You: %s", place_str(p.place)), 200, top + ph - 12, 27) end
     end
   end
 end
@@ -1998,7 +1998,7 @@ end
 function draw_setup()
   cls(1)
   local m = MODES[menu_row]
-  shadow_text(string.upper(m.name), 12, 8, 27, 2)
+  shadow_text(string.upper(tr(m.name)), 12, 8, 27, 2)
   text(SET_PART == "track" and (GMODE == "rumble" and "pick the arena" or "pick the track") or "rules", 12, 26, 29)
   draw_preview(228, 4, 84, 38)
   local rows_ = setup_rows()
@@ -2011,7 +2011,7 @@ function draw_setup()
     text(r[1], 16, y, on and 27 or 29)
     local v = r[2]
     local off = v == "off"
-    text((on and "< " or "") .. v .. (on and " >" or ""), 150, y, off and 30 or 13)
+    text((on and "< " or "") .. tr(v) .. (on and " >" or ""), 150, y, off and 30 or 13)
     local first = GMODE == "rumble" and 4 or 2   -- the rows before the items
     if SET_PART ~= "track" and i > first and GMODE ~= "trial" then   -- item rows get their icon
       local ii = i - first
@@ -2046,7 +2046,7 @@ function draw_garage_for(v)
   cls(1)
   for y = 0, 7 do rectfill(0, 150 + y * 12, 320, 1, 2) end
   text("KART LAB", 12, 10, 27, 2)
-  text(NH > 1 and (player_name(v, 8) .. ": build your kart") or "build your kart", 12, 28, NH > 1 and ({27, 22, 17, 10, 8, 3, 15, 25})[v] or 29)
+  text(NH > 1 and tr("%s: build your kart", player_name(v, 8)) or "build your kart", 12, 28, NH > 1 and ({27, 22, 17, 10, 8, 3, 15, 25})[v] or 29)
   -- turntable
   local k = {body = sel.body, eng = sel.eng, tyre = sel.tyre, paint = sel.paint}
   ellipse(80, 150, 52, 31)
@@ -2063,13 +2063,13 @@ function draw_garage_for(v)
     local on = row == i
     if on then rectfill(158, y - 2, 156, 18, 2) end
     text(it[1], 164, y, on and 27 or 29)
-    text((on and "< " or "") .. it[2].name .. (on and " >" or ""), 164, y + 8, 13)
+    text((on and "< " or "") .. tr(it[2].name) .. (on and " >" or ""), 164, y + 8, 13)
   end
   local on = row == 5
   rectfill(158, 136, 156, 14, on and 25 or 2)
   text("GO!", 222, 139, on and 27 or 13)
   local where = GMODE == "rumble" and ARENAS[ARENA_I].name or TRACKS[sel.track].name
-  text(MODES[menu_row].name .. ": " .. where, 164, 36, 30)
+  text(tr(MODES[menu_row].name) .. ": " .. tr(where), 164, 36, 30)
   local b = best[TRACKS[sel.track].name]
   local nw = 0
   for _, tr in ipairs(TRACKS) do if wins[tr.name] then nw = nw + 1 end end
@@ -2093,6 +2093,130 @@ function draw_garage_for(v)
     text(wait > 0 and ("waiting for player " .. wait) or "READY!", 172, 139, 1)
   end
 end
+-- this game's words in other languages (the Bit's language, LANGUAGE in Settings; runtime/bk_lang.lua)
+texts{
+  de = {
+    ["Race again"] = "Nochmal fahren",
+    ["Change kart"] = "Kart wechseln",
+    ["Change track"] = "Strecke wechseln",
+    ["Change arena"] = "Arena wechseln",
+    ["pick the track"] = "Strecke wählen",
+    ["pick the arena"] = "Arena wählen",
+    ["rules"] = "Regeln",
+    ["RACE! >"] = "LOS! >",
+    ["A: race. B: back to the garage."] = "A: fahren. B: zurück zur Garage.",
+    ["Build a kart and finish 1st on every track."] = "Bau ein Kart und werde auf jeder Strecke Erster.",
+    ["R or A: throttle (squeeze R harder to go faster). B: brake. D-pad: steer."] = "R oder A: Gas (R fester drücken für mehr Tempo). B: Bremse. Steuerkreuz: lenken.",
+    ["Hold L (or B on the throttle) and steer to drift; let go for a boost."] = "L halten (oder B beim Gasgeben) und lenken zum Driften; loslassen gibt einen Boost.",
+    ["X: use your item. Hold down to look back; down + X fires backwards."] = "X: Item benutzen. Unten halten zum Zurückschauen; unten + X schießt nach hinten.",
+    ["Restart"] = "Neu starten",
+    ["Back to garage"] = "Zurück zur Garage",
+    ["Main menu"] = "Hauptmenü",
+    ["Slim and light. Quick off the line."] = "Schlank und leicht. Schnell vom Start weg.",
+    ["Wide and heavy. Shoves others aside."] = "Breit und schwer. Schiebt andere weg.",
+    ["Tall and bouncy. Loves the grass."] = "Hoch und federnd. Liebt das Gras.",
+    ["Revs high, pulls hard, tops out early."] = "Dreht hoch, zieht stark, ist früh am Limit.",
+    ["Smooth all-rounder."] = "Ruhiger Allrounder.",
+    ["Huge top speed, slow to wind up."] = "Riesiges Spitzentempo, kommt langsam in Fahrt.",
+    ["Best on tarmac, hopeless on grass."] = "Top auf Asphalt, hoffnungslos auf Gras.",
+    ["Barely slow down off the road."] = "Kaum langsamer neben der Straße.",
+    ["Slidey and fun: drift charges fast."] = "Rutschig und lustig: Drift lädt schnell.",
+    ["Red"] = "Rot",
+    ["Blue"] = "Blau",
+    ["Teal"] = "Petrol",
+    ["Gold"] = "Gold",
+    ["Lime"] = "Limette",
+    ["Grape"] = "Traube",
+    ["Snow"] = "Schnee",
+    ["Ink"] = "Tinte",
+    ["speed"] = "tempo",
+    ["accel"] = "antrieb",
+    ["grip"] = "haftung",
+    ["weight"] = "gewicht",
+    ["offroad"] = "gelände",
+    ["drift"] = "drift",
+    ["Nitro"] = "Nitro",
+    ["Oil Slick"] = "Ölfleck",
+    ["Bolt"] = "Blitz",
+    ["Drone"] = "Drohne",
+    ["Shield"] = "Schild",
+    ["Tire"] = "Reifen",
+    ["Golden Tires"] = "Goldreifen",
+    ["Race"] = "Rennen",
+    ["8 karts, items, first over the line."] = "8 Karts, Items, wer zuerst ankommt.",
+    ["Rumble"] = "Rauferei",
+    ["Arena fight. Lose every helmet: KO!"] = "Arenakampf. Alle Helme weg: K.O.!",
+    ["Time Trial"] = "Zeitfahren",
+    ["Just you, two Nitros and the clock."] = "Nur du, zwei Nitros und die Uhr.",
+    ["Quarry Bowl"] = "Steinbruch-Schüssel",
+    ["Donut Ring"] = "Donut-Ring",
+    ["Pinewood Loop"] = "Kiefernwald-Runde",
+    ["Quarry Hills"] = "Steinbruch-Hügel",
+    ["BOOST!"] = "BOOST!",
+    ["BIG BOOST!"] = "GROSSER BOOST!",
+    ["MEGA BOOST!"] = "MEGA-BOOST!",
+    ["# HELMET LEFT"] = "NOCH # HELM",
+    ["# HELMETS LEFT"] = "NOCH # HELME",
+    ["Arena"] = "Arena",
+    ["Helmets"] = "Helme",
+    ["Hits each kart can take."] = "So viele Treffer hält jedes Kart aus.",
+    ["Time limit"] = "Zeitlimit",
+    ["# min"] = "# Min",
+    ["none"] = "keins",
+    ["Track"] = "Strecke",
+    ["Best time #:#"] = "Bestzeit #:#",
+    ["Best time #:#  (won)"] = "Bestzeit #:#  (gewonnen)",
+    ["No time set yet."] = "Noch keine Zeit gefahren.",
+    ["Laps"] = "Runden",
+    ["Rivals"] = "Gegner",
+    ["Rival skill"] = "Gegner-Können",
+    ["off"] = "aus",
+    ["on"] = "an",
+    ["Turned off on the Game tab."] = "Im Game-Tab ausgeschaltet.",
+    ["Item pool: left/right turns it on or off."] = "Items: links/rechts schaltet es an oder aus.",
+    ["# left #:#"] = "# übrig #:#",
+    ["KO!"] = "K.O.!",
+    ["KO"] = "K.O.",
+    ["LAP #/#"] = "RUNDE #/#",
+    ["REAR VIEW"] = "RÜCKSPIEGEL",
+    ["# km/h"] = "# km/h",
+    ["FINISHED %s"] = "IM ZIEL: %s",
+    ["Can't build this track:"] = "Diese Strecke geht nicht:",
+    ["A: back"] = "A: zurück",
+    ["Building %s..."] = "Baue %s...",
+    ["drift: hold L (or B) and steer"] = "Drift: L (oder B) halten und lenken",
+    ["X: item (hold down: fire back)"] = "X: Item (unten halten: nach hinten)",
+    ["GO!"] = "LOS!",
+    ["RUMBLE OVER"] = "RAUFEREI AUS",
+    ["FINISH!"] = "ZIEL!",
+    ["# helmet"] = "# Helm",
+    ["# helmets"] = "# Helme",
+    ["New best time!"] = "Neue Bestzeit!",
+    ["Best #:#"] = "Rekord #:#",
+    ["A: next"] = "A: weiter",
+    ["You: %s"] = "Du: %s",
+    ["Player 1 is choosing..."] = "Spieler 1 wählt...",
+    ["arena and rules"] = "Arena und Regeln",
+    ["track and rules"] = "Strecke und Regeln",
+    ["NEXT: KART >"] = "ZUM KART >",
+    ["A: on to the garage. B: back."] = "A: weiter zur Garage. B: zurück.",
+    ["%s: build your kart"] = "%s: bau dein Kart",
+    ["build your kart"] = "bau dein Kart",
+    ["Body"] = "Karosserie",
+    ["Engine"] = "Motor",
+    ["Tyres"] = "Reifen",
+    ["Paint"] = "Farbe",
+    ["WINS #/#"] = "SIEGE #/#",
+    ["Looks only. Rivals never copy it."] = "Nur fürs Aussehen. Gegner kopieren sie nie.",
+    ["A: go. B: back to the track and rules."] = "A: los. B: zurück zu Strecke und Regeln.",
+    ["A: ready."] = "A: bereit.",
+    ["A: ready"] = "A: bereit",
+    ["A: go"] = "A: los",
+    ["waiting for player #"] = "warte auf Spieler #",
+    ["READY!"] = "BEREIT!",
+    ["# needs 3 or more points"] = "# braucht 3 oder mehr Punkte",
+  },
+}
 `.replace('__TRACKS__', luaTracks);
 
   // ---------------------------------------------------------------- art

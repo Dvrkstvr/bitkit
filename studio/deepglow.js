@@ -263,7 +263,7 @@ function _update()
     for i, p in ipairs(pearls) do if p.carried then p.carried = false end; if p.got then got[#got + 1] = i end end
     checkpoint({ got = got })
     sfx("C5", 1, 0.4, 10); sfx("G5", 1, 0.4, 16)
-    if banked() >= GOAL then game_win("You brought " .. banked() .. " glowing pearls up from the deep!") end
+    if banked() >= GOAL then game_win(tr("You brought %d glowing pearls up from the deep!", banked())) end
   end
   -- vents and jellyfish
   for _, v in ipairs(vents) do
@@ -455,6 +455,33 @@ function gallery_draw()
   text(g[3](gal_amt), 8, 215, 13)
   text((g[2] or g[4]) and "</>: shader  up/down: amount  B: back" or "</>: shader  B: back", 8, 228, 29)
 end
+-- this game's words in other languages (the Bit's language, LANGUAGE in Settings; runtime/bk_lang.lua)
+texts{
+  de = {
+    ["Bring # glowing pearls up from the deep cave to your boat."] = "Bring # leuchtende Perlen aus der tiefen Höhle zu deinem Boot.",
+    ["D-pad: swim. B: dash. A: sonar ping."] = "Steuerkreuz: schwimmen. B: Sprint. A: Sonar-Ping.",
+    ["It is dark down there. A sonar ping lights up pearls for a few seconds."] = "Da unten ist es dunkel. Ein Sonar-Ping lässt Perlen ein paar Sekunden leuchten.",
+    ["Swim up to the boat to keep the pearls you carry, and to fill up on air."] = "Schwimm zum Boot, um deine Perlen zu sichern und Luft zu tanken.",
+    ["Air pockets in the cave walls let you breathe too."] = "Luftblasen in den Höhlenwänden lassen dich auch atmen.",
+    ["Vents burn and jellyfish sting: both cost air. Run out and you drop what you carry."] = "Schlote brennen und Quallen nesseln: beides kostet Luft. Ist sie alle, verlierst du, was du trägst.",
+    ["Settings > Screen gives the game an old CRT or TV look."] = "Einstellungen > Bild gibt dem Spiel den Look einer alten Röhre.",
+    ["Screen"] = "Bild",
+    ["Shader gallery"] = "Shader-Galerie",
+    ["Clear"] = "Klar",
+    ["CRT"] = "Röhre",
+    ["Arcade"] = "Arcade",
+    ["Old TV"] = "Alter Fernseher",
+    ["Handheld"] = "Handheld",
+    ["Sepia"] = "Sepia",
+    ["Night"] = "Nacht",
+    ["Vivid"] = "Kräftig",
+    ["You brought %d glowing pearls up from the deep!"] = "Du hast %d leuchtende Perlen aus der Tiefe geholt!",
+    ["AIR"] = "LUFT",
+    ["out of air..."] = "keine Luft mehr...",
+    ["</>: shader  up/down: amount  B: back"] = "</>: Shader  oben/unten: Stärke  B: zurück",
+    ["</>: shader  B: back"] = "</>: Shader  B: zurück",
+  },
+}
 `;
 
   const K = { '.': 0, 1: 1, 7: 27, 6: 22, 3: 13, 9: 29, a: 10, b: 25, d: 12, e: 23 };

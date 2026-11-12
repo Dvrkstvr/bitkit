@@ -510,6 +510,7 @@ end
 function lost(s, why)
   streak = 0
   G.lost = G.lost + 1
+  why = tr(why)
   float(s.x - #why * 4, s.y - 10, why, 26)
 end
 
@@ -740,10 +741,10 @@ function draw_yard()
       text(i == 3 and "RIG" or r[1], x + 8, y, on and 13 or 29)
       if on then text("<", x + 6, y + 12, 27) text(">", x + pw - 14, y + 12, 27) end
       if r[2] then rectfill(x + pw // 2 - 12, y + 11, 24, 9, r[2]) rect(x + pw // 2 - 12, y + 11, 24, 9, 13)
-      else text(r[1], x + pw // 2 - #r[1] * 4, y + 12, on and 27 or 13) end
+      else local rn = tr(r[1]) text(rn, x + pw // 2 - #rn * 4, y + 12, on and 27 or 13) end
     end
-    if L.ready then text("READY", x + pw // 2 - 20, 194, 17)
-    else text("A READY", x + pw // 2 - 28, 194, t() // 30 % 2 == 0 and 12 or 30) end
+    local rd = tr(L.ready and "READY" or "A READY")
+    text(rd, x + pw // 2 - #rd * 4, 194, L.ready and 17 or (t() // 30 % 2 == 0 and 12 or 30))
   end
   text("UP/DOWN PICK  LEFT/RIGHT CHANGE", 36, 220, 29)
 end
@@ -1076,7 +1077,8 @@ function draw_shop()
       text(s, 286 - #s * 8, y, G.coins >= c and 27 or 26)
     end
   end
-  text(SHOP[sel].info, 160 - #SHOP[sel].info * 4, 180, 22)
+  local info = tr(SHOP[sel].info)
+  text(info, 160 - #info * 4, 180, 22)
   text(PLAYERS == 1 and "A BUY  B CLOSE  Y BOAT YARD" or "A BUY   B CLOSE", PLAYERS == 1 and 52 or 100, 198, 29)
 end
 
@@ -1093,6 +1095,78 @@ function draw_report()
   if G.auto == 0 then text("A clockwork lens helps!", 68, 138, 22) end
   text("A OK", 144, 156, 29)
 end
+-- this game's words in other languages (the Bit's language, LANGUAGE in Settings; runtime/bk_lang.lua)
+texts{
+  de = {
+    ["Guide # ships safely into the harbour."] = "Lotse # Schiffe sicher in den Hafen.",
+    ["Left / right turns the beam. Squeeze R for a brighter beam, L for a narrow spotlight."] = "Links / rechts dreht den Strahl. R drücken für helleres Licht, L für einen schmalen Spot.",
+    ["B: foghorn. X: harbour shop. Y: step down to your rowboat and fetch crates."] = "B: Nebelhorn. X: Hafenladen. Y: runter ins Ruderboot und Kisten holen.",
+    ["Ships only see the rocks in your light. At night, light up the pirates to scare them off."] = "Schiffe sehen die Felsen nur in deinem Licht. Nachts leuchtest du Piraten an, um sie zu verscheuchen.",
+    ["One keeper at a time. Everyone else rows: d-pad to row, R to row harder."] = "Immer nur ein Wärter. Alle anderen rudern: Steuerkreuz zum Rudern, R für mehr Kraft.",
+    ["Dock at the island and press Y to go ashore: the lamp if it's free, then any coast cannon (Y again for the next one)."] = "Leg an der Insel an und drück Y, um an Land zu gehen: zur Lampe, wenn sie frei ist, sonst zu einer Küstenkanone (Y nochmal für die nächste).",
+    ["Manning a cannon: left / right aims, A fires. You can only swap stations while docked."] = "An der Kanone: links / rechts zielt, A feuert. Plätze tauschen geht nur angelegt.",
+    ["LATEEN"] = "LATEINER",
+    ["SQUARE"] = "RAHSEGEL",
+    ["SLOOP"] = "SLUP",
+    ["JUNK"] = "DSCHUNKE",
+    ["Oil tank"] = "Öltank",
+    ["Hold more lamp oil."] = "Fasst mehr Lampenöl.",
+    ["Polished lens"] = "Polierte Linse",
+    ["The beam reaches further."] = "Der Strahl reicht weiter.",
+    ["Oil pump"] = "Ölpumpe",
+    ["Oil refills faster."] = "Öl füllt sich schneller auf.",
+    ["Ship lanterns"] = "Schiffslaternen",
+    ["Captains see rocks themselves."] = "Kapitäne sehen Felsen selbst.",
+    ["Coast cannon"] = "Küstenkanone",
+    ["Shoots pirates in your light."] = "Schießt auf Piraten in deinem Licht.",
+    ["Bigger harbour"] = "Größerer Hafen",
+    ["More ships, and bigger ones."] = "Mehr Schiffe, und größere.",
+    ["Clockwork lens"] = "Uhrwerk-Linse",
+    ["Sweeps the beam while you rest."] = "Schwenkt den Strahl, während du ruhst.",
+    ["NIGHT #"] = "NACHT #",
+    ["DAY #"] = "TAG #",
+    ["Pirates! Light them up."] = "Piraten! Leuchte sie an.",
+    ["Guide the ships through the haze."] = "Lotse die Schiffe durch den Dunst.",
+    ["The tide moved the rocks."] = "Die Flut hat die Felsen verschoben.",
+    ["# ships made it home thanks to your light. The harbour keeps going: play on!"] = "# Schiffe sind dank deines Lichts heimgekehrt. Der Hafen läuft weiter: spiel weiter!",
+    ["BOAT YARD"] = "BOOTSWERFT",
+    ["HULL"] = "RUMPF",
+    ["SAIL"] = "SEGEL",
+    ["RIG"] = "TAKELUNG",
+    ["READY"] = "BEREIT",
+    ["A READY"] = "A BEREIT",
+    ["UP/DOWN PICK  LEFT/RIGHT CHANGE"] = "OBEN/UNTEN WÄHLEN  LINKS/RECHTS ÄNDERN",
+    ["OIL"] = "ÖL",
+    ["ROW #"] = "LAUF #",
+    ["B HORN"] = "B HORN",
+    ["Y NEXT"] = "Y NÄCHST",
+    ["Y BOAT"] = "Y BOOT",
+    ["Y GO ASHORE"] = "Y AN LAND",
+    ["DOCK TO SWAP"] = "ERST ANLEGEN",
+    ["A FIRE"] = "A FEUER",
+    ["X SHOP"] = "X LADEN",
+    ["HOME #"] = "HEIM #",
+    ["HOME #/#"] = "HEIM #/#",
+    ["ONE KEEPER, THE REST ROW. DOCK + Y"] = "EINER LEUCHTET, DER REST RUDERT. ANLEGEN+Y",
+    ["<> AIM  R BRIGHT  L NARROW  Y ROW"] = "<> ZIELEN  R HELL  L SCHMAL  Y RUDERN",
+    ["HARBOUR SHOP"] = "HAFENLADEN",
+    ["A BUY  B CLOSE  Y BOAT YARD"] = "A KAUFEN  B ZU  Y BOOTSWERFT",
+    ["A BUY   B CLOSE"] = "A KAUFEN   B ZU",
+    ["WHILE YOU WERE AWAY"] = "WÄHREND DU WEG WARST",
+    ["You were gone #h #m"] = "Du warst #h #m weg",
+    ["You were gone #m"] = "Du warst #m weg",
+    ["# ships docked, # lost"] = "# Schiffe angelegt, # verloren",
+    ["+# coins"] = "+# Münzen",
+    ["A clockwork lens helps!"] = "Eine Uhrwerk-Linse hilft!",
+    ["A OK"] = "A OK",
+    ["dock first"] = "erst anlegen",
+    ["all taken"] = "alles besetzt",
+    ["wrecked!"] = "gesunken!",
+    ["spilled!"] = "verschüttet!",
+    ["scared!"] = "verjagt!",
+    ["robbed!"] = "ausgeraubt!",
+  },
+}
 `;
 
   // Pixel art: one char per pixel, mapped to palette indices. Rows can be 8 or 16 pixels wide.

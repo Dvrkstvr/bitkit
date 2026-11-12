@@ -237,6 +237,24 @@ Because Start belongs to the pause menu, don't use it for anything else in your 
 
 One sentence, shown on the title screen and in How to play, that says what winning means: "Reach the red flag at the end of Mossy Cave", "Finish 1st on every track". Show progress towards it while playing when you can (drops 3/10, ships home 37/100, wins 1/2).
 
+### Speaking the Bit's language (recommended)
+
+The Bit's language is picked in the Settings app (LANGUAGE: English, Deutsch, Français, Español). The shell (title, pause menu, settings, How to play, races) already follows it, and so do common setting values (Easy, Normal, Hard, On, Off). Your game adds its own words with `texts{}`, usually at the end of the code:
+
+```lua
+texts{
+  de = { ["SCORE #"] = "PUNKTE #", ["You found %s!"] = "Du hast %s gefunden!", ["Reach the flag"] = "Erreiche die Flagge" },
+  fr = { ["SCORE #"] = "SCORE #" },
+}
+```
+
+- `text()` translates by itself: `text("SCORE " .. score, ...)` finds `"SCORE #"` (numbers stand in as `#`) and draws `PUNKTE 120`. A line centred on the screen, or sitting at its right edge, stays centred or right-aligned when it gets longer.
+- For words you put together or wrap into lines yourself, translate first: `tr("You found %s!", tr(item))`, `tr{en = "Start", de = "Los"}`. `textw(s)` gives the width in pixels, `lang()` the language code, `lang_nth(n)` an ordinal (1st, 1., 1er, 1º).
+- `title`, `goal`, `help`, setting names and values in `game{}` go through `tr()` in the shell, so list them in `texts{}` as written.
+- Words with no translation stay in English, so a game is never broken by a missing word. `texts(false)` turns the automatic `text()` translation off.
+- The font draws ä ö ü ß é è ê à ç ñ ¿ ¡ € and more (Windows-1252). Write them straight into your code as UTF-8.
+- German runs about a third longer than English. Leave room, or shorten the German.
+
 ## Multiplayer
 
 ### How many can play
