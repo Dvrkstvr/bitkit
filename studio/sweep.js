@@ -95,7 +95,6 @@ function _init()
     title = "Sweep Storm",
     in_menu = function() return scene == "lobby" end,   -- the lobby isn't a match yet: Start doesn't pause there
     matches = true,                   -- the title has Play (a fresh lobby), and Continue only back into a match
-    pause = { { "Leave match", function() checkpoint(nil) to_lobby() end } },
     players = {1, 20},                -- net_send: every Bit plays its own copy
     title_draw = draw_title,          -- its own animated title screen (above)
     look = { title = 27, shadow = 1, panel = 1, edge = 5, hi = 3, text = 13, pick = 27, goal = 22, footer = 29 },
@@ -109,11 +108,13 @@ function _init()
       "The storm shrinks the island. Standing in it costs hearts.",
       "Fog covers the island and you can only walk where you can see. Digging clears the fog around what you dig, and so does standing on dug ground.",
       "Up to 20 Bits nearby can join the same match. Bots fill the empty spots.",
+      "After a match, Play again starts the next one with everyone still on the results; Back to lobby goes to the lobby.",
     },
     settings = { { key = "skill", name = "Bot skill", values = { "Easy", "Normal", "Hard" }, value = 2 },
                  { key = "fog", name = "Fog of war", values = { "On", "Off" }, value = 1 } },
     continue = function(cp) if not (cp and resume(cp)) then to_lobby() end end,
     new_game = function() to_lobby() end,
+    pause = { { "Back to lobby", function() leave_match() end } },
   }
   scene = "lobby"
   to_lobby()
@@ -125,6 +126,17 @@ function to_lobby()
   peers, pending = {}, nil
   bots = bots or 11
   camera()
+end
+
+-- the pause menu's "Back to lobby": in a match you give up (your Bit says you're out, and so are the bots it ran)
+function leave_match()
+  if scene == "match" and not match.over then
+    for _, p in ipairs(slots) do
+      if mine_slot(p) and not p.out then p.out = true; send_state(p) end
+    end
+    checkpoint(nil)
+  end
+  to_lobby()
 end
 
 function lobby_ids()
@@ -341,6 +353,7 @@ end
 
 -- ============================================================ the match
 function start_match(seed, ids, nb, host)
+  if GAME.state == "over" then game_play() end   -- another Bit chose Play again: close this Bit's after-match menu too
   local nh = #ids
   local n = nh + nb
   diglog = (nh == 1) and {} or nil
@@ -693,6 +706,7 @@ function match_update()
   if not m.over and (m.mt >= MATCH_LEN or alive == 0 or (m.n > 1 and alive <= 1)) then
     m.over = true
     m.wait = 90
+    peers, pending = {}, nil
     if alive == 1 and m.n > 1 then
       for _, p in ipairs(slots) do if not p.out then p.score = p.score + 100; p.last = true end end
     end
@@ -703,8 +717,12 @@ function match_update()
   end
   if m.over then
     m.wait = m.wait - 1
+    -- the results double as a lobby: Bits still here say hello, and any of them can start the next match
+    if NET_ID > 0 and t() % 30 == 0 then net_send(EV_HELLO) end
     -- the after-match menu (game shell), once the results (and any goal screen) are up
-    if m.wait < 0 and GAME.state == "play" then game_over({ { "Back to lobby", to_lobby } }) end
+    if m.wait < 0 and GAME.state == "play" then
+      game_over({ { "Play again", host_start }, { "Back to lobby", to_lobby } })
+    end
     if m.wait == 0 then
       local r = rank_of(me)
       if r == 1 and m.n > 1 then game_win(tr("You won Sweep Storm with %d points!", me.score)) end
@@ -765,9 +783,15 @@ function _update()
     local from, ev, a, b, c, d, e, f, g = net_recv()
     if not from then break end
     if scene == "lobby" then lobby_event(from, ev, a, b, c, d, e, f, g)
-    elseif scene == "match" then match_event(from, ev, a, b, c, d, e, f, g) end
+    elseif scene == "match" then
+      if match.over then lobby_event(from, ev, a, b, c, d, e, f, g) end
+      if scene == "match" then match_event(from, ev, a, b, c, d, e, f, g) end
+    end
   end
-  if scene == "lobby" then lobby_update() else match_update() end
+  if scene == "lobby" then
+    lobby_update()
+    if outq and #outq > 0 then flush() end   -- the last news from a match you left
+  else match_update() end
   for k = #pops, 1, -1 do pops[k].t = pops[k].t - 1; pops[k].y = pops[k].y - 0.4; if pops[k].t <= 0 then table.remove(pops, k) end end
   for k = #(splats or {}), 1, -1 do splats[k].t = splats[k].t - 1; if splats[k].t <= 0 then table.remove(splats, k) end end
   for k = #booms, 1, -1 do booms[k].t = booms[k].t - 1; if booms[k].t <= 0 then table.remove(booms, k) end end
@@ -978,7 +1002,8 @@ end
 texts{
   de = {
     ["Back to lobby"] = "Zurück zur Lobby",
-    ["Leave match"] = "Spiel verlassen",
+    ["Play again"] = "Nochmal spielen",
+    ["After a match, Play again starts the next one with everyone still on the results; Back to lobby goes to the lobby."] = "Nach einem Spiel startet Nochmal spielen das nächste mit allen, die noch bei den Ergebnissen sind; Zurück zur Lobby geht zur Lobby.",
     ["Shield"] = "Schild",
     ["the next mine can't hurt you"] = "die nächste Mine tut dir nichts",
     ["Scan"] = "Scan",
