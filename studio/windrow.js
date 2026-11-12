@@ -57,9 +57,26 @@ FOUND = {
   { key = "wood", name = "Wood", spr = 104, mat = true },
   { key = "stone", name = "Stone", spr = 106, mat = true },
   { key = "fibre", name = "Fibre", spr = 108, mat = true },
+  -- from the wider valley (drawn from code: see draw_found)
+  { key = "shell", name = "Whelk shell", sell = 14, icon = "shell" },
+  { key = "seaweed", name = "Sea lettuce", sell = 8, icon = "leaf", col = 15 },
+  { key = "pearl", name = "Pearl", sell = 120, icon = "gem", col = 13 },
+  { key = "bogberry", name = "Bogberry", sell = 15, icon = "berry", col = 25 },
+  { key = "marshcap", name = "Marsh cap", sell = 21, icon = "cap", col = 20 },
+  { key = "thyme", name = "Hill thyme", sell = 11, icon = "leaf", col = 17 },
+  { key = "flint", name = "Flint", sell = 18, icon = "gem", col = 30 },
+  { key = "dates", name = "Dates", sell = 22, icon = "berry", col = 8 },
+  { key = "pricklefig", name = "Prickle fig", sell = 27, icon = "cap", col = 24 },
+  { key = "amber", name = "Amber", sell = 150, icon = "gem", col = 27 },
 }
+FISH_BY = {}
 FOUND_BY = {}
-for i, f in ipairs(FOUND) do FOUND_BY[f.key] = f end
+function index_found()
+  for i, f in ipairs(FISH) do
+    if not FISH_BY[f.key] then FISH_BY[f.key] = f; f.icon = "fish"; FOUND[#FOUND + 1] = f end
+  end
+  for i, f in ipairs(FOUND) do FOUND_BY[f.key] = f end
+end
 CROP_BY = {}
 for i, c in ipairs(CROPS) do CROP_BY[c.key] = i end
 
@@ -139,7 +156,7 @@ WOODS = {
   "TT.....~~~~...T...T......T",
   "T......~~~~..TT..........T",
   "T..T....~~.......TT...TT.T",
-  "T..........T.............T",
+  ":..........T.............T",
   "T...TT.........:::::::::::",
   "T...TT...T.....:....T....T",
   "TT.......T..~~.:...TTT...T",
@@ -151,7 +168,138 @@ WOODS = {
   "T..............:.T.......T",
   "TTTTTTTTTTTTTTTSTTTTTTTTTT",
 }
-AREAS = { { name = "Windrow", map = FARM }, { name = "Bramble Woods", map = WOODS }, { name = "The Old Mine", w = 20, h = 15, free = {} } }
+-- The wider valley. , is a second kind of ground (grass by the shore, mud in the fen, bare rock in the hills)
+-- P palm  D dead tree  E reeds  K cactus  U boulder  A old bones  J jetty  R C I rocks to break with the pickaxe
+SHORE = {
+  "TTTTTTTTTTTTT:TTTTTTTTTTTTTT",
+  "U,,,,,,,,,T,,:,,,,,,,,T,T,,U",
+  "U,,,,,,,,,,,,:,,T,,T,,,,,,,U",
+  "U,,,,,,,,,,,,:,,,,,,,,,,,,,U",
+  "U............:.............U",
+  "U............:.............U",
+  "U..tP........:...UP..P.....U",
+  "U............:...P.P......UU",
+  "U............:::::::::::::::",
+  "U..P..U...............U..P.U",
+  "U...........P........U.....U",
+  "U~..~.~.J~~.~.~~.~..~~..~~~U",
+  "~~~~~~~~J~~~~~~~~~~~~~~~~~~~",
+  "~~~~~~~~J~~~~~~~~~~~~~~~~~~~",
+  "~~~~~~~~J~~~~~~~~~~~~~~~~~~~",
+  "~~~~~~~~J~~~~~~~~~~~~~~~~~~~",
+  "~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
+  "~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
+}
+FEN = {
+  "DDDDDD:DDDDDDDDDDDDDDDDDDD",
+  "D.....:.E................D",
+  "D....E:.......DE....D....D",
+  "DD....:....EE....~D......D",
+  "D...E.~~.......~~~~~.....D",
+  "D....~~~~~.E...~~~~~...D.D",
+  "D...~~~~~~.....~~~~~.....D",
+  "D..E~~~~~~.......~.......D",
+  "D....E~~~,,,,............D",
+  "D.......,,EE,,E..,,,..D..D",
+  "D....,,,,,,,,.::::::::::::",
+  "DE..,E,,...~~~..,,,,.....D",
+  "D..D.,,D.~~~~~~~E..~~~..DD",
+  "D......E.~~~~~~~..~~~~~.ED",
+  "D.E~~~E..~~~~~~...~~~~~..D",
+  "D..~~~.....~~~~.D.~~~~~..D",
+  "D..~~~...E....D....~~~.D.D",
+  "D.........D....ED.....t..D",
+  "D.....................E..D",
+  "DDDDDDDDDDDDDDDDDDDDDDDDDD",
+}
+HILLS = {
+  "UUUUUUUUUUUUUUUUUUUUUUUUUUUU",
+  "U....T.....................U",
+  "U.Uo.o........U.........t..U",
+  "U...o............T,,I,U....U",
+  "U.....,,,R,.......,R,,R....U",
+  "U....,,,,,RC.....,,C,,R,...U",
+  "UT...,,,,I,,,.....,,,R,,...U",
+  "U....RC,,R,C.......,,,....TU",
+  "U.....,C,C..T..........T...U",
+  "U............~~~..........TU",
+  "U...........~~~~~..........U",
+  "U.T.....U....~~~...II,,C...U",
+  "U.................,,,,,C,..U",
+  "U.......,R,R....U,R,RR,,,..U",
+  "U......,,,,,.....TR,R,I,,.UU",
+  "UT....:.,,,,........,,,R...U",
+  "U.....:.......U............U",
+  "U.....:............U.......U",
+  "U.....:....................U",
+  "UUUUUU:UUUUUUUUUUUUUUUUUUUUU",
+}
+DRY = {
+  "UUUUUUUUUUUUUUUUUUUUUUUUUUUUUU",
+  "U.......................K....U",
+  "U..U.....K...............U...U",
+  "U............................U",
+  "U.......U....K..A......K.....U",
+  "U.....................A......U",
+  "U......U.............K.......U",
+  "U...............U......KK.K..U",
+  "::::::...........KK.,PP......U",
+  "U....K.......A....,,,~~,,....U",
+  "U.................P,~~~,,....U",
+  "U.................P,~~~,,..U.U",
+  "U...................P,,,.....U",
+  "U........................K.K.U",
+  "U........A..................KU",
+  "UA.........................U.U",
+  "U.....................K...t..U",
+  "U................K....K......U",
+  "U.....A......U........K......U",
+  "UUUUUUUUUUUUUUUUUUUUUUUUUUUUUU",
+}
+AREAS = { { name = "Windrow", map = FARM }, { name = "Bramble Woods", map = WOODS }, { name = "The Old Mine", w = 20, h = 15, free = {} },
+  { name = "Gull Shore", map = SHORE, biome = "shore", short = "Shore", ground2 = 32 },
+  { name = "Sedge Fen", map = FEN, biome = "fen", short = "Fen", ground2 = 36 },
+  { name = "Flint Hills", map = HILLS, biome = "hills", short = "Hills", ground2 = 224 },
+  { name = "The Dry Reach", map = DRY, biome = "dry", short = "Desert", ground2 = 32 } }
+-- the ways between them: leave area a by that side and arrive at that cell of the other
+EXITS = {
+  { a = 1, side = "w", to = 2, x = 25, y = 10 }, { a = 2, side = "e", to = 1, x = 0, y = 5 },
+  { a = 2, side = "s", to = 4, x = 13, y = 0 }, { a = 4, side = "n", to = 2, x = 15, y = 19 },
+  { a = 2, side = "w", to = 5, x = 25, y = 10 }, { a = 5, side = "e", to = 2, x = 0, y = 9 },
+  { a = 5, side = "n", to = 6, x = 6, y = 19 }, { a = 6, side = "s", to = 5, x = 6, y = 0 },
+  { a = 4, side = "e", to = 7, x = 0, y = 8, need = "skin", no = "The Dry Reach lies that way. Without a waterskin the sun turns you back." },
+  { a = 7, side = "w", to = 4, x = 27, y = 8 },
+}
+-- what grows wild out there, and what the old tin boxes hold
+WILD = {
+  [4] = { n = 9, kinds = { "shell", "shell", "seaweed", "seaweed", "wood", "pearl" } },
+  [5] = { n = 10, kinds = { "bogberry", "bogberry", "marshcap", "fibre", "fibre", "mushroom" } },
+  [6] = { n = 8, kinds = { "thyme", "thyme", "flint", "stone", "cone" } },
+  [7] = { n = 7, kinds = { "dates", "pricklefig", "pricklefig", "stone", "amber" } },
+}
+TIN = {
+  [4] = { coins = 60, k = "pearl", n = 1 }, [5] = { coins = 80, k = "marshcap", n = 5 },
+  [6] = { coins = 100, k = "glow", n = 2 }, [7] = { coins = 150, k = "amber", n = 2 },
+}
+-- fish: where they bite (area), how hard they pull (1 to 3), how often (w), and their colours
+FISH = {
+  { key = "minnow", name = "Minnow", sell = 8, a = 1, str = 1, w = 6, col = 29, belly = 13 },
+  { key = "carp", name = "Mirror carp", sell = 24, a = 1, str = 2, w = 3, col = 9, belly = 27 },
+  { key = "perch", name = "Bramble perch", sell = 20, a = 2, str = 1, w = 5, col = 16, belly = 27 },
+  { key = "trout", name = "Brook trout", sell = 34, a = 2, str = 2, w = 3, col = 8, belly = 25 },
+  { key = "sardine", name = "Sardine", sell = 12, a = 4, str = 1, w = 6, col = 21, belly = 13 },
+  { key = "mackerel", name = "Mackerel", sell = 28, a = 4, str = 2, w = 4, col = 20, belly = 29 },
+  { key = "flatfish", name = "Sand dab", sell = 44, a = 4, str = 2, w = 2, col = 10, belly = 12 },
+  { key = "sunray", name = "Lantern ray", sell = 170, a = 4, str = 3, w = 1, col = 27, belly = 25 },
+  { key = "eel", name = "Fen eel", sell = 46, a = 5, str = 2, w = 4, col = 14, belly = 17 },
+  { key = "catfish", name = "Whisker cat", sell = 58, a = 5, str = 2, w = 3, col = 7, belly = 11 },
+  { key = "pike", name = "Bog pike", sell = 110, a = 5, str = 3, w = 1, col = 15, belly = 18 },
+  { key = "loach", name = "Stone loach", sell = 36, a = 6, str = 1, w = 4, col = 30, belly = 28 },
+  { key = "char", name = "Tarn char", sell = 66, a = 6, str = 3, w = 2, col = 24, belly = 26 },
+  { key = "sandperch", name = "Oasis perch", sell = 52, a = 7, str = 2, w = 4, col = 10, belly = 27 },
+  { key = "koi", name = "Golden koi", sell = 260, a = 7, str = 3, w = 1, col = 27, belly = 13 },
+}
+index_found()
 MINE_FLOORS = 10
 -- rocks in the mine: hits to break, what falls out, and from which floor on they turn up
 ROCKS = {
@@ -165,7 +313,7 @@ PLOTS = {
   { x = 17, y = 8, w = 10, h = 6, name = "East meadow", cost = 350 },
   { x = 4, y = 15, w = 22, h = 5, name = "Long acre", cost = 1200 },
 }
-SOLID = "TB~hcWNmXMoStFkgr#RCIQ<>HZ"
+SOLID = "TB~hcWNmXMoStFkgr#RCIQ<>HZPDKUA"
 
 function hash(x, y, s)
   local n = (x * 374761393 + y * 668265263 + s * 982451653) & 0x7fffffff
@@ -177,23 +325,26 @@ function fl(v) return math.floor(v) end
 
 function build_world()
   for ai, A in ipairs(AREAS) do
-    if not A.map then break end
-    A.h, A.w = #A.map, #A.map[1]
-    A.free = {}
-    for y = 0, A.h - 1 do
-      if #A.map[y + 1] ~= A.w then error("map row " .. y .. " of " .. A.name .. " has the wrong length") end
-      for x = 0, A.w - 1 do
-        if A.map[y + 1]:sub(x + 1, x + 1) == "." then A.free[#A.free + 1] = { x, y } end
+    if A.map then
+      A.h, A.w = #A.map, #A.map[1]
+      A.free = {}
+      for y = 0, A.h - 1 do
+        if #A.map[y + 1] ~= A.w then error("map row " .. y .. " of " .. A.name .. " has the wrong length") end
+        for x = 0, A.w - 1 do
+          if A.map[y + 1]:sub(x + 1, x + 1) == "." then A.free[#A.free + 1] = { x, y } end
+        end
       end
     end
   end
+  BROKE = {}
 end
 function tile(a, x, y)
   if a == 3 then return MINE and MINE[y] and MINE[y][x] or "#" end
   local A = AREAS[a]
-  if y < 0 or y >= A.h then return "B" end
-  x = clamp(x, 0, A.w - 1)                      -- the road runs off the edge of the map
-  return A.map[y + 1]:sub(x + 1, x + 1)
+  x, y = clamp(x, 0, A.w - 1), clamp(y, 0, A.h - 1)        -- the road runs off the edge of the map
+  local ch = A.map[y + 1]:sub(x + 1, x + 1)
+  if a >= 4 and BROKE[a * 4096 + y * 64 + x] then return "," end      -- a rock you broke today
+  return ch
 end
 -- the field cell at a farm cell: returns the cell and its plot number
 function cell(x, y)
@@ -205,6 +356,7 @@ function cell(x, y)
 end
 function solid(a, x, y)
   local ch = tile(a, x, y)
+  if ch == "S" and G.pine == 1 then return false end
   if SOLID:find(ch, 1, true) then return true end
   if a == 1 then
     local f = cell(x, y)
@@ -276,6 +428,18 @@ function grow_forage()
   end
   put(2, 14, 31)
   put(1, 3, 57)
+  for a, W in pairs(WILD) do
+    local A, used = AREAS[a], {}
+    for i = 1, W.n do
+      local k = hash(G.day, i, a * 13) % #A.free + 1
+      if not used[k] then
+        used[k] = true
+        local kind = W.kinds[hash(i, G.day, a * 17) % #W.kinds + 1]
+        if (kind == "pearl" or kind == "amber") and hash(i, G.day, a) > 250 then kind = W.kinds[1] end      -- treasures are rare
+        FORAGE[#FORAGE + 1] = { a = a, x = A.free[k][1], y = A.free[k][2], k = kind }
+      end
+    end
+  end
 end
 
 -- a night passes. Watered crops (or everything, after rain) grow a day.
@@ -288,6 +452,7 @@ function new_day(away)
   end)
   G.day = G.day + 1
   G.clk = 0
+  BROKE = {}
   G.rain = hash(G.day, 3, 11) < ({ 280, 120, 240, 220 })[season()]
   local list = {}
   for i = 1, #CROPS do if in_season(i) then list[#list + 1] = i end end
@@ -1238,6 +1403,7 @@ function fresh()
     plots = { true, false, false }, mill = 0, millc = 0, rain = false, demand = 1, tins = "00",
     sold = 0, picked = 0, grown = 0, mine = 0, deep = 0, lamp = 0, gotms = 0,
     silo_b = 0, silo = {}, hop = {}, auto = 0, route = "", daily = 0, post = {}, wishday = 0, fair0 = 0,
+    rod = 0, skin = 0, pine = 0, fishn = {}, caught = 0, seen = {},
     trac = 0, tx = 27 * C + 8, ty = 14 * C + 14, imp = { 0, 0, 0, 0 }, impsel = 0, tank = 0, coop = 0, shed = 0, pail = 0, feed = 0, an = {} }
 end
 
@@ -1278,7 +1444,9 @@ function load_farm()
   else
     grow_forage()
   end
-  G.area = clamp(G.area, 1, 2)
+  if G.area == 3 or not AREAS[G.area] then G.area = 2 end
+  while #G.tins < #AREAS do G.tins = G.tins .. "0" end
+  BROKE, FISHING, fish_rest = {}, nil, nil
   px, py = G.px, G.py
   MINE, MOBS, mine_n, mine_hp, hurt_t, mine_hits, mine_at = nil, {}, 0, 3, 0, 0, nil
   riding, work_t, teaching, teach_last, auto_i, auto_hx, auto_hy, auto_imp = false, 0, false, nil, nil, 1, 0, 0
@@ -1318,6 +1486,8 @@ function _init()
       "Watered crops grow overnight. Sleep in the hut, sell at the crate, shop at the wagon.",
       "Bramble Woods lies west along the road. Bring what the mill needs to the ruin.",
       "The mine in the woods opens with a pickaxe. Break rocks for ore, find the ladder down. A also hits.",
+      "The valley is wide: the fen west of the woods, hills beyond it, the shore south (bring an axe), a desert east of that.",
+      "Fishing: A at water with a rod. Strike on the bite, reel while the fish rests, ease off when it runs.",
       "Other Bits in reach are neighbours: the north road leads to their farms. Water for them, leave gifts.",
       "After the mill: build the silo, buy the clockwork driver, press Y by the tractor and teach it a route.",
       "The rusted tractor by the Long acre can be mended. On it: hold A to work, L changes implement, Y hops off.",
@@ -1411,6 +1581,166 @@ function sleep()
   end
 end
 
+-- ---------------------------------------------------------------- the wider valley
+-- walking off the edge of an area along a road
+function try_exit()
+  local a, A = G.area, AREAS[G.area]
+  local side = px < 3 and "w" or px > A.w * C - 3 and "e" or py < 10 and "n" or py > A.h * C - 3 and "s" or nil
+  if not side then return end
+  for _, e in ipairs(EXITS) do
+    if e.a == a and e.side == side then
+      if e.need and G[e.need] ~= 1 then
+        px, py = clamp(px, 6, A.w * C - 6), clamp(py, 12, A.h * C - 6)
+        if toast_t == 0 then say(e.no) end
+        return
+      end
+      local T = AREAS[e.to]
+      G.area = e.to
+      px = e.x == 0 and 8 or e.x == T.w - 1 and T.w * C - 8 or e.x * C + 8
+      py = e.y == 0 and 14 or e.y == T.h - 1 and T.h * C - 6 or e.y * C + 12
+      fade = 31
+      if e.to >= 4 and not G.seen[T.short] then
+        G.seen[T.short] = 1
+        say(tr("You found %s!", tr(T.name)))
+        sfx("C5", 1, 0.25, 6) sfx("E5", 1, 0.25, 10) sfx("G5", 1, 0.25, 16)
+      end
+      persist()
+      return
+    end
+  end
+end
+-- rocks above ground: the pickaxe breaks them, and they are back the next morning
+function quarry_hands(a, x, y, ch)
+  local R = ROCKS[ch]
+  if G.pick == 0 then say("Solid rock. A pickaxe would break it.") return end
+  local at = a * 4096 + y * 64 + x
+  mine_hits = (mine_at == at) and mine_hits + 1 or 1
+  mine_at = at
+  swing("chop")
+  sfx(R.drop and "C4" or "A3", 3, 0.3, 5)
+  if mine_hits < R.hits + 1 then return end
+  local drop = R.drop or (hash(x, y, G.day) < 400 and "flint" or "stone")
+  if not give(drop, 1) then mine_hits = R.hits return end
+  float("+1 " .. FOUND_BY[drop].name)
+  BROKE[at] = true
+  mine_at = nil
+end
+
+-- ---------------------------------------------------------------- fishing
+-- A at water casts. Wait for the bite, strike with A, then bring it in: hold A to reel while the fish rests
+-- and ease off while it runs, or the line snaps. A light press reels gently on a Bit with analog buttons.
+function fish_rand(n, salt) return hash(t(), G.caught + salt, n + G.day) % n end
+function start_fishing(x, y)
+  if fish_rest then return end       -- a held button does not cast again: let go of A first
+  if count_bag() >= BAG[G.bag] then say("Your bag is full. No room for a fish.") return end
+  FISHING = { phase = "wait", t = 50 + fish_rand(170, 1), x = x, y = y, dist = 0, ten = 0, run = false, runt = 0, age = 0 }
+  ui = "fish"
+  sfx("G4", 4, 0.2, 6, -1, 0, -200)
+end
+function pick_fish(a)
+  local L, sum = {}, 0
+  for _, f in ipairs(FISH) do if f.a == a then L[#L + 1] = f; sum = sum + f.w end end
+  if #L == 0 then for _, f in ipairs(FISH) do if f.a == 1 then L[#L + 1] = f; sum = sum + f.w end end end
+  local r = fish_rand(sum, 7)
+  for _, f in ipairs(L) do
+    if r < f.w then return f end
+    r = r - f.w
+  end
+  return L[1]
+end
+function end_fishing(msg, good)
+  FISHING, ui, act, fish_rest = nil, nil, 12, true
+  if msg then say(msg) end
+  if good then sfx("C5", 1, 0.3, 6) sfx("E5", 1, 0.3, 10) sfx("G5", 1, 0.3, 16) else sfx("C3", 0, 0.2, 8) end
+end
+function update_fishing()
+  local F = FISHING
+  F.age = F.age + 1
+  if btnp("b") then end_fishing() return end
+  if F.phase == "wait" then
+    F.t = F.t - 1
+    if F.t <= 0 then F.phase, F.t = "bite", 40; sfx("A5", 1, 0.35, 4) end
+  elseif F.phase == "bite" then
+    F.t = F.t - 1
+    if btnp("a") then
+      F.f = pick_fish(G.area)
+      F.phase, F.dist, F.ten, F.run, F.runt = "reel", 55 + F.f.str * 12, 25, false, 50
+      sfx("E4", 3, 0.3, 6)
+    elseif F.t <= 0 then end_fishing("Too slow. It took the bait and left.") end
+  else
+    local f = F.f
+    local pr = press("a")
+    if btn("a") and pr == 0 then pr = 255 end
+    local r = btn("a") and pr / 255 or 0
+    F.runt = F.runt - 1
+    if F.runt <= 0 then
+      F.run = not F.run
+      F.runt = F.run and (25 + fish_rand(30 + f.str * 25, 3)) or (45 + fish_rand(60, 5))
+      if F.run then sfx("C4", 3, 0.3, 8, -1, 0, 300) end
+    end
+    if F.run then
+      F.dist = F.dist + 0.16 * f.str - r * 0.12
+      F.ten = F.ten + r * (1.5 + 0.5 * f.str) - 0.5
+    else
+      F.dist = F.dist - r * 0.7
+      F.ten = F.ten + r * 0.3 - 0.8
+    end
+    if r == 0 then F.ten = F.ten - 1 end
+    F.ten = math.max(0, F.ten)
+    F.reel = r
+    if r > 0 and F.age % 6 == 0 then sfx(F.run and "E3" or "A3", 3, 0.12, 2) end
+    if F.ten >= 100 then end_fishing("Snap! The line broke. Ease off when the fish runs.")
+    elseif F.dist >= 130 then end_fishing("It swam too far and slipped the hook.")
+    elseif F.dist <= 0 then
+      if give(f.key, 1) then
+        local new = not G.fishn[f.key]
+        G.fishn[f.key] = 1
+        G.caught = G.caught + 1
+        float("+1 " .. f.name, 27)
+        end_fishing(new and tr("A %s! A new kind: %d of %d caught.", tr(f.name), fish_kinds(), #FISH) or tr("You land a %s.", tr(f.name)), true)
+        persist()
+      else end_fishing() end
+    end
+  end
+end
+function fish_kinds() local n = 0 for k in pairs(G.fishn) do n = n + 1 end return n end
+function draw_fish(x, y, f, flip)         -- about 14 x 8, x,y the middle
+  local d = flip and -1 or 1
+  for i = -5, 4 do
+    local h = i < -3 and 1 or i > 2 and 2 or 3
+    line(x + i * d, y - h, x + i * d, y + h, f.col)
+    pset(x + i * d, y + h, f.belly)
+  end
+  line(x + 5 * d, y - 1, x + 5 * d, y + 1, f.col)
+  line(x + 6 * d, y - 3, x + 6 * d, y + 3, f.col) line(x + 7 * d, y - 4, x + 7 * d, y + 4, f.col)
+  pset(x - 3 * d, y - 1, 1)
+  line(x - 1 * d, y - 4, x + 1 * d, y - 4, f.col)
+end
+function draw_fishing()
+  local F = FISHING
+  if not F then return end
+  panel(40, 150, 240, 70, F.phase == "reel" and "On the line" or "Fishing")
+  if F.phase == "wait" then
+    text("Wait for the bite" .. string.rep(".", F.age // 20 % 4), 52, 172, 13)
+    text("B: pull in", 52, 200, 11)
+  elseif F.phase == "bite" then
+    text("A bite! Press A!", 52, 172, t() % 8 < 4 and 27 or 26, 2)
+  else
+    -- the water between you and the fish
+    rectfill(52, 168, 216, 14, 20) rect(52, 168, 216, 14, 1)
+    local fx = 56 + clamp(F.dist, 0, 130) * 200 // 130
+    line(54, 175, fx, 175, F.ten > 75 and 26 or 13)
+    draw_fish(fx + 4, 175, F.f, false)
+    if F.run and t() % 6 < 3 then pset(fx + 12, 171, 13) pset(fx + 14, 178, 13) end
+    rectfill(52, 164, 3, 22, 8)
+    -- how tight the line is
+    text("line", 52, 190, 12)
+    rectfill(90, 190, 130, 8, 7) rectfill(90, 190, clamp(F.ten, 0, 100) * 130 // 100, 8, F.ten > 75 and 26 or F.ten > 45 and 27 or 17)
+    rect(90, 190, 130, 8, 1)
+    text(F.run and "It runs! Ease off" or "Reel! Hold A", 52, 204, F.run and 26 or 17)
+  end
+end
+
 -- ---------------------------------------------------------------- your hands (A) and the bucket (B)
 function swing(kind) act, act_kind = 14, kind end
 
@@ -1469,21 +1799,48 @@ function use_hands()
     return
   end
   if ch == "M" then mine_door() return end
-  if ch == "S" then say("A fallen pine blocks the path down to the shore.") return end
+  if ch == "S" then
+    if G.pine == 1 then return end
+    if G.axe == 0 then say("A fallen pine blocks the path down to the shore. An axe would clear it.") return end
+    G.pine = 1
+    give("wood", 4)
+    swing("chop")
+    say("You chop through the fallen pine. The path to Gull Shore is open!")
+    sfx("A2", 3, 0.3, 6) sfx("C5", 1, 0.3, 8) sfx("G5", 1, 0.3, 14)
+    persist()
+    return
+  end
+  if a >= 4 and ROCKS[ch] then quarry_hands(a, x, y, ch) return end
   if ch == "o" then say("A standing stone, older than the valley. It hums a little.") return end
   if ch == "t" then
     local n = a
     if G.tins:sub(n, n) == "1" then say("An empty tin box.") return end
     G.tins = G.tins:sub(1, n - 1) .. "1" .. G.tins:sub(n + 1)
-    G.coins = G.coins + 40
-    G.seeds[2] = G.seeds[2] + 6
-    say("A rusty tin box! Inside: 40 coins and 6 barley seeds.")
+    local T = TIN[a]
+    if T then
+      G.coins = G.coins + T.coins
+      G.inv[T.k] = have(T.k) + T.n
+      say(tr("A rusty tin box! Inside: %d coins and %d %s.", T.coins, T.n, low(tr(FOUND_BY[T.k].name))))
+    else
+      G.coins = G.coins + 40
+      G.seeds[2] = G.seeds[2] + 6
+      say("A rusty tin box! Inside: 40 coins and 6 barley seeds.")
+    end
     sfx("C5", 1, 0.3, 6) sfx("G5", 1, 0.3, 12)
     persist()
     return
   end
-  if ch == "~" then say(tr("Water. Press B to fill your %s.", low(tr(CAN[G.can].name)))) return end
+  if ch == "~" then
+    if G.rod == 1 then start_fishing(x, y)
+    else say(tr("Water. B fills your %s. With a rod from Marrow you could fish here.", low(tr(CAN[G.can].name)))) end
+    return
+  end
   if ch == "T" then say("A tall pine.") return end
+  if ch == "P" then say("A palm, bent by the wind.") return end
+  if ch == "D" then say("A drowned tree, long dead.") return end
+  if ch == "K" then say("A cactus. Mind the spines.") return end
+  if ch == "A" then say("Old bones, bleached by the sun.") return end
+  if ch == "U" then say("A boulder.") return end
   if a ~= 1 then return end
   local f, p = cell(x, y)
   if not f then return end
@@ -1603,7 +1960,9 @@ function shop_items()
   once("Basket", 120, "Carry 40 things, not 16.", G.bag == 1, function() G.bag = 2 end)
   once("Pack", 600, "Carry 100 things.", G.bag == 2, function() G.bag = 3 end)
   once("Pickaxe", 150, "Breaks the stones on your land.", G.pick == 0, function() G.pick = 1 end)
-  once("Axe", 150, "Splits the old stumps on your land.", G.axe == 0, function() G.axe = 1 end)
+  once("Axe", 150, "Splits the old stumps on your land, and fallen trees.", G.axe == 0, function() G.axe = 1 end)
+  once("Fishing rod", 150, "A at any water casts the line. Every water has its own fish.", G.rod == 0, function() G.rod = 1 end)
+  once("Waterskin", 120, "Lets you cross into the Dry Reach, east of Gull Shore.", G.skin == 0, function() G.skin = 1 end)
   for i, it in ipairs(IMPL) do
     once(it.name, it.cost, it.about, G.trac == 1 and G.imp[i] == 0, function() G.imp[i] = 1; if G.impsel == 0 then G.impsel = i end; if it.key == "tank" then G.tank = TANK end end)
   end
@@ -1721,6 +2080,7 @@ function _update()
   if ui == "build" then update_build() return end
   if ui == "auto" then update_auto() return end
   if ui == "near" then update_near() return end
+  if ui == "fish" then update_fishing() return end
   if ui == "gift" then update_gift() return end
   if ui == "fetch" then if btnp("b") then fetch, ui, VG, VF = nil, nil, nil, nil end return end
   if ui == "silo" then
@@ -1784,12 +2144,12 @@ function _update()
   local A = AREAS[G.area]
   if riding and px < 12 then px = 12; if toast_t == 0 then say("The tractor stays on the farm. Hop off with Y.") end end
   if visiting and px < 3 then px = 3; if toast_t == 0 then say("The north road leads home.") end
-  elseif G.area == 1 and px < 3 then G.area, px, py = 2, AREAS[2].w * C - 8, 10 * C + 12; fade = 31; persist()
-  elseif G.area == 2 and px > A.w * C - 3 then G.area, px, py = 1, 8, 5 * C + 12; fade = 31; persist() end
+  elseif G.area ~= 3 then try_exit() end
   px, py = clamp(px, 2, AREAS[G.area].w * C - 2), clamp(py, 8, AREAS[G.area].h * C - 1)
 
   if riding then update_riding() return end
   if btn("a") or btn("b") then hold = hold + 1 else hold = 0 end
+  if not btn("a") then fish_rest = nil end
   local again = hold > 0 and hold % 16 == 0
   if btnp("a") or (btn("a") and again) then use_hands()
   elseif btnp("b") or (btn("b") and again) then if visiting then visit_water() else use_water() end
@@ -1850,7 +2210,31 @@ function draw_crop(ci, s, x, y, ph)
 end
 
 function draw_icon(k, x, y)
-  if CROP_BY[k] then draw_crop(CROP_BY[k], 3, x, y, 0) else spr(FOUND_BY[k].spr, x, y, 2, 2) end
+  if CROP_BY[k] then draw_crop(CROP_BY[k], 3, x, y, 0) else draw_found(k, x, y) end
+end
+function draw_found(k, x, y)          -- a 16 x 16 picture of something found: a sprite, or drawn from code
+  local f = FOUND_BY[k]
+  if f.spr then spr(f.spr, x, y, 2, 2) return end
+  local cx, cy, c = x + 8, y + 9, f.col or 13
+  if f.icon == "fish" then draw_fish(cx - 1, cy, f, false)
+  elseif f.icon == "shell" then
+    circfill(cx, cy, 5, 12) circ(cx, cy, 5, 10)
+    line(cx - 3, cy - 3, cx + 3, cy + 3, 10) line(cx, cy - 5, cx, cy + 5, 10) line(cx + 3, cy - 3, cx - 3, cy + 3, 10)
+    pset(cx - 2, cy - 2, 13)
+  elseif f.icon == "leaf" then
+    for i = -2, 2 do line(cx + i * 2, cy + 5, cx + i * 3, cy - 4 + math.abs(i), i % 2 == 0 and c or c - 1) end
+    pset(cx - 3, cy - 2, 27) pset(cx + 4, cy - 1, 27)
+  elseif f.icon == "gem" then
+    circfill(cx, cy, 4, c) circ(cx, cy, 4, 1)
+    pset(cx - 1, cy - 2, 13) pset(cx - 2, cy - 1, 13)
+  elseif f.icon == "berry" then
+    line(cx, cy - 6, cx, cy - 2, 16) line(cx, cy - 4, cx + 3, cy - 6, 16)
+    circfill(cx - 3, cy + 1, 2, c) circfill(cx + 3, cy + 1, 2, c) circfill(cx, cy + 3, 2, c)
+    pset(cx - 4, cy, 13) pset(cx + 2, cy, 13)
+  else
+    rectfill(cx - 1, cy, 3, 5, 12)
+    circfill(cx, cy - 1, 5, c) rectfill(cx - 5, cy, 11, 2, c) pset(cx - 2, cy - 3, 13) pset(cx + 2, cy - 2, 13)
+  end
 end
 
 function draw_hut(x, y)             -- 48 x 48, a one-room hut with a thatched roof
@@ -2085,14 +2469,29 @@ function draw_world()
   y0 = math.max(0, y0)
   local wf = t() // 30 % 2
   -- the ground
-  season_pal(false)
+  local bio, cur = A.biome, nil
+  local function mode(m)             -- the colours of this kind of ground
+    if m == cur then return end
+    cur = m
+    pal()
+    if m == "season" then season_pal(false)
+    elseif m == "shore" then pal(16, 12) pal(15, 11) pal(17, 13)
+    elseif m == "dry" then pal(16, 11) pal(15, 10) pal(17, 12)
+    elseif m == "fen" then pal(16, 15) pal(15, 14) pal(17, 16)
+    elseif m == "mud" then pal(8, 7) pal(9, 8) pal(7, 6) pal(6, 14)
+    elseif m == "bog" then pal(21, 15) pal(22, 16) pal(20, 14) pal(23, 17) pal(19, 14) end
+  end
   for y = y0, y1 do
     for x = x0, x1 do
       local ch, n = tile(a, x, y), 32
+      local m = "season"
       if ch == ":" or ch == "X" then n = 40
       elseif ch == "p" then n = 72
-      elseif ch == "~" then n = 42 + wf * 2
+      elseif ch == "~" or ch == "J" then n = 42 + wf * 2; m = bio == "fen" and "bog" or "plain"
+      elseif bio and (ch == "," or ROCKS[ch]) then n = A.ground2; m = bio == "hills" and "plain" or bio == "fen" and "mud" or "season"
+      elseif bio and bio ~= "hills" then m = bio
       elseif hash(x, y, a) < 140 then n = 34 end
+      mode(m)
       if a == 1 then
         local f, p = cell(x, y)
         if f then
@@ -2100,6 +2499,11 @@ function draw_world()
         end
       end
       spr(n, x * C, y * C, 2, 2)
+      if ch == "J" then
+        mode("plain")
+        rectfill(x * C + 2, y * C, 12, 16, 9) line(x * C + 2, y * C + 5, x * C + 13, y * C + 5, 7) line(x * C + 2, y * C + 11, x * C + 13, y * C + 11, 7)
+        rectfill(x * C + 1, y * C + 13, 2, 3, 6) rectfill(x * C + 13, y * C + 13, 2, 3, 6)
+      end
     end
   end
   pal()
@@ -2122,9 +2526,33 @@ function draw_world()
       if ch == "T" then season_pal(true) spr(160, sx, sy - 16, 2, 4) pal()
       elseif ch == "B" then season_pal(false) spr(70, sx, sy, 2, 2) pal()
       elseif ch == "o" then spr(74, sx, sy - 4, 2, 2)
+      elseif ch == "U" then spr(66, sx, sy, 2, 2)
+      elseif ROCKS[ch] then spr(ROCKS[ch].spr, sx, sy, 2, 2)
+      elseif ch == "D" then pal(14, 6) pal(15, 7) pal(16, 7) pal(17, 8) pal(18, 8) spr(160, sx, sy - 16, 2, 4) pal()
+      elseif ch == "P" then
+        for i = 0, 17 do rectfill(sx + 7 + i * i // 110, sy + 13 - i, 3, 1, i % 4 == 0 and 7 or 9) end
+        local tx, ty, sw = sx + 10, sy - 5, fl(math.sin((t() + x * 20) / 30) * 1.5)
+        for i = -2, 2 do
+          line(tx, ty, tx + i * 6 + sw, ty - 3 + math.abs(i) * 4, 16) line(tx, ty - 1, tx + i * 6 + sw, ty - 4 + math.abs(i) * 4, 17)
+        end
+        circfill(tx, ty + 1, 1, 8)
+      elseif ch == "K" then
+        rectfill(sx + 6, sy - 4, 5, 18, 16) rectfill(sx + 7, sy - 5, 3, 1, 16) line(sx + 7, sy - 3, sx + 7, sy + 12, 17)
+        rectfill(sx + 2, sy + 2, 4, 3, 16) rectfill(sx + 2, sy - 2, 3, 5, 16) rectfill(sx + 11, sy + 5, 4, 3, 16) rectfill(sx + 12, sy + 1, 3, 5, 16)
+        if (x + y) % 3 == 0 then pset(sx + 8, sy - 6, 25) pset(sx + 3, sy - 3, 25) end
+      elseif ch == "A" then
+        line(sx + 2, sy + 12, sx + 13, sy + 12, 12) circfill(sx + 3, sy + 10, 2, 13)
+        for i = 0, 3 do line(sx + 6 + i * 2, sy + 11, sx + 6 + i * 2, sy + 5 + i % 2, 13) end
+      elseif ch == "E" then
+        local sw = fl(math.sin((t() + x * 31 + y * 17) / 22) * 1.5)
+        for i = 0, 3 do
+          line(sx + 3 + i * 3, sy + 14, sx + 3 + i * 3 + sw, sy + 2 + i % 2 * 3, 16)
+          rectfill(sx + 2 + i * 3 + sw, sy + i % 2 * 3, 2, 4, i % 2 == 0 and 8 or 7)
+        end
       elseif ch == "t" then spr(76, sx, sy, 2, 2)
       elseif ch == "N" then spr(140, sx, sy - 4, 2, 2)
       elseif ch == "M" then draw_mine(sx, sy)
+      elseif ch == "S" and G.pine == 1 then
       elseif ch == "S" then rectfill(sx - 6, sy + 5, 28, 6, 8) rect(sx - 6, sy + 5, 28, 6, 6) circfill(sx - 6, sy + 8, 3, 10)
       elseif ch == "X" then rectfill(sx + 2, sy + 6, 12, 3, 9) rectfill(sx + 4, sy + 4, 2, 10, 7) rectfill(sx + 10, sy + 4, 2, 10, 7)
       elseif a == 1 then
@@ -2151,7 +2579,7 @@ function draw_world()
         end
       end
     end
-    if rows[y] then for _, o in ipairs(rows[y]) do spr(FOUND_BY[o.k].spr, o.x * C, o.y * C, 2, 2) end end
+    if rows[y] then for _, o in ipairs(rows[y]) do draw_found(o.k, o.x * C, o.y * C) end end
     if arows[y] then for _, i in ipairs(arows[y]) do draw_animal(i) end end
     if a == 1 and G.trac == 1 and not riding and fl((G.ty - 1) / C) == y then
       if auto_i then draw_tractor(fl(G.tx), fl(G.ty), auto_hx, auto_hy, true, false, true, auto_imp)
@@ -2163,6 +2591,13 @@ function draw_world()
     if y == prow then
       if riding then draw_tractor(fl(px), fl(py), dx, dy, true, false) else draw_farmer(fl(px), fl(py)) end
     end
+  end
+  if FISHING then            -- the float on the water
+    local F = FISHING
+    local bx, by = F.x * C + 8, F.y * C + 8 + (F.phase == "bite" and 2 or fl(math.sin(F.age / 9) * 1.5))
+    line(fl(px) + dx * 6, fl(py) - 14, bx, by, 13)
+    circfill(bx, by, 2, 26) pset(bx, by - 2, 13)
+    if F.phase ~= "wait" and t() % 8 < 4 then circ(bx, by, 5, 13) end
   end
   -- the cell your hands reach
   local fx, fy = facing()
@@ -2190,7 +2625,12 @@ end
 function draw_weather()
   if G.area == 3 then return end
   local h = hour()
-  if G.rain then
+  if G.area == 5 and h > 16 then           -- fireflies over the fen
+    for i = 1, 14 do
+      if (t() + i * 23) % 90 < 50 then pset((i * 71 + fl(math.sin((t() + i * 40) / 37) * 14)) % 320, 30 + (i * 53 + fl(math.cos((t() + i * 9) / 29) * 10)) % 180, 27) end
+    end
+  end
+  if G.rain and G.area ~= 7 then
     local snow = season() == 4
     for i = 1, 40 do
       local x, y = (i * 53 + t() * (snow and 1 or 3)) % 340 - 10, (i * 97 + t() * (snow and 2 or 7)) % 240
@@ -2247,6 +2687,7 @@ function draw_hud()
   text(string.format("%02d:%02d", fl(h), fl(h % 1 * 6) * 10), 92, 2, h > 20 and 26 or 13)
   if G.rain then text(season() == 4 and "snow" or "rain", 144, 2, 22) end
   if G.area == 2 then text("Woods", 190, 2, 17) end
+  if AREAS[G.area].short then text(AREAS[G.area].short, 190, 2, 12) end
   if visiting then text(tr("at %s", who(visiting)), 152, 2, 21)
   elseif G.area == 1 and next(NEAR) and G.coins < 100000 and not G.rain then
     local sum, want = fair_total()
@@ -2315,12 +2756,14 @@ function draw_bag()
   local function row(k, name, n, c)
     draw_icon(k, x, y - 4)
     text(tr(name):sub(1, 10), x + 20, y, c or 13) text("x" .. n, x + 104, y + 8 - 8, 27)
+    if x > 164 then return end
     y = y + 16
-    if y > 186 then x, y = 164, 74 end
+    if y > 186 then x, y = x + 136, 74 end
   end
   for i, c in ipairs(CROPS) do if have(c.key) > 0 then row(c.key, c.name, have(c.key)) end end
   for i, f in ipairs(FOUND) do if have(f.key) > 0 then row(f.key, f.name, have(f.key), f.mat and 11 or 13) end end
   if x == 28 and y == 74 then text("Nothing yet. Pick, pull and forage.", 28, 74, 28) end
+  if G.rod == 1 then text(tr("Fish: %d/%d kinds", fish_kinds(), #FISH), 196, 36, 21) end
   if #G.an > 0 then text(herd("h") .. " hens, " .. herd("g") .. " goats. Trough: " .. G.feed, 28, 196, 17) end
   text(tr("Mill: %s   B: close", MILL[G.mill + 1] and low(tr(MILL[G.mill + 1].name)) or tr("rebuilt")), 28, 208, 11)
 end
@@ -2357,7 +2800,7 @@ function draw_build()
     local n = Bd.need[f.key]
     if n then
       y = y + 14
-      text(f.name, 40, y, 12) text(math.min(have(f.key), n) .. "/" .. n, 200, y, have(f.key) >= n and 17 or 26)
+      text(tr(f.name), 40, y, 12) text(math.min(have(f.key), n) .. "/" .. n, 200, y, have(f.key) >= n and 17 or 26)
       if have(f.key) < n then ok = false end
     end
   end
@@ -2385,6 +2828,7 @@ function _draw()
   elseif ui == "mill" then draw_mill_ui()
   elseif ui == "build" then draw_build()
   elseif ui == "near" then draw_near()
+  elseif ui == "fish" then draw_fishing()
   elseif ui == "gift" then draw_gift()
   elseif ui == "fetch" then
     panel(60, 96, 200, 48, "The north road")
@@ -2759,6 +3203,72 @@ texts{
     ["at %s"] = "bei %s",
     ["Fair #/#"] = "Fest #/#",
     ["Walking over to %s"] = "Unterwegs zu %s",
+    ["Whelk shell"] = "Wellhornschnecke",
+    ["Sea lettuce"] = "Meersalat",
+    ["Pearl"] = "Perle",
+    ["Bogberry"] = "Moosbeere",
+    ["Marsh cap"] = "Sumpfhut",
+    ["Hill thyme"] = "Bergthymian",
+    ["Flint"] = "Feuerstein",
+    ["Dates"] = "Datteln",
+    ["Prickle fig"] = "Kaktusfeige",
+    ["Amber"] = "Bernstein",
+    ["Gull Shore"] = "Möwenstrand",
+    ["Shore"] = "Strand",
+    ["Sedge Fen"] = "Seggenmoor",
+    ["Fen"] = "Moor",
+    ["Flint Hills"] = "Feuersteinhügel",
+    ["Hills"] = "Hügel",
+    ["The Dry Reach"] = "Die Dürre Weite",
+    ["Desert"] = "Wüste",
+    ["The Dry Reach lies that way. Without a waterskin the sun turns you back."] = "Da liegt die Dürre Weite. Ohne Wasserschlauch treibt dich die Sonne zurück.",
+    ["Minnow"] = "Elritze",
+    ["Mirror carp"] = "Spiegelkarpfen",
+    ["Bramble perch"] = "Brombeerbarsch",
+    ["Brook trout"] = "Bachforelle",
+    ["Sardine"] = "Sardine",
+    ["Mackerel"] = "Makrele",
+    ["Sand dab"] = "Kliesche",
+    ["Lantern ray"] = "Laternenrochen",
+    ["Fen eel"] = "Moor-Aal",
+    ["Whisker cat"] = "Bartwels",
+    ["Bog pike"] = "Moorhecht",
+    ["Stone loach"] = "Bachschmerle",
+    ["Tarn char"] = "Bergsaibling",
+    ["Oasis perch"] = "Oasenbarsch",
+    ["Golden koi"] = "Goldkoi",
+    ["The valley is wide: the fen west of the woods, hills beyond it, the shore south (bring an axe), a desert east of that."] = "Das Tal ist weit: das Moor westlich vom Wald, dahinter Hügel, im Süden der Strand (nimm eine Axt mit), östlich davon eine Wüste.",
+    ["Fishing: A at water with a rod. Strike on the bite, reel while the fish rests, ease off when it runs."] = "Angeln: A am Wasser mit einer Angel. Beim Biss anschlagen, einholen, wenn der Fisch ruht, nachlassen, wenn er zieht.",
+    ["You found %s!"] = "Du hast %s gefunden!",
+    ["Solid rock. A pickaxe would break it."] = "Massiver Fels. Eine Spitzhacke würde ihn brechen.",
+    ["Your bag is full. No room for a fish."] = "Deine Tasche ist voll. Kein Platz für einen Fisch.",
+    ["Too slow. It took the bait and left."] = "Zu langsam. Er hat den Köder genommen und ist weg.",
+    ["Snap! The line broke. Ease off when the fish runs."] = "Schnapp! Die Schnur ist gerissen. Lass nach, wenn der Fisch zieht.",
+    ["It swam too far and slipped the hook."] = "Er ist zu weit geschwommen und vom Haken.",
+    ["A %s! A new kind: %d of %d caught."] = "%s! Eine neue Art: %d von %d gefangen.",
+    ["You land a %s."] = "Du fängst: %s.",
+    ["On the line"] = "An der Angel",
+    ["Fishing"] = "Angeln",
+    ["Wait for the bite"] = "Warte auf den Biss",
+    ["B: pull in"] = "B: einholen",
+    ["A bite! Press A!"] = "Ein Biss! Drück A!",
+    ["It runs! Ease off"] = "Er zieht! Nachlassen",
+    ["Reel! Hold A"] = "Einholen! A halten",
+    ["A fallen pine blocks the path down to the shore. An axe would clear it."] = "Eine umgestürzte Kiefer versperrt den Weg zum Strand. Eine Axt würde ihn freimachen.",
+    ["You chop through the fallen pine. The path to Gull Shore is open!"] = "Du hackst dich durch die Kiefer. Der Weg zum Möwenstrand ist frei!",
+    ["A rusty tin box! Inside: %d coins and %d %s."] = "Eine rostige Blechdose! Darin: %d Münzen und %d %s.",
+    ["Water. B fills your %s. With a rod from Marrow you could fish here."] = "Wasser. B füllt deine %s. Mit einer Angel von Marrow könntest du hier fischen.",
+    ["A palm, bent by the wind."] = "Eine Palme, vom Wind gebeugt.",
+    ["A drowned tree, long dead."] = "Ein ertrunkener Baum, längst tot.",
+    ["A cactus. Mind the spines."] = "Ein Kaktus. Vorsicht, Stacheln.",
+    ["Old bones, bleached by the sun."] = "Alte Knochen, von der Sonne gebleicht.",
+    ["A boulder."] = "Ein Findling.",
+    ["Splits the old stumps on your land, and fallen trees."] = "Spaltet die alten Stümpfe auf deinem Land, und umgestürzte Bäume.",
+    ["Fishing rod"] = "Angel",
+    ["A at any water casts the line. Every water has its own fish."] = "A an jedem Wasser wirft die Angel aus. Jedes Wasser hat seine eigenen Fische.",
+    ["Waterskin"] = "Wasserschlauch",
+    ["Lets you cross into the Dry Reach, east of Gull Shore."] = "Damit kommst du in die Dürre Weite, östlich vom Möwenstrand.",
+    ["Fish: %d/%d kinds"] = "Fische: %d/%d Arten",
   },
 }
 `;

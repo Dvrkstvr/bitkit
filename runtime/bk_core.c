@@ -109,6 +109,34 @@ void bk_rectfill(int x, int y, int w, int h, int c) {
   for (int j = 0; j < h; j++) hline(x, x + w - 1, y + j, c);
 }
 
+/* Filled triangle: every row from the top corner to the bottom one, both ends included, so triangles and quads
+   that share an edge never leave a gap between them. Rows outside the clip rect are skipped before any maths. */
+static int edge_x(int xa, int ya, int xb, int yb, int y) {
+  if (yb == ya) return xa;
+  int64_t n = (int64_t)(xb - xa) * (y - ya) * 2 / (yb - ya);       /* x at row y, rounded to the nearest pixel */
+  return xa + (int)((n + (n >= 0 ? 1 : -1)) / 2);
+}
+
+void bk_trifill(int x0, int y0, int x1, int y1, int x2, int y2, int c) {
+  int t;
+  if (y1 < y0) { t = x0; x0 = x1; x1 = t; t = y0; y0 = y1; y1 = t; }
+  if (y2 < y0) { t = x0; x0 = x2; x2 = t; t = y0; y0 = y2; y2 = t; }
+  if (y2 < y1) { t = x1; x1 = x2; x2 = t; t = y1; y1 = y2; y2 = t; }
+  int top = y0, bot = y2;
+  if (top < BK->clip_y0 + BK->cam_y) top = BK->clip_y0 + BK->cam_y;
+  if (bot >= BK->clip_y1 + BK->cam_y) bot = BK->clip_y1 + BK->cam_y - 1;
+  for (int y = top; y <= bot; y++) {
+    int a = edge_x(x0, y0, x2, y2, y);
+    int b = y < y1 ? edge_x(x0, y0, x1, y1, y) : edge_x(x1, y1, x2, y2, y);
+    hline(a, b, y, c);
+  }
+}
+
+void bk_quadfill(int x0, int y0, int x1, int y1, int x2, int y2, int x3, int y3, int c) {
+  bk_trifill(x0, y0, x1, y1, x2, y2, c);
+  bk_trifill(x0, y0, x2, y2, x3, y3, c);
+}
+
 /* ---------------- screen shaders ---------------- */
 /* Colour shaders blend every colour on screen toward a target and snap the result to the nearest palette colour.
    The answer for each colour is worked out the first time it shows up and kept in a small cache (cleared when the

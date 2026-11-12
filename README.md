@@ -135,6 +135,18 @@ BitKit's flagship game, and it is growing. You arrive in the valley of Windrow w
   the day's prices and tops up an empty trough.
 
   ![The tractor on its route beside the silo](docs/media/windrow-route.png)
+- **A wide valley to explore.** West of the woods lies Sedge Fen with its pools, reeds and fireflies,
+  and north of that the Flint Hills, where rocks, copper and iron can be broken above ground with the
+  pickaxe (they are back the next morning). An axe clears the fallen pine on the way south to Gull
+  Shore, and with a waterskin you can cross from there into the Dry Reach and its oasis. Every region
+  has its own wild finds (shells, pearls, bogberries, thyme, flint, dates, amber) and an old tin box.
+
+  ![Gull Shore](docs/media/windrow-shore.png) ![The Dry Reach](docs/media/windrow-desert.png)
+- **Fishing.** With a rod from Marrow, A at any water casts the line. Strike when it bites, reel while
+  the fish rests and ease off while it runs, or the line snaps (a light press reels gently on analog
+  buttons). 15 kinds of fish, each water with its own, some of them rare.
+
+  ![Fishing from the jetty](docs/media/windrow-fishing.png)
 - **Neighbours.** Every Bit keeps its own farm, and Bits in reach are neighbours (in the studio: open
   Windrow in two windows). The north road lists them; pick one and you walk over to their farm as it
   really is, in their season and weather. There you can water their crops, see each other walk about,
@@ -191,12 +203,14 @@ A tug-of-war crossbow duel. Wren (orange) fights east out of the Sea Gate, Rook 
 
 <img src="docs/media/tinwing.png" width="480" alt="Tinwing: an orange RC plane banking towards the Drowned Belltower over a flooded sea">
 <img src="docs/media/tinwing-hangar.png" width="480" alt="Tinwing: the hangar blueprint from above, with the motor and battery boxes inside the body and toy cannons on the wings">
+<img src="docs/media/tinwing-storm.png" width="480" alt="Tinwing: the plane inside a dark thunder cell, a lightning bolt hitting it and charging the battery">
 
 A story game drawn in 2.5D like Kart Lab. Perch is a town on stilts, on a planet that is nearly all sea: letters go by pigeon and people go by boat. You play Pip, who builds radio-controlled planes. You're either in the hangar building, or in the air.
 
-- **Build the plane yourself.** The hangar shows the plane as a blueprint, from the side and from above. Pick a corner with the D-pad, grab it with **A**, move it, and drop it with **A**. The motor (**M**) and battery (**B**) are boxes that have to fit inside the body, and you can grab them too and slide them along it. The motor has to stay in the front half. A bigger motor needs a fatter nose or a spot further back, and the Twin Cell needs a wider body. What you see is what fits: if a box sits inside the outline in both views, it fits. You also shape the wings, which work out how the plane flies: more wing glides further, a short span turns quicker, and a bigger motor is faster but uses more battery. **L / R** (or **X**) switch between the Side, Top, Parts and Fly pages. Parts shows your inventory of motors, batteries, wing cannons and paints, and scrap from crates buys new ones. Cannons sit on the wings, one on each side: slide them along the wing on the Top page. Further out they make the plane roll a little slower.
-- **Fly.** A chase camera follows you over the sea and the islands (`floorh()`). The plane is the 3D model built from your blueprint and drawn with triangles. Left and right bank, and up and down climb and dive (swap these in Settings). The controls ease in and out on springs, the camera swings round a little late, and there are wingtip trails and speed lines. Hold **A** or squeeze **R** for the motor. Let go and you glide, which costs no battery. Warm air rings give a Tailwind, which is an effect on the Entities tab. With cannons fitted, **B** fires them: pop the balloons for scrap. To land, fly low over the yellow pad at Perch. If the battery goes flat you splash down, and Tobin fishes you out.
-- **The story:** a squall knocked the mail satchel out of the sky past the Drowned Belltower. Your first battery can't get you there and back, but there's a Twin Cell on top of the Belltower. Widen the body to fit it, then fly out to the reef.
+- **Build the plane yourself.** The hangar shows the plane as a blueprint, from the side and from above. Pick a corner with the D-pad, grab it with **A**, move it, and drop it with **A**. The motor (**M**) and battery (**B**) are boxes that have to fit inside the body, and you can grab them too and slide them along it. The motor has to stay in the front half. A bigger motor needs a fatter nose or a spot further back, and the Twin Cell needs a wider body. What you see is what fits: if a box sits inside the outline in both views, it fits. You also shape the wings, which work out how the plane flies: more wing glides further, a short span turns quicker, and a bigger motor is faster but uses more battery. **L / R** (or **X**) switch between the Side, Top, Parts and Fly pages. Parts shows your inventory of motors, batteries, wing cannons, skins and paints. Upgrades come in small steps (five motors, six batteries) and cost materials: scrap from crates, balsa from driftwood on the palm islands, silk from balloons and copper from boxes on the Reef's wrecks. The skin sets the weight: balsa and silk are lighter and glide better, but hawks and storms push them about more. Cannons sit on the wings, one on each side: slide them along the wing on the Top page. Further out they make the plane roll a little slower.
+- **Fly.** A chase camera follows you over the sea and the islands (`floorh()`). The plane is the 3D model built from your blueprint and drawn with triangles. Left and right bank, and up and down climb and dive (swap these in Settings). The controls ease in and out on springs, the camera swings round a little late, and there are wingtip trails and speed lines. Hold **A** or squeeze **R** for the motor. Let go and you glide, which costs no battery. Warm air rings give a Tailwind, which is an effect on the Entities tab. With cannons fitted, **B** fires them: pop the balloons for silk, and scare hawks off. To land, fly low over the yellow pad at Perch. If the battery goes flat you splash down, and Tobin fishes you out.
+- **The world** is three seas of 256x128 tiles, joined at the edges: fly off one side and you come out in the next. The Shallows has Perch and the Belltower; the Reef to the east has wrecks, copper and hawks' nests; Thunderhead to the north has thunder cells. The first battery barely reaches the Belltower, so you need better ones to see it all. Hawks circle their nests and dive at you: a hit knocks the plane off course. Inside a thunder cell the air is rough, but if lightning hits the plane it charges the battery.
+- **The story:** a squall knocked the mail satchel out of the sky past the Drowned Belltower. Your first battery can't get you there and back, but there's a Twin Cell on top of the Belltower. Widen the body to fit it to reach the near Reef, then build a Deep Cell (or find the Storm Cell in Thunderhead) for the far end, where the satchel is.
 - **Goal:** find the mail satchel and fly it home to Perch. Continue takes you back to the hangar with your plane and everything you found.
 
 ### Deepglow (shaders)
@@ -259,6 +273,19 @@ A daily brain jog: five laps of 30 seconds, one quick exercise each. Answers sit
 - **Team** (2-8 players): every right answer counts towards one shared score and medal.
 - **Goal:** a gold medal (400 points) on a Daily Jog. Continue takes you back to the next lap of today's jog.
 
+#### Snowbelly
+
+<img src="docs/media/snowbelly.png" width="400" alt="Snowbelly: a penguin belly-sliding down a half pipe at sunset, rings floating over the lips">
+
+A downhill belly-slide race for 1-8 penguins and seals, on one screen (split in 2 or 4) or on linked Bits, with CPU rivals filling the start gate.
+
+- **Left / right** steers (in a half pipe it pumps you from wall to wall), hold **down** to tuck (faster, but you steer less), **up** brakes. **A** jumps: right at the red lip of a ramp it's a **Perfect Pop**, right at the top of a hill an **Apex Pop**, both with more height and points. Hold **down** as you land on a steep slope for a **Slope Landing** speed boost.
+- **B** in the air is a trick: hold it to keep turning, let go and the trick finishes its turn. Land only once it's done, or it's a wipeout; land right after it finishes for **PERFECT**. B alone is a Twirl, B + up a Flipper, B + down a Backflop, and mixing them in one jump scores more.
+- Rings in the air and flag gates score, and so does your finish place. Crates give **Snowballs** (X throws one at the rider ahead), **Fish** (a burst of speed), a **Magnet** (pulls rings in) or a **Guard** that saves your next bad landing or hit.
+- **Penguins** are light and nimble: sharp turns, quick tricks, a bigger pop. **Seals** are heavy and fast: a higher top speed, they shove penguins aside and shrug off snowballs, but their tricks turn slower. Pick your body colour and scarf in the rider yard.
+- Three slopes: Frostpine Run, Glacier Gully (long half pipes) and Aurora Drop (a night run with cliffs). After every run the top 3 stand on the podium.
+- **Goal:** win the Snowbelly Cup, the most points after all three slopes. Continue takes you straight to your next cup run.
+
 ## ✨ Shaders
 
 The Bit has no GPU, so shaders are small C routines that run on the 320x240 picture. Three kinds:
@@ -319,7 +346,7 @@ Every Bit can look, sound and start up its own way. A **theme** sets the home sc
 
 - **On the Bit:** the **Themes** app on the Utilities row (press Down on the home screen). Browse the themes (each shows straight away), edit every part, mix colours, paint the wallpaper with the buttons and keep up to four of your own.
 - **In the studio:** the **My Bit** tab, with a live home screen preview, a wallpaper painter, "From a picture…", and **Export / Import** of `.bittheme` files to share.
-- **You:** **Settings › USER** on the Bit (or My Bit in the studio) has your name, your colour and the Bit's name. Linked Bits show each other's names, and games use them: `player_name(n)` and `player_color(n)`, and `net_name(id)` for network event games. Nothing else leaves the Bit.
+- **You:** **Settings › USER** on the Bit (or My Bit in the studio) has your name, your colour and the Bit's name. Linked Bits show each other's names (also on the home screen's vote: with two or more Bits on their home screens, A votes for a game, B passes, and a game starts on all of them once 75% of the Bits that don't pass picked it), and games use them: `player_name(n)` and `player_color(n)`, and `net_name(id)` for network event games. Nothing else leaves the Bit.
 
 The theme file format and how the firmware draws it are in [docs/THEMES.md](docs/THEMES.md).
 
@@ -329,7 +356,7 @@ The theme file format and how the firmware draws it are in [docs/THEMES.md](docs
 |---|---|
 | Callbacks | `_init` `_update` `_draw` |
 | Game shell | `game{}` `checkpoint` `game_win` `setting` `mus` `game_play` `GAME.state` (title screen, pause menu, settings: see [GAME_RULES.md](GAME_RULES.md)) |
-| Graphics | `cls pset pget line rect rectfill circ circfill text font spr sget sset map camera clip pal palt palette` |
+| Graphics | `cls pset pget line rect rectfill trifill quadfill circ circfill text font spr sget sset map camera clip pal palt palette` |
 | Shaders | `tint shade fog dither remap wave ripple pixelate glitch raster` (screen), `sprfx{}` (sprites), `display()` (the whole screen's look) |
 | Tunables | `tune(name, default, min, max)` (a slider on the studio's Game tab, saved with the game) |
 | Map | `mget mset fget fset` |

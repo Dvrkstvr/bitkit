@@ -77,6 +77,8 @@ static uint32_t my_net_id(int n);
 static void handle_requests(void);
 static void capture_after_frame(uint16_t mask);
 static void restart_game(int how);
+/* the game shell (runtime/bk_game.lua): a paused game opens on its main menu; Continue goes back to where it was */
+static const char RESUMED_LUA[] = "if _bk_resumed then _bk_resumed() end";
 
 /* ------------------------------------------------------------ memory */
 static void *mrealloc(void *p, size_t n) {
@@ -519,6 +521,7 @@ int bk_host_launch(int n) {
   if (p) {
     BK = p->m; bk_ctx_put(&p->ctx); memset(&p->ctx, 0, sizeof(p->ctx));
     p->paused = 0; p->hold = 1; cur = p; mode = MODE_GAME;
+    bk_lua_eval(RESUMED_LUA);          /* it carries on from its main menu (game shell), not mid-match */
     char m[100]; snprintf(m, sizeof(m), "carrying on with \"%s\"", E[n - 1].name); say(m, 0);
     return 0;
   }
@@ -613,7 +616,7 @@ enum { LK_HI = 1, LK_START, LK_IN, LK_END, LK_NET, LK_SH_OFFER, LK_SH_ANS, LK_SH
 #define LK_GONE_MS 4000
 #define LK_PRESS BK_NUM_BUTTONS
 
-typedef struct { uint32_t id, seen; uint8_t num, st, color; char name[11]; } lk_peer;
+typedef struct { uint32_t id, seen, vote; uint8_t num, st, color, pass; char name[11]; } lk_peer;   /* vote: the game's fp (0 none) */
 typedef struct { uint32_t f1; uint16_t m; uint8_t p[LK_PRESS]; } lk_in;   /* f1 = frame + 1 (0 = empty) */
 
 static struct {
@@ -632,6 +635,11 @@ static struct {
   uint8_t under[BK_W * 12];            /* the game's pixels under the "waiting" bar */
   int heard;
   struct { uint8_t b[250]; int n; } start_pkt;   /* the START this Bit sent, again until every seat answers */
+  /* the vote on the home screen (see "voting" below) */
+  uint32_t vote, vote_win;             /* this Bit's vote (a game's fp, 0 none); the game winning now */
+  int pass, vote_t;                    /* B: this Bit passes; frames the winner has been winning */
+  uint32_t prefer[BK_MAX_PLAYERS];     /* the winner's voters: they get the seats first */
+  int nprefer;
 } BK_BIG_BSS LK;                        /* PSRAM on the device */
 
 static uint32_t lk_now(void) { return C.millis ? C.millis() : LK.ticks * 1000u / BK_FPS; }
@@ -667,6 +675,7 @@ static uint8_t my_state(void) { return mode == MODE_HOME || mode == MODE_BOOT ? 
 static void send_hi(void) {
   lk_w w; whead(&w, LK_HI);
   w8(&w, my_num()); w8(&w, my_state()); w8(&w, (uint32_t)bs.color); wstr(&w, bs.name, 10);
+  w32(&w, LK.vote); w8(&w, (uint32_t)LK.pass);   /* (added later: older Bits stop reading before it) */
   wsend(&w);
   LK.last_hi = lk_now();
 }
@@ -692,19 +701,121 @@ static int roster(uint32_t *out) {
   const int n = bits_sorted(ids, nums, st, &mine);
   int k = 0;
   out[k++] = LK.id;
-  for (int i = 0; i < n && k < BK_MAX_PLAYERS; i++) if (ids[i] != LK.id && st[i] != 2 && st[i] != 4) out[k++] = ids[i];
+  /* after a vote, the Bits that voted for the game sit first (a game with fewer seats than Bits leaves out the others) */
+  for (int j = 0; j < LK.nprefer && k < BK_MAX_PLAYERS; j++)
+    for (int i = 0; i < n; i++) if (ids[i] == LK.prefer[j] && ids[i] != LK.id && st[i] != 2 && st[i] != 4) out[k++] = ids[i];
+  for (int i = 0; i < n && k < BK_MAX_PLAYERS; i++) {
+    int dup = 0;
+    for (int j = 1; j < k; j++) dup |= out[j] == ids[i];
+    if (!dup && ids[i] != LK.id && st[i] != 2 && st[i] != 4) out[k++] = ids[i];
+  }
   return k;
 }
 static int link_roster_n(void) { uint32_t r[BK_MAX_PLAYERS]; return C.radio_send ? roster(r) : 1; }
 
-/* the home screen reads the linked Bits from map rows 0-1: (0,0) how many, (1,0) which one is this Bit,
-   (1+i,0) Bit i's number, (1+i,1) 1 home, 2 in a game, 3 idle */
+/* ------------------------------------------------------------ voting */
+/* With two or more Bits on their home screens, A on a game votes for it instead of starting it (the studio's
+   "voting" in studio.js, home.js). B passes: a passing Bit doesn't count. A game wins once at least 75% of the
+   Bits that don't pass voted for it (so if every other Bit passes, one vote wins). The winner shows for
+   VOTE_WAIT frames, then the first of its voters (in number order) starts it as if A was pressed there, and
+   the voters get the seats first. A net_send game starts on every Bit by itself (they meet in its lobby).
+   Bits that come or go, and changed votes, count straight away (the hellos carry each Bit's vote). */
+#define VOTE_WAIT 60
+#define VOTE_PASS 999                  /* home screen rows: Bit passes */
+#define VOTE_ELSE 998                  /* voted for a game this Bit doesn't have */
+typedef struct { int home, nonpass, need, votes; uint32_t win, starter; uint32_t voters[BK_MAX_PLAYERS]; int nvoters; } vote_tally;
+static void bit_vote(uint32_t id, uint32_t *vote, int *pass) {
+  if (id == LK.id) { *vote = LK.vote; *pass = LK.pass; return; }
+  const lk_peer *p = find_peer(id);
+  *vote = p ? p->vote : 0; *pass = p ? p->pass : 0;
+}
+static void tally(vote_tally *t) {
+  uint32_t ids[LK_PEERS + 1]; uint8_t nums[LK_PEERS + 1], st[LK_PEERS + 1]; int mine = 0;
+  const int n = C.radio_send ? bits_sorted(ids, nums, st, &mine) : 0;
+  memset(t, 0, sizeof(*t));
+  uint32_t v[LK_PEERS + 1]; int ps[LK_PEERS + 1];
+  for (int i = 0; i < n; i++) {
+    v[i] = 0; ps[i] = 0;
+    if (st[i] != 1) continue;
+    t->home++;
+    bit_vote(ids[i], &v[i], &ps[i]);
+    if (!ps[i]) t->nonpass++;
+  }
+  t->need = t->nonpass ? (t->nonpass * 3 + 3) / 4 : 1;
+  if (t->home < 2 || st[mine] != 1) return;   /* a vote takes two Bits on their home screens, this one too */
+  for (int i = 0; i < n; i++) {
+    if (st[i] != 1 || ps[i] || !v[i]) continue;
+    int c = 0;
+    for (int j = 0; j < n; j++) c += st[j] == 1 && !ps[j] && v[j] == v[i];
+    if (c > t->votes) t->votes = c;
+    if (c * 4 >= t->nonpass * 3 && !t->win) t->win = v[i];
+  }
+  if (!t->win) return;
+  for (int i = 0; i < n; i++)
+    if (st[i] == 1 && !ps[i] && v[i] == t->win) {
+      if (!t->starter) t->starter = ids[i];
+      if (t->nvoters < BK_MAX_PLAYERS) t->voters[t->nvoters++] = ids[i];
+    }
+}
+/* the home screen entry (1-based) with this fingerprint, 0 = none */
+static void entry_info(entry *e);
+static int entry_by_fp(uint32_t fp) {
+  if (!fp) return 0;
+  for (int i = 0; i < nE; i++) if (!E[i].is_app) { entry_info(&E[i]); if (E[i].fp == fp) return i + 1; }
+  return 0;
+}
+static void vote_said(void) { LK.hi_rep = 3; LK.last_hi = lk_now() - 1000; }   /* tell the others now (and twice more) */
+static void vote_set(int n, int pass) {   /* n: vote for game n (0 = take it back); pass: 1 pass, 0 don't, -1 leave it */
+  if (pass >= 0) { LK.pass = pass; if (pass) LK.vote = 0; }
+  else if (n >= 1 && n <= nE && !E[n - 1].is_app) { entry_info(&E[n - 1]); LK.vote = E[n - 1].fp; LK.pass = 0; }
+  else LK.vote = 0;
+  vote_said();
+}
+/* once a frame on the home screen: has a game won? the first of its voters starts it. 1 = a game started */
+static int vote_tick(void) {
+  vote_tally t; tally(&t);
+  if (!t.win || t.win != LK.vote_win) { LK.vote_win = t.win; LK.vote_t = 0; return 0; }
+  if (++LK.vote_t != VOTE_WAIT || mode != MODE_HOME) return 0;
+  const int n = entry_by_fp(t.win);
+  if (!n) return 0;
+  if (!E[n - 1].net && t.starter != LK.id) return 0;   /* the starter's START brings this Bit in */
+  char m[100]; snprintf(m, sizeof(m), "\"%s\" won the vote", E[n - 1].name); say(m, 0);
+  memcpy(LK.prefer, t.voters, sizeof(uint32_t) * (size_t)t.nvoters); LK.nprefer = t.nvoters;
+  LK.vote = 0; LK.pass = 0; LK.vote_win = 0; LK.vote_t = 0;
+  bk_host_launch(n);
+  LK.nprefer = 0;
+  return 1;
+}
+
+/* the home screen reads the linked Bits from the map (home.js): (0,0) how many, (1,0) which one is this Bit,
+   (1+i,0) Bit i's number, (1+i,1) 1 home, 2 in a game, 3 idle, (1+i,2) its vote (a game's number on this Bit,
+   0 none, 998 a game this Bit doesn't have, 999 passes), (1+i,3) its name colour, row 4+i its name (a letter
+   a cell); the vote: (0,4) frames until the winner starts (0 = no winner), (1,4) the winner, (2,4) VOTE_WAIT,
+   (3,4) votes it takes, (4,4) Bits that don't pass, (5,4) Bits on their home screens */
 static void link_home_rows(void) {
   if (!C.radio_send || mode != MODE_HOME) return;
   uint32_t ids[LK_PEERS + 1]; uint8_t nums[LK_PEERS + 1], st[LK_PEERS + 1]; int mine = 0;
   const int n = bits_sorted(ids, nums, st, &mine);
   BK->map[0] = (uint16_t)n; BK->map[1] = (uint16_t)(mine + 1);
-  for (int i = 0; i < n; i++) { BK->map[2 + i] = nums[i]; BK->map[BK_MAP_W + 2 + i] = st[i] == 4 ? 2 : st[i]; }
+  for (int i = 0; i < n; i++) {
+    BK->map[2 + i] = nums[i]; BK->map[BK_MAP_W + 2 + i] = st[i] == 4 ? 2 : st[i];
+    uint32_t v; int ps;
+    bit_vote(ids[i], &v, &ps);
+    const int k = v ? entry_by_fp(v) : 0;
+    BK->map[2 * BK_MAP_W + 2 + i] = (uint16_t)(st[i] != 1 ? 0 : ps ? VOTE_PASS : v ? (k ? k : VOTE_ELSE) : 0);
+    const lk_peer *p = ids[i] == LK.id ? NULL : find_peer(ids[i]);
+    BK->map[3 * BK_MAP_W + 2 + i] = (uint16_t)(ids[i] == LK.id ? bs.color : p ? p->color : 27);
+    const char *nm = ids[i] == LK.id ? bs.name : p ? p->name : "";
+    for (int c = 0; c < 10; c++) BK->map[(4 + 1 + i) * BK_MAP_W + c] = (uint16_t)(c < (int)strlen(nm) ? (uint8_t)nm[c] : 0);
+  }
+  vote_tally t; tally(&t);
+  const int w = t.win && t.win == LK.vote_win ? entry_by_fp(t.win) : 0;
+  BK->map[4 * BK_MAP_W + 0] = (uint16_t)(t.win && t.win == LK.vote_win ? (VOTE_WAIT - LK.vote_t > 0 ? VOTE_WAIT - LK.vote_t : 1) : 0);
+  BK->map[4 * BK_MAP_W + 1] = (uint16_t)(t.win ? (w ? w : VOTE_ELSE) : 0);
+  BK->map[4 * BK_MAP_W + 2] = VOTE_WAIT;
+  BK->map[4 * BK_MAP_W + 3] = (uint16_t)t.need;
+  BK->map[4 * BK_MAP_W + 4] = (uint16_t)t.nonpass;
+  BK->map[4 * BK_MAP_W + 5] = (uint16_t)t.home;
 }
 
 /* a game's fingerprint (the file's bytes): worked out when first needed */
@@ -864,6 +975,7 @@ static void enter(uint32_t from, uint32_t sid, int np, int race, const uint32_t 
     }
     BK = p->m; bk_ctx_put(&p->ctx); memset(&p->ctx, 0, sizeof(p->ctx));
     p->paused = 0; p->link_np = 0; cur = p; mode = MODE_GAME;
+    bk_lua_eval(RESUMED_LUA);          /* it carries on from its main menu (game shell), not mid-match */
     LK.hold = 1;                       /* the button that carried on is ignored until it is let go */
     snprintf(m, sizeof(m), "carrying on with \"%s\" on %d Bits: this Bit is player %d", E[n - 1].name, np, me);
     say(m, 0);
@@ -1060,6 +1172,8 @@ void bk_host_radio_recv(const void *pkt, int len) {
     }
     p->num = (uint8_t)r8(&r); p->st = (uint8_t)r8(&r); p->color = (uint8_t)r8(&r);
     rstr(&r, p->name, sizeof(p->name));
+    if (!r.bad && r.n - r.i >= 5) { p->vote = r32(&r); p->pass = (uint8_t)r8(&r); } else { p->vote = 0; p->pass = 0; }
+    if (p->st != 1) { p->vote = 0; p->pass = 0; }
     p->seen = lk_now();
     if (isnew) {
       char m[64]; snprintf(m, sizeof(m), "linked with Bit %d%s%s", p->num, p->name[0] ? ": " : "", p->name); say(m, 0);
@@ -1104,6 +1218,7 @@ static void link_tick(void) {
   /* a change (home, in a game) is said straight away and twice more, so one lost packet doesn't leave the
      others with the wrong idea of who would join a game */
   if (my_state() != LK.last_st) { LK.last_st = my_state(); LK.hi_rep = 3; LK.last_hi = now - 1000; }
+  if (my_state() != 1) { LK.vote = 0; LK.pass = 0; LK.vote_win = 0; LK.vote_t = 0; }   /* a vote lasts while this Bit is home */
   if (LK.hi_rep && now - LK.last_hi >= 100) { LK.hi_rep--; send_hi(); }
   else if (now - LK.last_hi >= 1000) send_hi();
   for (int i = 0; i < LK.npeers; i++)
@@ -1126,6 +1241,15 @@ int bk_host_racing(void) { return RC.on && mode == MODE_GAME; }
 void bk_host_set_race_pick(int on) { race_pick = !!on; }
 uint32_t bk_host_link_sync(uint32_t *frame) { if (frame) *frame = LK.f; return LK.hash; }
 int bk_host_net_heard(void) { return LK.heard; }
+int bk_host_selected(void) { return sel; }
+int bk_host_vote(void) { return LK.pass ? -1 : entry_by_fp(LK.vote); }
+int bk_host_votes_for(int n) {
+  if (n < 1 || n > nE || E[n - 1].is_app) return 0;
+  entry_info(&E[n - 1]);
+  int c = my_state() == 1 && !LK.pass && LK.vote == E[n - 1].fp;
+  for (int i = 0; i < LK.npeers; i++) c += LK.peer[i].st == 1 && !LK.peer[i].pass && LK.peer[i].vote == E[n - 1].fp;
+  return c;
+}
 
 static void link_init(void) {
   memset(&LK, 0, sizeof(LK));
@@ -1441,6 +1565,7 @@ int bk_host_frame(uint16_t mask, const uint8_t *press) {
   if (link_on() && mode == MODE_GAME) { link_frame(mask, press); combo_held = both; return 0; }   /* lockstep */
   if (both && !combo_held && mode == MODE_GAME) { combo_held = both; bk_host_go_home(); return 0; }
   combo_held = both;
+  if (mode == MODE_HOME && vote_tick()) { combo_held = both; return 0; }
   if (mode == MODE_HOME) link_home_rows();
   if (cur->hold) {                   /* a resumed game sees no buttons until the one that resumed it is let go */
     if (mask) { mask = 0; press = NULL; } else cur->hold = 0;
@@ -1455,6 +1580,8 @@ int bk_host_frame(uint16_t mask, const uint8_t *press) {
     BK->track[2] = 0;
     if (k == -2) sel = n;
     else if (k == -3) race_pick = n == 1;
+    else if (k == -4) vote_set(n, -1);   /* A on a game while Bits are linked: vote for it (0 takes it back) */
+    else if (k == -5) vote_set(0, n);    /* B: pass (1) or don't (0) */
     else if (k == -1) {
       int np;
       if (link_plan(n, &np)) { sel = n; link_launch(n, 1); return 0; }

@@ -700,7 +700,7 @@ function match_update()
   end
   if m.over then
     m.wait = m.wait - 1
-    if m.wait <= 0 and btnp("a") then to_lobby() return end
+    if m.wait <= 0 and hold_btn("a") then to_lobby() return end
     if m.wait == 0 then
       local r = rank_of(me)
       if r == 1 and m.n > 1 then game_win(tr("You won Sweep Storm with %d points!", me.score)) end
@@ -969,7 +969,7 @@ function draw_results()
   end
   local mr = rank_of(me)
   if mr > n then ctext(tr("you: #%d  %d", mr, me.score), y + h - 22, 13) end
-  if match.wait <= 0 then ctext("A: back to the lobby", y + h - 11, 17) end
+  if match.wait <= 0 then ctext("hold A: back to the lobby", y + h - 11, 17) end
 end
 -- this game's words in other languages (the Bit's language, LANGUAGE in Settings; runtime/bk_lang.lua)
 texts{
@@ -1035,6 +1035,7 @@ texts{
     [" (out)"] = " (raus)",
     ["you: #%d  %d"] = "du: #%d  %d",
     ["A: back to the lobby"] = "A: zurück zur Lobby",
+    ["hold A: back to the lobby"] = "A halten: zur Lobby",
   },
 }
 `;

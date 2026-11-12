@@ -3,7 +3,9 @@
    Bit A and Bit B find each other, A starts Crossgate (or the --game one) from its home screen and both play it in lockstep with
    random buttons; A's Start+Select pauses it on both on the same frame (the lockstep hash must match);
    A picks it again and both carry on; this time B leaves; then both play Sweep Storm on their own and hear
-   each other's net_send events; A plays Windrow (1 player) alone, then both race Deepglow; last, B switches off in the middle of a linked game and A goes home by itself.
+   each other's net_send events; A plays Windrow (1 player) alone, then both race Deepglow; then the home screen's vote:
+   A votes for the linked game with A, B for Deepglow (nothing starts: 1 of 2 each), B changes its vote and both play it;
+   last, A votes and B passes (B's B button) so A's one vote starts it, and B switches off in the middle of it and A goes home by itself.
    Included by main_sim.c. MIT License. */
 #include <signal.h>
 #include <sys/socket.h>
@@ -46,6 +48,20 @@ static int lk_ready(void) { return bk_host_link_ready() == 2 && !strcmp(bk_host_
 static int lk_in_game(void) { return bk_host_link_players() == 2; }
 static int lk_racing(void) { return bk_host_racing(); }
 static int lk_at_home(void) { return !strcmp(bk_host_playing(), "home") && !bk_host_link_players(); }
+/* the home screen, with real buttons: pick game n with Right, then press a button */
+static void lk_press(uint16_t b) { for (int i = 0; i < 3; i++) lk_tick(b); for (int i = 0; i < 3; i++) lk_tick(0); }
+static int lk_pick(int n) {
+  for (int k = 0; k < 200 && bk_host_selected() != n; k++) lk_press(RIGHT);
+  return bk_host_selected() == n;
+}
+/* the home screen shows the other Bit's vote (map row 2, see home.js) */
+static int lk_want;
+static int lk_other_votes(void) { return bk_host_votes_for(lk_want) >= 1; }
+static int lk_home_shows_vote(int n) {   /* (asked once: a failed assert is logged as an error) */
+  char q[200];
+  snprintf(q, sizeof(q), "local me = mget(1, 0) for i = 1, mget(0, 0) do if i ~= me then assert(mget(1 + i, 2) == %d) end end", n);
+  return !strcmp(bk_host_playing(), "home") && !bk_host_eval(q);
+}
 static uint32_t lk_target;
 static int lk_frame_reached(void) { uint32_t f; bk_host_link_sync(&f); return f >= lk_target || !bk_host_link_players(); }
 
@@ -123,9 +139,40 @@ static int link_bit(int is_a, const char *flash, const char *data, const char *r
     { const double t = now_us() + 0.5e6; while (now_us() < t) lk_tick(0); }
     races = 1;
   }
-  /* 5. a linked game again; B switches off after a moment and A has to notice */
-  if (is_a) { if (!lk_until(lk_ready, lk_none, 6)) FAIL("Bit A: Bit B did not leave Sweep Storm"); bk_host_launch(cross); }
-  if (!lk_until(lk_in_game, lk_none, 6)) FAIL("%s: the third linked game did not start", me);
+  /* 4c. the vote: A on a game votes, nothing starts until 75% of the Bits that don't pass agree */
+  if (!lk_until(lk_ready, lk_none, 6)) FAIL("%s: the other Bit is not on its home screen for the vote", me);
+  { const int mine = is_a ? cross : deep, theirs = is_a ? deep : cross;
+    if (!lk_pick(mine)) FAIL("%s: could not pick game %d with Right", me, mine);
+    for (int k = 0; k < 5 && bk_host_vote() != mine && !bk_host_link_players() && !bk_host_racing(); k++) lk_press(A);
+    if (bk_host_vote() != mine) FAIL("%s: A on the home screen did not vote (vote %d)", me, bk_host_vote());
+    if (bk_host_link_players() || strcmp(bk_host_playing(), "home")) FAIL("%s: A started the game instead of voting", me);
+    lk_want = theirs;
+    if (!lk_until(lk_other_votes, lk_none, 6)) FAIL("%s: never saw the other Bit's vote", me);
+    else { lk_tick(0); if (!lk_home_shows_vote(theirs)) FAIL("%s: the home screen doesn't show the other Bit's vote", me); }
+    /* 1 of 2 votes each: nothing may start */
+    const double t = now_us() + (is_a ? 1.5e6 : 3.0e6);
+    while (now_us() < t) { lk_tick(0); if (bk_host_link_players() || bk_host_racing() || strcmp(bk_host_playing(), "home")) { FAIL("%s: a game started with 1 of 2 votes", me); break; } }
+    if (!is_a) {   /* B changes its mind: both votes for A's game, so it starts on both */
+      if (!lk_pick(cross)) FAIL("Bit B: could not pick the linked game");
+      lk_press(A);
+      if (bk_host_vote() != cross && !bk_host_link_players()) FAIL("Bit B: changing the vote did not take");
+    }
+  }
+  if (!lk_until(lk_in_game, lk_none, 8)) FAIL("%s: the game both voted for did not start", me);
+  else if (strcmp(bk_host_playing(), lk_game)) FAIL("%s: the vote started %s, not %s", me, bk_host_playing(), lk_game);
+  if (is_a) lk_until(lk_at_home, lk_combo, 10); else lk_until(lk_at_home, lk_rand_mask, 15);
+  if (!lk_at_home()) FAIL("%s: did not come home after the voted game", me);
+  /* 5. a linked game again, by vote: A votes and B passes (B), so A's one vote wins; B switches off after a moment and A has to notice */
+  if (!lk_until(lk_ready, lk_none, 6)) FAIL("%s: the other Bit did not come home", me);
+  /* (a press can land while the home screen is drawn again for a Bit coming or going: press again, like a player would) */
+  if (is_a) {
+    if (!lk_pick(cross)) FAIL("Bit A: could not pick the linked game");
+    for (int k = 0; k < 5 && bk_host_vote() != cross && !bk_host_link_players(); k++) lk_press(A);
+  } else {
+    for (int k = 0; k < 5 && bk_host_vote() != -1 && !bk_host_link_players(); k++) lk_press(1u << BK_B);
+    if (bk_host_vote() != -1 && !bk_host_link_players()) FAIL("Bit B: B on the home screen did not pass");
+  }
+  if (!lk_until(lk_in_game, lk_none, 8)) FAIL("%s: one vote with the other Bit passing did not start the game", me);
   if (!is_a) { const double t = now_us() + 1.0e6; while (now_us() < t) lk_tick(lk_rand_mask()); }
   else {
     if (!lk_until(lk_at_home, lk_rand_mask, 12)) FAIL("Bit A: still in the game after Bit B switched off");
@@ -173,6 +220,6 @@ static int link_test(int argc, char **argv) {
   if (fa1 != fb1 || ha1 != hb1 || fa1 < 600) FAIL("game 1 out of step");
   if (fa2 != fb2 || ha2 != hb2 || fa2 < 300) FAIL("game 2 out of step");
   if (ra_fail || rb_fail || fails) { fprintf(stderr, "linked Bits test failed\n"); return 1; }
-  printf("ok: two linked Bits found each other, played in lockstep, paused and carried on together, talked with net_send, kept a one-player game to one Bit, raced a one-player game, and noticed a Bit switching off\n");
+  printf("ok: two linked Bits found each other, played in lockstep, paused and carried on together, talked with net_send, kept a one-player game to one Bit, raced a one-player game, voted for a game (split votes, a changed vote, a pass), and noticed a Bit switching off\n");
   return 0;
 }
