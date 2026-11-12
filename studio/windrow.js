@@ -68,6 +68,11 @@ FOUND = {
   { key = "dates", name = "Dates", sell = 22, icon = "berry", col = 8 },
   { key = "pricklefig", name = "Prickle fig", sell = 27, icon = "cap", col = 24 },
   { key = "amber", name = "Amber", sell = 150, icon = "gem", col = 27 },
+  { key = "snowbell", name = "Snowbell", sell = 16, icon = "leaf", col = 23 },
+  { key = "frostberry", name = "Frostberry", sell = 24, icon = "berry", col = 21 },
+  { key = "crystal", name = "Ice crystal", sell = 140, icon = "gem", col = 22 },
+  { key = "mussel", name = "Mussel", sell = 13, icon = "shell" },
+  { key = "seaglass", name = "Sea glass", sell = 30, icon = "gem", col = 18 },
 }
 FISH_BY = {}
 FOUND_BY = {}
@@ -176,7 +181,7 @@ SHORE = {
   "U,,,,,,,,,,,,:,,T,,T,,,,,,,U",
   "U,,,,,,,,,,,,:,,,,,,,,,,,,,U",
   "U............:.............U",
-  "U............:.............U",
+  ":............:.............U",
   "U..tP........:...UP..P.....U",
   "U............:...P.P......UU",
   "U............:::::::::::::::",
@@ -213,7 +218,7 @@ FEN = {
   "DDDDDDDDDDDDDDDDDDDDDDDDDD",
 }
 HILLS = {
-  "UUUUUUUUUUUUUUUUUUUUUUUUUUUU",
+  "UUUUUUUUUUUUUU:UUUUUUUUUUUUU",
   "U....T.....................U",
   "U.Uo.o........U.........t..U",
   "U...o............T,,I,U....U",
@@ -256,11 +261,55 @@ DRY = {
   "U.....A......U........K......U",
   "UUUUUUUUUUUUUUUUUUUUUUUUUUUUUU",
 }
+PEAK = {
+  "UUUUUUUUUUUUUUUUUUUUUUUUUU",
+  "U........T.......T.......U",
+  "U.......U.U..Y...........U",
+  "U..U..........UU.........U",
+  "U......~~~~......,,I.T...U",
+  "U......~~~~~....R,,,R....U",
+  "U.......~~~~...,,,RI,,...U",
+  "U..............,,RI,,,...U",
+  "U...............T..,.....U",
+  "U......T.................U",
+  "U.U.........U............U",
+  "U...,R,,RI,..............U",
+  "U...,,,R,R,..............U",
+  "U....,,,I,Q............T.U",
+  "U..T..,,......:.T,,IQQ...U",
+  "U...........T.:..R,,Q,...U",
+  "UT.t..........:..........U",
+  "U........T....:..........U",
+  "U....T........:........T.U",
+  "UUUUUUUUUUUUUU:UUUUUUUUUUU",
+}
+COAST = {
+  "UUUUUUUUUUUUUUUUUUUUUUUUUUUU",
+  "U..U......Q......R.........U",
+  "U.t...Q....U.C...R.C......CU",
+  "U.......Q~~~.....C..,,,,,..U",
+  "U....U..~~~~.U......,,,,,.UU",
+  "U........~~R.........,::::::",
+  "U....U.Q........U.~........U",
+  "U....R.C.........~~~.......U",
+  "U...,,,,,....UU...~........U",
+  "UR.,,,,,,,..R,,,,,RQ.......U",
+  "U...O,,,,....,,,,,,........U",
+  "U....,,.RU...,,,,,.........U",
+  "U~..~~~..~~.~U~~U~..~~..~~~U",
+  "~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
+  "~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
+  "~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
+  "~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
+  "~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
+}
 AREAS = { { name = "Windrow", map = FARM }, { name = "Bramble Woods", map = WOODS }, { name = "The Old Mine", w = 20, h = 15, free = {} },
-  { name = "Gull Shore", map = SHORE, biome = "shore", short = "Shore", ground2 = 32 },
-  { name = "Sedge Fen", map = FEN, biome = "fen", short = "Fen", ground2 = 36 },
-  { name = "Flint Hills", map = HILLS, biome = "hills", short = "Hills", ground2 = 224 },
-  { name = "The Dry Reach", map = DRY, biome = "dry", short = "Desert", ground2 = 32 } }
+  { name = "Gull Shore", map = SHORE, biome = "shore", short = "Shore", pal = "shore", ground2 = 32 },
+  { name = "Sedge Fen", map = FEN, biome = "fen", short = "Fen", pal = "fen", ground2 = 36, pal2 = "mud" },
+  { name = "Flint Hills", map = HILLS, biome = "hills", short = "Hills", ground2 = 224, pal2 = "plain" },
+  { name = "The Dry Reach", map = DRY, biome = "dry", short = "Desert", pal = "dry", ground2 = 32 },
+  { name = "Hoarfrost Peak", map = PEAK, biome = "peak", short = "Peak", pal = "snow", ground2 = 224, pal2 = "plain" },
+  { name = "The Hollow Coast", map = COAST, biome = "coast", short = "Coast", ground = 224, pal = "plain", ground2 = 32, pal2 = "shore" } }
 -- the ways between them: leave area a by that side and arrive at that cell of the other
 EXITS = {
   { a = 1, side = "w", to = 2, x = 25, y = 10 }, { a = 2, side = "e", to = 1, x = 0, y = 5 },
@@ -269,6 +318,10 @@ EXITS = {
   { a = 5, side = "n", to = 6, x = 6, y = 19 }, { a = 6, side = "s", to = 5, x = 6, y = 0 },
   { a = 4, side = "e", to = 7, x = 0, y = 8, need = "skin", no = "The Dry Reach lies that way. Without a waterskin the sun turns you back." },
   { a = 7, side = "w", to = 4, x = 27, y = 8 },
+  { a = 6, side = "n", to = 8, x = 14, y = 19, need = "coat", no = "Hoarfrost Peak lies up there. The wind is bitter: you need a wool coat." },
+  { a = 8, side = "s", to = 6, x = 14, y = 0 },
+  { a = 4, side = "w", to = 9, x = 27, y = 5, tide = true, no = "The tide is in and the way to the Hollow Coast is under water. It is dry before noon." },
+  { a = 9, side = "e", to = 4, x = 0, y = 5 },
 }
 -- what grows wild out there, and what the old tin boxes hold
 WILD = {
@@ -276,10 +329,13 @@ WILD = {
   [5] = { n = 10, kinds = { "bogberry", "bogberry", "marshcap", "fibre", "fibre", "mushroom" } },
   [6] = { n = 8, kinds = { "thyme", "thyme", "flint", "stone", "cone" } },
   [7] = { n = 7, kinds = { "dates", "pricklefig", "pricklefig", "stone", "amber" } },
+  [8] = { n = 7, kinds = { "snowbell", "snowbell", "frostberry", "stone", "crystal" } },
+  [9] = { n = 8, kinds = { "mussel", "mussel", "seaglass", "seaweed", "pearl" } },
 }
 TIN = {
   [4] = { coins = 60, k = "pearl", n = 1 }, [5] = { coins = 80, k = "marshcap", n = 5 },
   [6] = { coins = 100, k = "glow", n = 2 }, [7] = { coins = 150, k = "amber", n = 2 },
+  [8] = { coins = 200, k = "crystal", n = 2 }, [9] = { coins = 120, k = "glow", n = 3 },
 }
 -- fish: where they bite (area), how hard they pull (1 to 3), how often (w), and their colours
 FISH = {
@@ -298,6 +354,11 @@ FISH = {
   { key = "char", name = "Tarn char", sell = 66, a = 6, str = 3, w = 2, col = 24, belly = 26 },
   { key = "sandperch", name = "Oasis perch", sell = 52, a = 7, str = 2, w = 4, col = 10, belly = 27 },
   { key = "koi", name = "Golden koi", sell = 260, a = 7, str = 3, w = 1, col = 27, belly = 13 },
+  { key = "smelt", name = "Ice smelt", sell = 30, a = 8, str = 1, w = 5, col = 22, belly = 13 },
+  { key = "glacier", name = "Glacier trout", sell = 95, a = 8, str = 3, w = 2, col = 19, belly = 23 },
+  { key = "cod", name = "Rock cod", sell = 42, a = 9, str = 2, w = 4, col = 28, belly = 12 },
+  { key = "caveeel", name = "Cave eel", sell = 70, a = 9, str = 2, w = 2, col = 1, belly = 22 },
+  { key = "moonfish", name = "Moonfish", sell = 300, a = 9, str = 3, w = 1, col = 13, belly = 23 },
 }
 index_found()
 MINE_FLOORS = 10
@@ -313,7 +374,7 @@ PLOTS = {
   { x = 17, y = 8, w = 10, h = 6, name = "East meadow", cost = 350 },
   { x = 4, y = 15, w = 22, h = 5, name = "Long acre", cost = 1200 },
 }
-SOLID = "TB~hcWNmXMoStFkgr#RCIQ<>HZPDKUA"
+SOLID = "TB~hcWNmXMoStFkgr#RCIQ<>HZPDKUAYO"
 
 function hash(x, y, s)
   local n = (x * 374761393 + y * 668265263 + s * 982451653) & 0x7fffffff
@@ -435,7 +496,7 @@ function grow_forage()
       if not used[k] then
         used[k] = true
         local kind = W.kinds[hash(i, G.day, a * 17) % #W.kinds + 1]
-        if (kind == "pearl" or kind == "amber") and hash(i, G.day, a) > 250 then kind = W.kinds[1] end      -- treasures are rare
+        if (kind == "pearl" or kind == "amber" or kind == "crystal") and hash(i, G.day, a) > 250 then kind = W.kinds[1] end      -- treasures are rare
         FORAGE[#FORAGE + 1] = { a = a, x = A.free[k][1], y = A.free[k][2], k = kind }
       end
     end
@@ -1403,7 +1464,7 @@ function fresh()
     plots = { true, false, false }, mill = 0, millc = 0, rain = false, demand = 1, tins = "00",
     sold = 0, picked = 0, grown = 0, mine = 0, deep = 0, lamp = 0, gotms = 0,
     silo_b = 0, silo = {}, hop = {}, auto = 0, route = "", daily = 0, post = {}, wishday = 0, fair0 = 0,
-    rod = 0, skin = 0, pine = 0, fishn = {}, caught = 0, seen = {},
+    rod = 0, skin = 0, pine = 0, coat = 0, fishn = {}, caught = 0, seen = {},
     trac = 0, tx = 27 * C + 8, ty = 14 * C + 14, imp = { 0, 0, 0, 0 }, impsel = 0, tank = 0, coop = 0, shed = 0, pail = 0, feed = 0, an = {} }
 end
 
@@ -1487,6 +1548,7 @@ function _init()
       "Bramble Woods lies west along the road. Bring what the mill needs to the ruin.",
       "The mine in the woods opens with a pickaxe. Break rocks for ore, find the ladder down. A also hits.",
       "The valley is wide: the fen west of the woods, hills beyond it, the shore south (bring an axe), a desert east of that.",
+      "Further still: a snowy peak above the hills (bring a coat) and a cave coast west of the shore, dry before noon.",
       "Fishing: A at water with a rod. Strike on the bite, reel while the fish rests, ease off when it runs.",
       "Other Bits in reach are neighbours: the north road leads to their farms. Water for them, leave gifts.",
       "After the mill: build the silo, buy the clockwork driver, press Y by the tractor and teach it a route.",
@@ -1589,7 +1651,7 @@ function try_exit()
   if not side then return end
   for _, e in ipairs(EXITS) do
     if e.a == a and e.side == side then
-      if e.need and G[e.need] ~= 1 then
+      if (e.need and G[e.need] ~= 1) or (e.tide and hour() >= 12) then
         px, py = clamp(px, 6, A.w * C - 6), clamp(py, 12, A.h * C - 6)
         if toast_t == 0 then say(e.no) end
         return
@@ -1841,6 +1903,23 @@ function use_hands()
   if ch == "K" then say("A cactus. Mind the spines.") return end
   if ch == "A" then say("Old bones, bleached by the sun.") return end
   if ch == "U" then say("A boulder.") return end
+  if ch == "Y" or ch == "O" then
+    local key = ch == "Y" and "summit" or "wreck"
+    if G.seen[key] then say(ch == "Y" and "The cairn on the summit. The whole valley lies below you." or "The old wreck. Nothing is left in its hold.") return end
+    G.seen[key] = 1
+    if ch == "Y" then
+      G.coins = G.coins + 250
+      say("The summit of Hoarfrost Peak! Under the cairn someone left 250 coins for whoever climbs this far.")
+    else
+      G.coins = G.coins + 300
+      G.inv.glow = have("glow") + 3
+      say("A wrecked boat, stuck in the rocks since before the mill stopped. In its hold: 300 coins and 3 glowstones.")
+    end
+    float("+" .. (ch == "Y" and 250 or 300), 27)
+    sfx("C5", 1, 0.3, 8) sfx("E5", 1, 0.3, 14) sfx("G5", 1, 0.3, 22)
+    persist()
+    return
+  end
   if a ~= 1 then return end
   local f, p = cell(x, y)
   if not f then return end
@@ -1962,6 +2041,7 @@ function shop_items()
   once("Pickaxe", 150, "Breaks the stones on your land.", G.pick == 0, function() G.pick = 1 end)
   once("Axe", 150, "Splits the old stumps on your land, and fallen trees.", G.axe == 0, function() G.axe = 1 end)
   once("Fishing rod", 150, "A at any water casts the line. Every water has its own fish.", G.rod == 0, function() G.rod = 1 end)
+  once("Wool coat", 220, "Keeps you warm on Hoarfrost Peak, north of the Flint Hills.", G.coat == 0, function() G.coat = 1 end)
   once("Waterskin", 120, "Lets you cross into the Dry Reach, east of Gull Shore.", G.skin == 0, function() G.skin = 1 end)
   for i, it in ipairs(IMPL) do
     once(it.name, it.cost, it.about, G.trac == 1 and G.imp[i] == 0, function() G.imp[i] = 1; if G.impsel == 0 then G.impsel = i end; if it.key == "tank" then G.tank = TANK end end)
@@ -2478,6 +2558,8 @@ function draw_world()
     elseif m == "shore" then pal(16, 12) pal(15, 11) pal(17, 13)
     elseif m == "dry" then pal(16, 11) pal(15, 10) pal(17, 12)
     elseif m == "fen" then pal(16, 15) pal(15, 14) pal(17, 16)
+    elseif m == "snow" then pal(16, 13) pal(15, 23) pal(17, 13)
+    elseif m == "ice" then pal(21, 23) pal(22, 13) pal(20, 22) pal(19, 22)
     elseif m == "mud" then pal(8, 7) pal(9, 8) pal(7, 6) pal(6, 14)
     elseif m == "bog" then pal(21, 15) pal(22, 16) pal(20, 14) pal(23, 17) pal(19, 14) end
   end
@@ -2487,10 +2569,12 @@ function draw_world()
       local m = "season"
       if ch == ":" or ch == "X" then n = 40
       elseif ch == "p" then n = 72
-      elseif ch == "~" or ch == "J" then n = 42 + wf * 2; m = bio == "fen" and "bog" or "plain"
-      elseif bio and (ch == "," or ROCKS[ch]) then n = A.ground2; m = bio == "hills" and "plain" or bio == "fen" and "mud" or "season"
-      elseif bio and bio ~= "hills" then m = bio
+      elseif ch == "~" or ch == "J" then n = 42 + wf * 2; m = bio == "fen" and "bog" or bio == "peak" and "ice" or "plain"
+      elseif bio and ROCKS[ch] then n, m = 224, "plain"
+      elseif bio and ch == "," then n = A.ground2; m = A.pal2 or "season"
+      elseif bio and A.pal then n = A.ground or 32; m = A.pal
       elseif hash(x, y, a) < 140 then n = 34 end
+      if bio == "peak" and ch == "~" then n = 42 end
       mode(m)
       if a == 1 then
         local f, p = cell(x, y)
@@ -2523,7 +2607,13 @@ function draw_world()
   for y = y0, math.min(A.h - 1, y1 + 2) do
     for x = x0, x1 do
       local ch, sx, sy = tile(a, x, y), x * C, y * C
-      if ch == "T" then season_pal(true) spr(160, sx, sy - 16, 2, 4) pal()
+      if ch == "T" and bio == "peak" then pal(16, 23) pal(17, 13) pal(15, 22) pal(18, 13) pal(14, 21) spr(160, sx, sy - 16, 2, 4) pal()
+      elseif ch == "T" then season_pal(true) spr(160, sx, sy - 16, 2, 4) pal()
+      elseif ch == "Y" then spr(66, sx, sy + 2, 2, 2) spr(66, sx + 2, sy - 6, 2, 2) rectfill(sx + 7, sy - 12, 2, 8, 8) rectfill(sx + 9, sy - 12, 5, 3, 26)
+      elseif ch == "O" then
+        for i = 0, 7 do line(sx - 8 + i, sy + 6 + i, sx + 22 - i // 2, sy + 6 + i, i % 3 == 0 and 7 or 8) end
+        line(sx - 8, sy + 5, sx + 22, sy + 5, 6) rectfill(sx + 5, sy - 12, 2, 18, 7) line(sx + 6, sy - 10, sx + 15, sy - 2, 12)
+        rectfill(sx + 12, sy + 8, 4, 3, 1)
       elseif ch == "B" then season_pal(false) spr(70, sx, sy, 2, 2) pal()
       elseif ch == "o" then spr(74, sx, sy - 4, 2, 2)
       elseif ch == "U" then spr(66, sx, sy, 2, 2)
@@ -2625,6 +2715,10 @@ end
 function draw_weather()
   if G.area == 3 then return end
   local h = hour()
+  if G.area == 8 then             -- it always snows a little on the peak
+    for i = 1, 26 do pset((i * 53 + t()) % 340 - 10, (i * 97 + t() * 2) % 240, 13) end
+  end
+  if G.area == 9 then shade(G.lamp == 1 and 0.08 or 0.22) end      -- the cliffs keep the coast in shadow
   if G.area == 5 and h > 16 then           -- fireflies over the fen
     for i = 1, 14 do
       if (t() + i * 23) % 90 < 50 then pset((i * 71 + fl(math.sin((t() + i * 40) / 37) * 14)) % 320, 30 + (i * 53 + fl(math.cos((t() + i * 9) / 29) * 10)) % 180, 27) end
