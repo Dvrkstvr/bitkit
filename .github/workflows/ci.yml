@@ -143,3 +143,5 @@ jobs:
         run: node tools/shareapptest.cjs
       - name: Share website (browser)
         run: node tools/hubsitetest.cjs
+      - name: Built-in games kept from an older studio update themselves (browser)
+        run: node tools/updatetest.cjs

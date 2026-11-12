@@ -130,7 +130,7 @@ function _init()
       { key = "cpu", name = "CPU skill", values = { "Easy", "Normal", "Hard" }, value = 2 },
     },
     title_draw = function(t) draw_title(t) end,
-    look = { title = 13, shadow = 20, panel = 19, edge = 22, hi = 20, text = 23, pick = 27, goal = 13, footer = 22 },
+    look = { title = 13, shadow = 20, panel = 19, edge = 22, hi = 20, text = 23, pick = 27, goal = 13, footer = 22, menu = "left", name_y = 12 },
   }
   NP = math.max(1, math.min(PLAYERS or 1, 8))
   NV = ((ME or 0) > 0) and 1 or math.min(NP, 4)     -- views on this screen
@@ -1498,33 +1498,94 @@ function draw_podium()
   end
 end
 
--- ---------------------------------------------------------------- the title screen: a penguin rides the first slope
+-- ---------------------------------------------------------------- the title screen: night on the mountain under
+-- the aurora. A penguin and a seal belly-slide down the ridge, hit the kicker, twirl through the air and land
+-- on the slope below. 2D only (no slope projection), so it stays cheap on the Bit.
+function title_hill(x)              -- the snow line: a ridge down to the kicker lip, then the landing slope
+  if x <= 186 then
+    local f = math.max(0, x) / 186
+    local y = 104 + 50 * f ^ 1.5
+    if x > 166 then y = y - (x - 166) * 0.45 end       -- the kicker
+    return y
+  end
+  return 172 + (x - 186) * 0.28
+end
+TITLE_FLAKES = nil
 function draw_title(tt)
-  if course_n ~= 1 or not N then build_course(1) end
-  local saved_gt = gt
-  gt = tt
-  local len = (FIN - 30) * SL
-  local z = 30 + (tt * 0.35) % len
-  local cam = { z = z - CAMD, x = math.sin(tt / 90) * 1.5, hd = 0, pt = -0.2 }
-  local s = seg_at(cam.z)
-  local s2 = math.min(N, s + 6)
-  cam.hd = (CX[s2] - CX[s]) / ((s2 - s) * SL)
-  cam.pt = SLP[s]
-  cam.y = base_y(z) + CAMH + 1
-  set_view(0, 0, 320, 240)
-  local saved_r = riders
-  local hop_f = (tt % 150) / 60
-  local hop = hop_f < 1 and math.sin(hop_f * 3.1416) * 3 or 0
-  local px = math.sin(tt / 60) * 2.5
-  local demo = { i = 1, pn = 0, sp = 1 + (tt // 600) % 2, sc = 1 + (tt // 300) % #SCARVES, z = z, x = px, h = ground(z, px) + hop, air = hop > 0,
-                 tumble = 0, lean = 0, guard = false, got = {}, pops = {}, boost = 0, magnet = 0, tk = hop > 0 and { kind = 1, dir = 1, rot = hop_f * 2 } or nil, name = "", combo = {} }
-  riders = { demo }
-  local sb, sf = balls, fx
-  balls, fx = {}, {}
-  draw_world(cam, demo)
-  riders, balls, fx = saved_r, sb, sf
-  clip()
-  gt = saved_gt
+  rectfill(0, 0, 320, 44, 1) rectfill(0, 44, 320, 44, 19) rectfill(0, 88, 320, 62, 2)
+  for i = 0, 34 do                                            -- stars, a few twinkling
+    if (tt // 6 + i * 7) % 11 > 0 then pset((i * 97 + 13) % 320, (i * 41 + 5) % 140, i % 4 == 0 and 27 or 13) end
+  end
+  for i = 0, 2 do                                             -- the aurora: three slow curtains
+    local c1, c2 = ({ 16, 15, 17 })[i + 1], ({ 15, 17, 16 })[i + 1]
+    for x = i * 2, 319, 4 do
+      local u = x / 46 + i * 1.9
+      local yy = 104 + i * 9 + math.sin(u + tt / 60) * 8 + math.sin(u * 0.4 - tt / 95) * 6
+      local hh = 7 + 8 * math.sin(u * 1.3 + tt / 45 + i)
+      if hh > 2 then line(x, yy - hh, x, yy - hh * 0.4, c2) line(x, yy - hh * 0.4, x, yy, c1) end
+    end
+  end
+  for i = 0, 6 do                                             -- far peaks with snow caps
+    local x = i * 56 - 30
+    local h = 34 + (i * 29) % 26
+    trifill(x, 152, x + 44, 152 - h, x + 88, 152, 126)
+    trifill(x + 30, 152 - h * 0.68, x + 44, 152 - h, x + 58, 152 - h * 0.68, 205)
+  end
+  rectfill(0, 150, 320, 90, 20)
+  for x = 0, 319, 2 do                                        -- the slope
+    local y = title_hill(x)
+    rectfill(x, y, 2, 240 - y, 169)
+    rectfill(x, y, 2, 2, 205)
+    pset(x, y, 13)
+  end
+  for i = 0, 4 do                                             -- snowy pines on the lower slope
+    local px = 196 + i * 27 + (i * 13) % 9
+    local py = title_hill(px) + 2 + (i % 2) * 5
+    local h = 16 + (i * 7) % 8
+    rectfill(px - 1, py - 3, 2, 4, 6)
+    trifill(px - 8, py - 2, px, py - h, px + 8, py - 2, 14)
+    trifill(px - 6, py - h * 0.55, px, py - h, px + 6, py - h * 0.55, 13)
+  end
+  for i = 0, 1 do                                             -- the gate flags on the ridge
+    local fx = 54 + i * 62
+    local fy = title_hill(fx)
+    line(fx, fy, fx, fy - 18, 13)
+    trifill(fx + 1, fy - 18, fx + 11, fy - 14 + math.sin(tt / 8 + i) * 2, fx + 1, fy - 10, i == 0 and 24 or 20)
+  end
+  for k = 0, 1 do                                             -- the two riders, half a lap apart
+    local sp = k + 1
+    local f = (tt + k * 110) % 220
+    local x, y, yaw, air = 0, 0, 2, false
+    if f < 110 then                                           -- belly-slide down the ridge, faster and faster
+      x = -40 + 226 * (f / 110) ^ 1.5
+      y = title_hill(x)
+    elseif f < 160 then                                       -- off the kicker: up, a twirl, and down
+      local q = (f - 110) / 50
+      x = 186 + 104 * q
+      y = lerp(title_hill(186), title_hill(290), q) - math.sin(q * 3.1416) * 46
+      yaw, air = (2 + math.floor(q * 8.99)) % 8, true
+      if q > 0.2 and q < 0.85 then text("TWIRL!", x - 20, y - 46, 27) end
+    else                                                      -- touch down and slide away
+      x = 290 + (f - 160) * 1.6
+      y = title_hill(x)
+      if f < 172 then for j = 0, 5 do circfill(x - 14 + j * 5, y - (j % 3) * 2, 3 + (172 - f) // 4, 13) end end
+    end
+    if not air then                                           -- snow spray behind
+      for j = 0, 4 do pset(x - 16 - j * 4 - (tt + j * 3) % 5, y - 2 - (tt * 3 + j * 7) % 6, 13) end
+    end
+    rider_pal(sp, sp == 1 and 1 or 2, sp == 1 and 1 or 4)
+    sspr(rider_sprite(sp, 0, yaw), x - 26, y - 43, 3, 3, 2.2)
+    reset_pal()
+  end
+  if not TITLE_FLAKES then
+    TITLE_FLAKES = {}
+    for i = 1, 36 do TITLE_FLAKES[i] = { (i * 71) % 320, (i * 53) % 240, 1 + i % 3 } end
+  end
+  for _, fl in ipairs(TITLE_FLAKES) do                       -- falling snow
+    local y = (fl[2] + tt * fl[3] * 0.4) % 244 - 2
+    local x = (fl[1] + math.sin((tt + fl[2]) / 30) * 6) % 320
+    if fl[3] == 3 then rectfill(x, y, 2, 2, 13) else pset(x, y, 13) end
+  end
 end
 `;
 
