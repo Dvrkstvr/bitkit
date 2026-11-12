@@ -2476,7 +2476,13 @@ display()                                   -- off</pre><p class="dim">The Help 
     cart.levels = null; cart.map = new Uint16Array(MAPW * MAPH);
     cart.entities = { types: [], placed: [] };
   }
-  function loadDemo(d) { d = d || DEMOS()[0]; blankInto(d.name, d.code); d.buildGfx(cart); normalizeLevels(); }
+  function loadDemo(d) { d = d || DEMOS()[0]; blankInto(d.name, d.code); d.buildGfx(cart); normalizeLevels(); lsSet(LS.cart + '.base', codeTag(d.code)); }
+  // which version of a built-in game a copy started from: when the built-in game gets better (a new title screen,
+  // a new level), an untouched copy is swapped for the new one and an edited copy says a newer one is out
+  function codeTag(code) { let h = 0x811c9dc5; for (let i = 0; i < code.length; i++) h = Math.imul(h ^ code.charCodeAt(i), 16777619); return (h >>> 0).toString(36) + '.' + code.length; }
+  const demoOf = key => DEMOS().find(x => 'demo:' + x.name === key);
+  // an edited copy of a built-in game that started from an older version of it
+  function behindDemo(key, code, base) { const d = demoOf(key); return !!d && code !== d.code && base !== codeTag(d.code); }
   $('cartName').addEventListener('input', e => { cart.name = e.target.value || 'untitled'; markDirty(); });
 
   /* ------------------------------------------------------------ games: switch, new, open */
@@ -2489,7 +2495,7 @@ display()                                   -- off</pre><p class="dim">The Help 
   async function stashCurrent() {
     syncLevel(); saveLocal(); dirtySave = false;
     if (!cartChanged || !gid) return;
-    try { await BKStore.drafts.put(gid, { name: cart.name, data: serialize(), t: Date.now() }); }
+    try { await BKStore.drafts.put(gid, { name: cart.name, data: serialize(), t: Date.now(), base: lsGet(LS.cart + '.base') || '' }); }
     catch (e) { log(`Could not keep your changes to "${cart.name}": ${e.message}`, 'err'); }
   }
   // ref: { demo } a built-in game, { file, data } a game on the Bit, { draft: gid }, { blank: true }, or { data } (a file or pasted text)
@@ -2499,7 +2505,7 @@ display()                                   -- off</pre><p class="dim">The Help 
     let draft = null;
     try { draft = await BKStore.drafts.get(key); } catch (e) { /* no drafts here */ }
     try {
-      if (draft) deserialize(draft.data);
+      if (draft) { deserialize(draft.data); lsSet(LS.cart + '.base', draft.base || ''); }
       else if (ref.demo) loadDemo(ref.demo);
       else if (ref.blank) { blankInto('my game', NEW_CODE); normalizeLevels(); }
       else if (ref.data) deserialize(ref.data);
@@ -2509,7 +2515,7 @@ display()                                   -- off</pre><p class="dim">The Help 
     setChanged(!!draft || !(ref.demo || ref.file || ref.blank));
     applyCart(); saveLocal(); dirtySave = false; histReset();
     closeModal();
-    toast(draft ? `Opened ${cart.name}, with your changes` : `Opened ${cart.name}`);
+    toast(draft ? `Opened ${cart.name}, with your changes` + (behindDemo(key, cart.code, draft.base) ? ` (the built-in ${cart.name} has been updated since: Games, Reset gets the new one)` : '') : `Opened ${cart.name}`);
     if (mode !== 'edit') await setMode('edit'); else { stop(true); bootScreen(); }
     return true;
   }
@@ -2858,8 +2864,9 @@ display()                                   -- off</pre><p class="dim">The Help 
     const demos = DEMOS();
     const cards = demos.map((d, i) => {
       const key = 'demo:' + d.name, edited = dmap.has(key) || (key === gid && cartChanged);
+      const behind = edited && (key === gid ? behindDemo(key, cart.code, lsGet(LS.cart + '.base')) : behindDemo(key, (dmap.get(key).data || {}).code, dmap.get(key).base));
       return `<div class="game-card${key === gid ? ' cur' : ''}"><canvas width="16" height="16" data-demo="${i}"></canvas>
-        <div class="gc-text"><div><b>${escapeHtml(d.name)}</b>${playTag(d.code)}${openTag(key)}${edited ? tag('your version', 'warn') : ''}</div><div class="dim small">${escapeHtml(d.about || '')}</div>
+        <div class="gc-text"><div><b>${escapeHtml(d.name)}</b>${playTag(d.code)}${openTag(key)}${edited ? tag('your version', 'warn') : ''}${behind ? tag('updated since: Reset gets the new one', 'warn') : ''}</div><div class="dim small">${escapeHtml(d.about || '')}</div>
         <div class="gc-btns"><button class="tiny" data-dopen="${i}" title="Look inside and change it. Your changes are kept as your own version">Edit</button><button class="tiny" data-dplay="${i}" title="Play it on the Bit">Play</button>${edited ? `<button class="tiny danger" data-dreset="${i}" title="Throw away your changes and go back to the original">Reset</button>` : ''}</div></div></div>`;
     }).join('');
     const where = st === 'folder' ? `the folder 📁 <b>${escapeHtml(BKStore.label())}</b> on this computer`
@@ -3415,11 +3422,22 @@ display()                                   -- off</pre><p class="dim">The Help 
   $('appName').textContent = APP;
   let restored = false;
   try { const s = lsGet(LS.cart); if (s) { deserialize(JSON.parse(s)); restored = true; } } catch (e) { log('Saved cart was unreadable, starting fresh', 'sys'); }
-  if (!restored) { const d = DEMOS()[0]; cart.name = d.name; cart.code = d.code; d.buildGfx(cart); normalizeLevels(); setChanged(false); }
+  if (!restored) { const d = DEMOS()[0]; cart.name = d.name; cart.code = d.code; d.buildGfx(cart); normalizeLevels(); setChanged(false); lsSet(LS.cart + '.base', codeTag(d.code)); }
   if (!gid) {    // a cart from before games had ids
     const d = DEMOS().find(x => x.name === cart.name);
     setGid(cartFile ? 'file:' + cartFile : d ? 'demo:' + d.name : newGid());
     setChanged(restored && !(d && d.code === cart.code));
+  }
+  {   // a built-in game kept from an older studio: untouched, it becomes the new version; edited, it says so
+    const d = demoOf(gid);
+    if (restored && d && cart.code !== d.code) {
+      if (!cartChanged) {
+        loadDemo(d); saveLocal(); dirtySave = false;
+        log(`${d.name} was updated to the newest version.`, 'sys');
+      } else if (behindDemo(gid, cart.code, lsGet(LS.cart + '.base'))) {
+        log(`The built-in ${d.name} has been updated since you changed it (your version is kept). To get the new one, open Games and press Reset on ${d.name}.`, 'sys');
+      }
+    }
   }
   applyCart(); histReset();
   log(`${APP} Studio ready${window.BK_BUILD ? ` (build ${window.BK_BUILD})` : ''}. ${restored ? 'Restored your last cart.' : 'Loaded the demo cart.'} Press Run (Ctrl+Enter).`, 'sys');
