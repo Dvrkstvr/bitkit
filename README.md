@@ -279,7 +279,7 @@ A daily brain jog: five laps of 30 seconds, one quick exercise each. Answers sit
 
 A downhill belly-slide race for 1-8 penguins and seals, on one screen (split in 2 or 4) or on linked Bits, with CPU rivals filling the start gate.
 
-- **Left / right** steers (in a half pipe it pumps you from wall to wall), **up** tucks, **down** brakes. **A** jumps: right at the red lip of a ramp it's a **Perfect Pop** with more height.
+- **Left / right** steers (in a half pipe it pumps you from wall to wall), hold **down** to tuck (faster, but you steer less), **up** brakes. **A** jumps: right at the red lip of a ramp it's a **Perfect Pop**, right at the top of a hill an **Apex Pop**, both with more height and points. Hold **down** as you land on a steep slope for a **Slope Landing** speed boost.
 - **B** in the air is a trick: hold it to keep turning, let go and the trick finishes its turn. Land only once it's done, or it's a wipeout; land right after it finishes for **PERFECT**. B alone is a Twirl, B + up a Flipper, B + down a Backflop, and mixing them in one jump scores more.
 - Rings in the air and flag gates score, and so does your finish place. Crates give **Snowballs** (X throws one at the rider ahead), **Fish** (a burst of speed), a **Magnet** (pulls rings in) or a **Guard** that saves your next bad landing or hit.
 - **Penguins** are light and nimble: sharp turns, quick tricks, a bigger pop. **Seals** are heavy and fast: a higher top speed, they shove penguins aside and shrug off snowballs, but their tricks turn slower. Pick your body colour and scarf in the rider yard.
