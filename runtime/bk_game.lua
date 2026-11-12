@@ -60,6 +60,8 @@
 --                   {{"Rematch", fn}, {"Change kart", fn}, ...}; the shell adds "Quit to title" (not when linked).
 --                   Left / right picks, A has to be held to choose, and nothing reacts for the first 45 frames.
 --                   The shell is back in gameplay before fn runs, so fn can open the game's own setup screens.
+--   game{matches = true}   a game of matches with no progress to keep: the title has Play (always a fresh start,
+--                   new_game() runs) and Continue only while there is a match to go back to
 --   game{in_menu = function() return state == "pick" end}   true while the game shows its own setup screens
 --                   (mode, rules, character, track select): Start doesn't pause there, it's not a match yet
 --   GAME.state      "title", "play", "screen", "pause", "settings", "help", "confirm", "won" or "over"
@@ -316,7 +318,12 @@ do
     local add = function(name, fn) ITEMS[#ITEMS + 1] = { name, fn }; GAME.items[#ITEMS] = name end
     if ST == "title" then
       BACK = "title"
-      if DIRTY or has_save() then add("Continue", continue_game)
+      if CFG.matches then
+        -- a game of matches (a lobby, then a match) has no progress to keep: Play always starts afresh,
+        -- and Continue only shows when there is a match to go back to
+        if can_resume() then add("Continue", continue_game) end
+        add("Play", start_new)
+      elseif DIRTY or has_save() then add("Continue", continue_game)
       else add("New game", start_new) end           -- no save file yet: the first play makes one
       for _, it in ipairs(CFG.menu or {}) do add(it[1], it[2]) end
       add("Settings", function() BACK = "title"; set_state("settings") end)

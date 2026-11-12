@@ -153,6 +153,7 @@ end
 The game opens on a title screen, not in the middle of the action. It shows the game's name and goal and offers:
 
 - **New game** the very first time, or **Continue** once the game has a save file (see below). Never both.
+  Games of matches with no progress to keep (Sweep Storm: a lobby, then a match) pass `matches = true` instead: the title always has **Play**, which starts afresh at the lobby, and **Continue** above it only while there is a match to go back to.
 - **Settings**, with **Delete save** when there is a save file.
 - **How to play**, if you pass `help`.
 
@@ -305,6 +306,7 @@ game{
   title_draw = function(t) ... end,            -- your own animated title screen (optional, see above)
   look = {title = 27, panel = 1, menu = "right"},   -- your menus' colours and layout (optional)
   in_menu = function() return state == "pick" end, -- true while your own setup screens are up: Start doesn't pause (optional)
+  matches = true,                                  -- a game of matches with a lobby: the title has Play, and Continue only back into a match (optional)
 }
 ```
 
