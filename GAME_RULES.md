@@ -12,6 +12,76 @@ Every BitKit game has the same five things, whether it ships with BitKit or come
 
 You don't have to build any of this yourself. One call to `game{}` in `_init` gives your game the title screen, the pause menu, the settings, checkpoints and the "goal complete" screen, with the same look and buttons as every other BitKit game. The studio's **Checklist** button (and its Game tab) checks your game against the list.
 
+## How a game flows
+
+Every game goes through the same screens in the same order, so a player who knows one BitKit game knows them all. Steps with a dashed border are optional: skip the ones your game has no use for, but keep the order of the rest.
+
+```mermaid
+flowchart TD
+  HOME["<b>1 · Home screen card</b><br/>A: open, or carry on a paused game<br/>hold X 2 s: start over · hold Y 2 s: edit<br/>Select: race or play together (linked Bits)"]
+  TITLE["<b>2 · Title screen</b><br/>the game's own animated intro<br/>name · goal · ★ once won"]
+  MENU["<b>3 · Main menu</b><br/>New game, or Continue once there is a save<br/>Settings · How to play · the game's own items"]
+  SET["<b>Settings</b><br/>Volume · Music · the game's own<br/>Delete save: confirm, then back to New game"]
+  HELP["How to play"]
+  LOBBY["<b>4 · Lobby</b> <i>(net games only)</i><br/>who's in · A: start the match"]
+  MODE["<b>5 · Mode choice</b> <i>(if the game has modes)</i><br/>Solo · Together · Versus · Team"]
+  RULES["<b>6 · Rules / setup</b> <i>(optional)</i><br/>track · points · time"]
+  CHAR["<b>7 · Character select</b> <i>(optional)</i><br/>each player picks · A: ready · B: back"]
+  PLAY(["<b>8 · Gameplay</b>"])
+  PAUSE["<b>Pause menu</b><br/>Resume · the game's own items<br/>Settings · How to play · Quit to title"]
+  AWAY["<b>Left on the Bit</b><br/>Start + Select: back home,<br/>the card shows a pause badge"]
+  RES["<b>9 · Results / podium</b><br/>hold A: new match, same setup<br/>B: change mode or players"]
+  WON["<b>Goal complete</b><br/>short wait, then hold A or Start<br/>Keep playing · Back to title"]
+
+  HOME -->|A| TITLE --> MENU
+  MENU -->|New game| LOBBY
+  LOBBY --> MODE --> RULES --> CHAR -->|everyone ready| PLAY
+  MENU ==>|"Continue: straight in, at the checkpoint<br/>or exactly where a paused game was"| PLAY
+  MENU -.- SET
+  MENU -.- HELP
+
+  PLAY <-->|"Start / Resume, B"| PAUSE
+  PAUSE -->|Quit to title| TITLE
+  PLAY -->|"Start + Select"| AWAY
+  AWAY -->|"later: A on the card"| TITLE
+
+  PLAY -->|match over| RES
+  RES -->|hold A| PLAY
+  RES -->|B| MODE
+  PLAY -->|goal reached| WON
+  WON -->|Keep playing| PLAY
+
+  classDef opt stroke-dasharray: 5 4
+  class LOBBY,MODE,RULES,CHAR opt
+```
+
+| Step | What happens | Who does it |
+|---|---|---|
+| 1. Home screen card | **A** opens the game, or carries on a paused one. **Hold X** for 2 seconds starts it over, **hold Y** for 2 seconds opens it in the editor (a bar fills while you hold). With linked Bits, **Select** switches between playing together and racing. | The Bit |
+| 2. Title screen | The game's own animated intro (`title_draw`), its name, its goal, and a star once it has been won. A paused game picked again comes back here too, so the intro still plays. | `game{}` |
+| 3. Main menu | **New game** the first time, **Continue** once there is a save file (never both), then your own items (`menu`, like Levels), **Settings** and **How to play**. Settings has **Delete save**, which asks first and brings back New game. | `game{}` |
+| 4. Lobby | Only for net games (10 to 20 Bits, like Sweep Storm): who's in, and A starts the match. Lockstep games don't need one: Bits link up on the home screen before the game starts. | your game |
+| 5. Mode choice | Only for games with more than one way to play: Solo, Together, Versus, Team. One list, A picks, B goes back to the title. | your game |
+| 6. Rules / setup | The match's rules: track, points to win, time limit. Keep it to one screen. | your game |
+| 7. Character select | Each player picks their look (rider, kart, boat, colour) at the same time and presses **A** when ready; **B** takes it back, or goes back a step. Play starts when everyone is ready. | your game |
+| 8. Gameplay | **Start** opens the pause menu (Resume, your `pause` items, Settings, How to play, Quit to title). **Start + Select** leaves for the home screen and keeps the game exactly as it was. | `game{}` + your game |
+| 9. Results / podium | Who won and by how much. **Hold A** starts a new match with the same setup (`hold_btn("a")`), **B** goes back to the mode choice (or the character select, if there are no modes). | your game |
+| Goal complete | `game_win()` reached the goal. A short wait, then hold A or press Start: Keep playing, or Back to title. | `game{}` |
+
+Continue (thick arrow) never goes through steps 4 to 7: it goes straight back into play, at the last checkpoint, or exactly where the player left a paused game.
+
+**Racing a one-player game** skips the title screen altogether: every Bit counts down together and plays its own run on a shared clock.
+
+```mermaid
+flowchart LR
+  HOME["<b>Home screen</b><br/>linked Bits · Select: Race"] --> CD["<b>3-2-1 countdown</b><br/>on every Bit, no title screen"]
+  CD --> RUN(["<b>Own run</b><br/>shared clock · news when someone finishes"])
+  RUN <-->|Start| P["<b>Pause menu</b><br/>the clock keeps running<br/>Leave race"]
+  RUN -->|"goal, or out of lives"| ST["<b>Standings</b><br/>Leave race"]
+  ST --> BACK["Home screen"]
+  P -->|Leave race| BACK
+```
+
 ## The smallest game that meets the rules
 
 This is what **New** in the studio starts you with:
