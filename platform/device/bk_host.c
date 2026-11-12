@@ -58,7 +58,12 @@ static uint16_t err_last;
 /* a race (a one-player game with game{race = ...} started on linked Bits): every Bit plays its own run, nothing
    in lockstep; the game shell (bk_game.lua) gets RACE and tells the others how its run goes with net events,
    under the race's own key (its sid). */
-static struct { int on, kind; uint32_t sid; char extra[512]; } RC;
+static struct {
+  int on, kind; uint32_t sid; char extra[512];
+  /* the Bit that started it sends its START again until every other Bit says it is in a game (or 3 s are up):
+     the race START has no answer of its own, and a Bit that missed every copy would be left out */
+  int np, host; uint32_t ids[BK_MAX_PLAYERS], at, last; uint8_t in_game[BK_MAX_PLAYERS];
+} RC;
 
 /* linked Bits (the section "linked Bits" below) */
 static void link_home_rows(void);
@@ -943,6 +948,8 @@ static void enter(uint32_t from, uint32_t sid, int np, int race, const uint32_t 
     for (int k = 0; k < np && o < sizeof(RC.extra); k++) { char q[40]; lua_str(q, sizeof(q), names[k]); o += (size_t)snprintf(RC.extra + o, sizeof(RC.extra) - o, "%s%s", k ? ", " : "", q); }
     if (o < sizeof(RC.extra)) snprintf(RC.extra + o, sizeof(RC.extra) - o, "} }\n");
     RC.on = 1; RC.kind = race; RC.sid = sid;
+    RC.host = from == LK.id; RC.np = np; RC.at = RC.last = lk_now();
+    memcpy(RC.ids, ids, sizeof(uint32_t) * (size_t)np); memset(RC.in_game, 0, sizeof(RC.in_game));
     sel = n;
     if (home_slot) slot_close(home_slot);
     snprintf(m, sizeof(m), "racing \"%s\" on %d Bits: everyone plays their own run", E[n - 1].name, np);
@@ -1228,6 +1235,18 @@ static void link_tick(void) {
       LK.peer[i] = LK.peer[--LK.npeers]; i--;
       if (LK.on) for (int k = 0; k < LK.np; k++) if (LK.ids[k] == id) { say("a player's Bit is gone, so the linked game ended", 1); link_leave(0); break; }
     }
+  /* a race this Bit started: its START again (every 250 ms, for 3 s) until every other Bit is in a game */
+  if (RC.on && RC.host && mode == MODE_GAME && LK.start_pkt.n && now - RC.at < 3000 && now - RC.last >= 250) {
+    int all = 1;
+    for (int k = 0; k < RC.np; k++) {
+      if (RC.ids[k] == LK.id) continue;
+      const lk_peer *q = find_peer(RC.ids[k]);
+      if (q && q->st == 2) RC.in_game[k] = 1;
+      all &= RC.in_game[k];
+    }
+    RC.last = now;
+    if (!all) C.radio_send(LK.start_pkt.b, LK.start_pkt.n);
+  }
   /* the paused badges depend on how many Bits would play: draw the home screen again when that changes */
   const int n = link_roster_n();
   if (mode == MODE_HOME && n != LK.home_n && LK.ticks > 2) { LK.home_n = n; boot_home(); }

@@ -14,6 +14,7 @@
 #include <time.h>
 
 static int fails = 0, verbose = 0;
+static const char *who = "";          /* "Bit A: " / "Bit B: " in the linked tests */
 static char lastlog[2048];
 static char logs[64][256];
 static int nlogs;
@@ -22,7 +23,7 @@ static int nlogs;
 static void logger(const char *m, int err) {
   snprintf(lastlog, sizeof(lastlog), "%s", m);
   snprintf(logs[nlogs % 64], sizeof(logs[0]), "%s", m); nlogs++;
-  if (verbose || err) fprintf(stderr, "%s%s\n", err ? "  [error] " : "  ", m);
+  if (verbose || err) fprintf(stderr, "%s%s%s\n", err ? "  [error] " : "  ", who, m);
 }
 static int logged(const char *prefix) {
   for (int i = nlogs > 64 ? nlogs - 64 : 0; i < nlogs; i++) if (!strncmp(logs[i % 64], prefix, strlen(prefix))) return 1;
