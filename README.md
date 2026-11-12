@@ -346,7 +346,7 @@ Every Bit can look, sound and start up its own way. A **theme** sets the home sc
 
 - **On the Bit:** the **Themes** app on the Utilities row (press Down on the home screen). Browse the themes (each shows straight away), edit every part, mix colours, paint the wallpaper with the buttons and keep up to four of your own.
 - **In the studio:** the **My Bit** tab, with a live home screen preview, a wallpaper painter, "From a picture…", and **Export / Import** of `.bittheme` files to share.
-- **You:** **Settings › USER** on the Bit (or My Bit in the studio) has your name, your colour and the Bit's name. Linked Bits show each other's names, and games use them: `player_name(n)` and `player_color(n)`, and `net_name(id)` for network event games. Nothing else leaves the Bit.
+- **You:** **Settings › USER** on the Bit (or My Bit in the studio) has your name, your colour and the Bit's name. Linked Bits show each other's names (also on the home screen's vote: with two or more Bits on their home screens, A votes for a game, B passes, and a game starts on all of them once 75% of the Bits that don't pass picked it), and games use them: `player_name(n)` and `player_color(n)`, and `net_name(id)` for network event games. Nothing else leaves the Bit.
 
 The theme file format and how the firmware draws it are in [docs/THEMES.md](docs/THEMES.md).
 

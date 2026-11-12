@@ -62,8 +62,14 @@ Like the studio's linked windows, PocketBits find each other by themselves: no p
 broadcasts a hello over ESP-NOW once a second (its number, owner's name and colour, and whether it is on its home
 screen), and the home screen shows every Bit in reach. A Bit not heard for 4 seconds is gone.
 
-- **Lockstep games.** Picking a game on the home screen while other Bits are on theirs starts it on all of them (up to
-  8; the Bit that picked it is player 1, and only player 1's Bit keeps the save file). Every Bit runs every frame with
+- **Voting for a game.** While two or more Bits are on their home screens, A on a game that would start on the
+  others votes for it instead of starting it (A again takes the vote back), and B passes. Each Bit's vote rides on
+  its hello (the game's file hash), so every home screen shows who voted for what, by name. A game wins once at
+  least 75% of the Bits that don't pass voted for it (if all the others pass, one vote wins); it shows for a second,
+  then the first of its voters starts it as below, with its voters in the first seats. Passing Bits still play.
+  Bits coming or going and changed votes count straight away. One-player games and apps still open straight away.
+- **Lockstep games.** A game that won the vote starts on every Bit on its home screen (up to
+  8; the Bit that started it is player 1, and only player 1's Bit keeps the save file). Every Bit runs every frame with
   every player's buttons; each Bit sends its own 3 frames ahead, and every packet carries its last 10 frames, so a
   lost packet costs nothing. A Bit that is still waiting sends its buttons again every 4 frames. After a second of
   waiting a bar says which Bit is late; Start+Select then leaves the game for everyone.
