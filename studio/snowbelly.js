@@ -2,9 +2,9 @@
 (function () {
   const code = `
 -- Snowbelly: belly-slide down a mountain as a penguin or a seal (1-8 players, split screen or linked Bits)
---   Left / right: steer (in a half pipe: pump from wall to wall). Down: tuck (faster, but you steer less). Up: brake.
+--   Left / right: steer (in a half pipe: pump from wall to wall). Up: tuck (faster, but you steer less). Down: brake.
 --   A: jump. Press it right at the lip of a ramp or the top of a hill for a PERFECT POP / APEX POP (more height, points).
---   Hold down as you land on a steep slope and you keep the push downhill: a SLOPE LANDING boost.
+--   Hold up (tucked) as you land on a steep slope and you keep the push downhill: a SLOPE LANDING boost.
 --   B: trick, in the air. Hold B to keep turning, let go and the trick finishes its turn. Land only once it's done!
 --      B alone or with left / right: Twirl (a spin). B + up: Flipper (a front flip). B + down: Backflop.
 --   X: use what you got from a crate: Snowballs (3 throws), Fish (a burst of speed), Magnet (pulls in rings).
@@ -130,9 +130,9 @@ function _init()
     players = { 1, 8 },
     goal = "Win the Snowbelly Cup: the most points after three slopes in a row.",
     help = {
-      "Left / right: steer. Down: tuck (faster, steers less). Up: brake.",
+      "Left / right: steer. Up: tuck (faster, steers less). Down: brake.",
       "A: jump. Right at the lip of a ramp it's a PERFECT POP, right at the top of a hill an APEX POP.",
-      "Hold down as you land on a steep slope for a SLOPE LANDING speed boost.",
+      "Hold up as you land on a steep slope for a SLOPE LANDING speed boost.",
       "B in the air: trick. Hold to keep turning, let go and it finishes the turn. Land only once it's done!",
       "B: Twirl. B + up: Flipper. B + down: Backflop. Mix them in one jump for more.",
       "Fly through rings and between flags. Crates give Snowballs, Fish, Magnet or a Guard. X uses them.",
@@ -408,7 +408,7 @@ function human_input(r)
   local P, E = pad[n], edge[n]
   local d = nil
   if P.up then d = "u" elseif P.down then d = "d" elseif P.left then d = "l" elseif P.right then d = "r" end
-  return { steer = (P.right and 1 or 0) - (P.left and 1 or 0), tuck = P.down and not P.b, brake = P.up and not P.b,
+  return { steer = (P.right and 1 or 0) - (P.left and 1 or 0), tuck = P.up and not P.b, brake = P.down and not P.b,
            jump = E.a, trick = P.b, trick_new = E.b, dir = d, use = E.x }
 end
 
@@ -534,7 +534,7 @@ function land(r, I)
   end
   if was_air > 20 and r.pn > 0 then sfx("C3", 3, 0.3, 4) end
   r.combo = {}
-  -- holding down (tucked) as you land on a steep slope keeps the fall going downhill
+  -- holding up (tucked) as you land on a steep slope keeps the fall going downhill
   local sl = ground(r.z + 1, r.x) - ground(r.z, r.x)
   if I and I.tuck and was_air > 15 and sl < -0.2 and r.tumble == 0 then
     local add = math.min(0.12, 0.03 + (-sl - 0.2) * 0.35 + was_air * 0.0008)

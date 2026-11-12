@@ -157,12 +157,12 @@ const runtime = require('../studio/runtime.js');
   // a perfect pop at the lip of a ramp
   expect('perfect pop', { setup: 'start_run(1) ' + T + 'local lip for s = 1, N do if RMP[s] == 99 then lip = s break end end r = riders[1] r.z, r.x, r.v = (lip - 1) * SL - 1.2, 0, 0.4 r.h = ground(r.z, 0)',
     input: f => [f === 6 ? bit('a') : 0], check: 'riders[1].air, riders[1].pts', at: 8 }, 'true 50');
-  // holding down tucks: faster, but you steer less
+  // holding up tucks: faster, but you steer less
   const tk = (chk, input, at) => +scenario('tuck', { setup: 'start_run(1) ' + T + 'r = riders[1] r.z, r.x, r.v = 200, 0, 0.35 r.h = ground(200, 0)', check: chk, at, input })[0];
-  const vt = tk('riders[1].v', f => [f > 5 ? bit('down') : 0], 200), vn = tk('riders[1].v', () => [0], 200);
+  const vt = tk('riders[1].v', f => [f > 5 ? bit('up') : 0], 200), vn = tk('riders[1].v', () => [0], 200);
   if (!(vt > vn * 1.12)) fail(`tucking should be clearly faster: tucked ${vt} upright ${vn}`);
   if (process.env.TIMING) console.log(`tuck speed ${vt.toFixed(3)} vs upright ${vn.toFixed(3)}`);
-  const xt = tk('riders[1].x', f => [f > 5 ? bit('down', 'right') : 0], 25), xn = tk('riders[1].x', f => [f > 5 ? bit('right') : 0], 25);
+  const xt = tk('riders[1].x', f => [f > 5 ? bit('up', 'right') : 0], 25), xn = tk('riders[1].x', f => [f > 5 ? bit('right') : 0], 25);
   if (!(xn > xt * 1.5)) fail(`tucking should steer less: tucked ${xt} upright ${xn}`);
   // the rider turns the way you steer: right shows the right-facing turn (yaw 1), left the left one (yaw 7)
   expect('steer pose', { setup: 'start_run(1) ' + T, input: f => [f > 5 && f < 30 ? bit('right') : f >= 30 ? bit('left') : 0],
@@ -183,10 +183,10 @@ const runtime = require('../studio/runtime.js');
   // a jump right at the top of a hill is an APEX POP
   expect('apex pop', { setup: 'start_run(3) ' + T + 'local c for s = 2, N do if CREST[s] then c = s break end end r = riders[1] r.z, r.x, r.v = (c - 1) * SL - 1.2, 0, 0.4 r.h = ground(r.z, 0) r.vy = ground(r.z + 0.4, 0) - r.h',
     input: f => [f === 6 ? bit('a') : 0], check: 'riders[1].air, riders[1].pts', at: 8 }, 'true 30');
-  // holding down as you land on a steep slope gives a speed boost
+  // holding up (tucked) as you land on a steep slope gives a speed boost
   const land = held => scenario('slope landing', { setup: 'start_run(3) ' + T + 'local c for s = 2, N do if CREST[s] then c = s break end end r = riders[1] r.z, r.x, r.v = (c - 1) * SL + 1, 0, 0.3 r.h = ground(r.z, 0) + 1.5 r.air, r.vy, r.air_t = true, 0, 30',
     every: 'for _, p in ipairs(riders[1].pops) do if p.s == "SLOPE LANDING" then sl_land = true end end',
-    check: 'riders[1].v, sl_land == true', at: 150, input: f => [held && f > 5 ? bit('down') : 0] });
+    check: 'riders[1].v, sl_land == true', at: 150, input: f => [held && f > 5 ? bit('up') : 0] });
   const L1 = land(true), L0 = land(false), lh = +L1[0], lf = +L0[0];
   if (L1[1] !== 'true' || L0[1] !== 'false') fail(`only a tucked landing on a steep slope is a SLOPE LANDING: held ${L1[1]} not held ${L0[1]}`);
   if (!(lh > lf + 0.03)) fail(`landing tucked on a steep slope should be faster: held ${lh} not held ${lf}`);
