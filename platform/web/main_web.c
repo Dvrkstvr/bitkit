@@ -76,6 +76,8 @@ EMSCRIPTEN_KEEPALIVE int32_t *bkw_net(void) { return &machine.net.id; }
 /* display shader: int32 scan, vignette, curve, split, blur, grain, bright, contrast, sat, warm (see bk_machine.display) */
 EMSCRIPTEN_KEEPALIVE int32_t *bkw_display(void) { return &machine.display.scan; }
 EMSCRIPTEN_KEEPALIVE const char *bkw_error(void) { return bk_lua_error(); }
+/* the Bit's language ("en", "de", ...), from the Settings app: lang(), tr() and texts{} in every cart */
+EMSCRIPTEN_KEEPALIVE void bkw_lang(const char *code) { bk_lang_set(code); }
 
 /* capture: photos and clips go into growing buffers that JavaScript copies out (bkw_cap_buf / bkw_cap_len) */
 #include <stdlib.h>

@@ -133,7 +133,7 @@ function cost_text(cost)
 end
 function give(kind, n, why)
   S.mat[kind] = S.mat[kind] + n
-  msg((why or "") .. kind:sub(1, 1):upper() .. kind:sub(2) .. " +" .. n, 70)
+  msg(tr(why or "") .. tr(kind:sub(1, 1):upper() .. kind:sub(2)) .. " +" .. n, 70)
 end
 function copy(t)
   if type(t) ~= "table" then return t end
@@ -328,8 +328,8 @@ function problems()
   for _, it in ipairs({{"m", MOTORS[S.sel.m]}, {"c", CELLS[S.sel.c]}}) do
     local ok, _, why = fits(s, it[1], it[2])
     local n = it[2].name
-    local t = ok and nil or ({out = n .. " sticks out of the body.", tall = n .. ": too tall. Raise it on SIDE.",
-      wide = n .. ": too wide. Widen it on TOP.", front = "The motor must sit in the front half.",
+    local t = ok and nil or ({out = tr("%s sticks out of the body.", tr(n)), tall = tr("%s: too tall. Raise it on SIDE.", tr(n)),
+      wide = tr("%s: too wide. Widen it on TOP.", tr(n)), front = "The motor must sit in the front half.",
       overlap = "Motor and battery overlap. Move one."})[why]
     if t and not said[t] then said[t] = true; l[#l + 1] = t end
   end
@@ -550,7 +550,7 @@ function hangar_enter(reason)
     S.flights = S.flights + 1
     if S.satchel and not S.done then deliver() return end
     if S.coil and not S.coil_told then S.coil_told = true; cutscene("coil_home")
-    else note("Landed! " .. objective()) end
+    else note(tr("Landed! %s", tr(objective()))) end
     save_progress()
   elseif reason == "swim" then
     S.swims = S.swims + 1
@@ -713,14 +713,14 @@ function hangar_update()
       local part = list[i]
       if owned(key, i) then
         S.sel[key] = i
-        note(part.name .. " fitted.", 90); sfx("C6", 1, 0.25, 6)
+        note(tr("%s fitted.", tr(part.name)), 90); sfx("C6", 1, 0.25, 6)
       elseif part.cost == -1 then note("You'll have to find that one out there.", 150); sfx("C4", 2, 0.3, 8)
       elseif can_pay(part.cost) then
         pay(part.cost)
         S.own[key .. i] = true
         S.sel[key] = i
-        note("Built and fitted: " .. part.name .. "!", 120); sfx("C6", 1, 0.3, 10)
-      else note("You need " .. cost_text(part.cost) .. " for that.", 150); sfx("C4", 2, 0.3, 8) end
+        note(tr("Built and fitted: %s!", tr(part.name)), 120); sfx("C6", 1, 0.3, 10)
+      else note(tr("You need %s for that.", cost_text(part.cost)), 150); sfx("C4", 2, 0.3, 8) end
       save_progress()
     end
   else
@@ -820,7 +820,7 @@ function draw_blueprint(view)
   end
   clip()
   local h = L[math.min(H.sel[view], #L)]
-  if h then text((H.hold and "Moving: " or "") .. h.name, BP.x + 4, BP.y + BP.h - 10, H.hold and 27 or 29) end
+  if h then text((H.hold and tr("Moving: ") or "") .. tr(h.name), BP.x + 4, BP.y + BP.h - 10, H.hold and 27 or 29) end
 end
 
 -- bars for what the plane is like; cols = 2 lays them out in two columns
@@ -856,6 +856,7 @@ function hangar_draw()
     local x = 6 + (i - 1) * 51
     local on = H.tab == i
     rectfill(x, 16, 49, 11, on and 27 or 31)
+    t = tr(t)
     text(t, x + 25 - #t * 4, 18, on and 1 or 29)
   end
   text("L/R", 212, 18, 29)
@@ -939,7 +940,7 @@ function draw_fly()
   }
   if S.sel.g > 1 then checks[#checks + 1] = {"Cannons", guns_fit(S.shape)} end
   for i, c in ipairs(checks) do
-    text((c[2] and "+ " or "x ") .. c[1], 218, y + 6 + i * 12, c[2] and 17 or 26)
+    text((c[2] and "+ " or "x ") .. tr(c[1]), 218, y + 6 + i * 12, c[2] and 17 or 26)
   end
   if #p == 0 then
     rectfill(218, 106, 92, 16, gt % 30 < 20 and 27 or 10)
@@ -1536,6 +1537,194 @@ end
 function _draw()
   if MODE == "fly" then fly_draw() else hangar_draw() end
 end
+-- this game's words in other languages (the Bit's language, LANGUAGE in Settings; runtime/bk_lang.lua)
+texts{
+  de = {
+    ["Hummer"] = "Summer",
+    ["Small and quiet."] = "Klein und leise.",
+    ["Buzzer"] = "Brummer",
+    ["Faster. Needs a fatter nose."] = "Schneller. Braucht eine dickere Nase.",
+    ["Roarer"] = "Dröhner",
+    ["Very fast, and big."] = "Sehr schnell, und groß.",
+    ["Single Cell"] = "Einzelzelle",
+    ["Gets you to the Belltower and back."] = "Reicht bis zum Glockenturm und zurück.",
+    ["Twin Cell"] = "Zwillingszelle",
+    ["Twice the range, twice as wide."] = "Doppelte Reichweite, doppelt so breit.",
+    ["Brick Cell"] = "Ziegelzelle",
+    ["Long and tall. A bit more range."] = "Lang und hoch. Etwas mehr Reichweite.",
+    ["Tin"] = "Blech",
+    ["Sunrise"] = "Morgenrot",
+    ["Lagoon"] = "Lagune",
+    ["Moss"] = "Moos",
+    ["Cherry"] = "Kirsche",
+    ["Plum"] = "Pflaume",
+    ["Motor"] = "Motor",
+    ["Battery"] = "Akku",
+    ["Paint"] = "Farbe",
+    ["SIDE"] = "SEITE",
+    ["TOP"] = "OBEN",
+    ["PARTS"] = "TEILE",
+    ["FLY"] = "FLIEG",
+    ["Front"] = "Vorne",
+    ["Middle"] = "Mitte",
+    ["Back"] = "Hinten",
+    ["Front top"] = "Vorne oben",
+    ["Front bottom"] = "Vorne unten",
+    ["Front width"] = "Vorne Breite",
+    ["Middle top"] = "Mitte oben",
+    ["Middle bottom"] = "Mitte unten",
+    ["Middle width"] = "Mitte Breite",
+    ["Back top"] = "Hinten oben",
+    ["Back bottom"] = "Hinten unten",
+    ["Back width"] = "Hinten Breite",
+    ["Build an RC plane, find the mail satchel lost past the Drowned Belltower and fly it home to Perch."] = "Bau ein RC-Flugzeug, finde die Posttasche hinter dem Versunkenen Glockenturm und flieg sie heim nach Perch.",
+    ["Hangar: pick a corner with the D-pad, A grabs it, move it, A drops it. L / R or X: next page."] = "Hangar: Wähl eine Ecke mit dem Steuerkreuz, A packt sie, bewegen, A lässt los. L / R oder X: nächste Seite.",
+    ["Make the body big enough for your motor and battery. More wing glides, short wings turn quick."] = "Mach den Rumpf groß genug für Motor und Akku. Mehr Flügel gleitet, kurze Flügel wenden schnell.",
+    ["Flying: left / right turn, up / down climb and dive (Settings: Invert up/down). Hold A or squeeze R for the motor."] = "Fliegen: links / rechts lenken, hoch / runter steigen und sinken (Einstellungen: Hoch/runter tauschen). A halten oder R drücken für den Motor.",
+    ["Let go of the motor to glide for free. Fly low over the yellow pad at Perch to land."] = "Lass den Motor los, um gratis zu gleiten. Flieg tief über die gelbe Fläche in Perch, um zu landen.",
+    ["Back to the hangar"] = "Zurück zum Hangar",
+    ["Reset the blueprint"] = "Bauplan zurücksetzen",
+    ["Invert up/down"] = "Hoch/runter tauschen",
+    ["Explore the Shallows. Scrap: #"] = "Untiefen erkunden. Schrott: #",
+    ["Fly the satchel home to Perch!"] = "Flieg die Tasche heim nach Perch!",
+    ["Fly east, past the Drowned Belltower."] = "Nach Osten, am Glockenturm vorbei.",
+    ["Widen the body and fit the Twin Cell."] = "Rumpf breiter, Doppelzelle rein.",
+    ["Find the mail satchel out past the reef."] = "Finde die Posttasche hinterm Riff.",
+    ["The %s doesn't fit in the nose."] = "%s passt nicht in die Nase.",
+    ["The %s doesn't fit in the body."] = "%s passt nicht in den Rumpf.",
+    ["The wings are too small to lift her."] = "Die Flügel sind zu klein zum Tragen.",
+    ["Landed! %s"] = "Gelandet! %s",
+    ["You flew the lost mail home to Perch."] = "Die Post ist heil zurück in Perch.",
+    ["Nose"] = "Nase",
+    ["Nose top"] = "Nase oben",
+    ["Nose bottom"] = "Nase unten",
+    ["Nose width"] = "Nase Breite",
+    ["Tail"] = "Heck",
+    ["Tail top"] = "Heck oben",
+    ["Tail bottom"] = "Heck unten",
+    ["Tail width"] = "Heck Breite",
+    ["Wing root, front"] = "Flügelansatz, vorne",
+    ["Wing root, back"] = "Flügelansatz, hinten",
+    ["Wing tip, front"] = "Flügelspitze, vorne",
+    ["Wing tip, back"] = "Flügelspitze, hinten",
+    ["%s fitted."] = "%s eingebaut.",
+    ["You'll have to find that one out there."] = "Das musst du draußen finden.",
+    ["Bought and fitted the %s!"] = "%s gekauft und eingebaut!",
+    ["You need %d scrap for that."] = "Dafür brauchst du %d Schrott.",
+    ["Moving: "] = "Bewegen: ",
+    ["Speed"] = "Tempo",
+    ["Turning"] = "Wenden",
+    ["Glide"] = "Gleiten",
+    ["Range"] = "Weite",
+    ["PIP'S HANGAR"] = "PIPS HANGAR",
+    ["Pick a corner: D-pad. A: grab / drop."] = "Ecke: Kreuz. A: packen / loslassen",
+    ["Up / down: part. Left / right: browse. A: fit."] = "Teil: hoch/runter. Wahl: links/rechts.",
+    ["A: launch from the ramp!"] = "A: von der Rampe starten!",
+    ["She's ready to fly."] = "Sie ist startklar.",
+    ["fits"] = "passt",
+    ["big!"] = "groß!",
+    ["fitted"] = "drin",
+    ["A: fit"] = "A: einbauen",
+    ["find it"] = "finden",
+    ["# scrap"] = "# Schrott",
+    ["needs # long, # tall, # wide"] = "braucht # lang, # hoch, # breit",
+    ["PRE-FLIGHT CHECK"] = "VORFLUG-CHECK",
+    ["Motor fits"] = "Motor passt",
+    ["Battery fits"] = "Akku passt",
+    ["Wings lift"] = "Flügel tragen",
+    ["A: FLY!"] = "A: FLIEG!",
+    ["Hold A for the motor, let go to glide."] = "A halten: Motor. Loslassen: gleiten.",
+    ["Battery flat! Glide home if you can..."] = "Akku leer! Gleite heim, wenn's geht...",
+    ["The radio won't reach any higher."] = "Höher reicht der Funk nicht.",
+    ["Strong winds out here. Turn back!"] = "Starker Wind hier. Kehr um!",
+    ["Skimming the waves! Nose up."] = "Du streifst die Wellen! Nase hoch.",
+    ["Bump! Climb over the islands."] = "Rumms! Flieg über die Inseln.",
+    ["Clang! Fly over the tower, not into it."] = "Klong! Über den Turm, nicht rein.",
+    ["Tailwind!"] = "Rückenwind!",
+    ["Scrap +2"] = "Schrott +2",
+    ["A TWIN CELL! Take it home to the hangar."] = "DOPPELZELLE! Bring sie zum Hangar.",
+    ["THE MAIL SATCHEL! Fly it home to Perch."] = "DIE POSTTASCHE! Flieg sie nach Perch.",
+    ["Sploosh. Tobin will fish you out..."] = "Platsch. Tobin fischt dich raus...",
+    ["BATT"] = "AKKU",
+    ["ALT #"] = "HÖHE #",
+    ["LAUNCH!"] = "START!",
+    ["Perch. A town on stilts, on a world that is nearly all sea. Letters go by pigeon. People go by boat."] = "Perch. Eine Stadt auf Stelzen, auf einer Welt, die fast nur Meer ist. Briefe reisen per Taube. Menschen per Boot.",
+    ["And one day, everything will go by plane. My planes."] = "Und eines Tages reist alles per Flugzeug. Mit meinen Flugzeugen.",
+    ["Pip! Pepper came home last night without her mail satchel."] = "Pip! Pepper kam gestern Nacht ohne ihre Posttasche heim.",
+    ["The squall blew it off somewhere east, past the Drowned Belltower. Half the town's letters are in it."] = "Die Bö hat sie nach Osten geweht, hinter den Versunkenen Glockenturm. Die halbe Post der Stadt ist drin.",
+    ["The reef is too rough for boats this month. But a plane could fly right over it."] = "Das Riff ist diesen Monat zu rau für Boote. Aber ein Flugzeug könnte einfach drüberfliegen.",
+    ["Leave it to me! She just needs a body that fits her motor and battery."] = "Überlass das mir! Sie braucht nur einen Rumpf, in den Motor und Akku passen.",
+    ["Shape the plane on the blueprint: grab a corner with A, move it, drop it with A. Then FLY."] = "Form das Flugzeug auf dem Bauplan: Ecke mit A packen, bewegen, mit A loslassen. Dann FLIEG.",
+    ["Is that a Twin Cell? Lighthouse stock, from before the water rose!"] = "Ist das eine Doppelzelle? Leuchtturm-Ware, von bevor das Wasser stieg!",
+    ["It was on top of the Belltower. But it's twice as wide as my old battery..."] = "Sie lag oben auf dem Glockenturm. Aber sie ist doppelt so breit wie mein alter Akku...",
+    ["Then make her body wider. With that, you'll reach the reef and back."] = "Dann mach ihren Rumpf breiter. Damit schaffst du es zum Riff und zurück.",
+    ["Found her bobbing out there like a cork. Dried her off for you."] = "Hab sie da draußen treiben sehen wie einen Korken. Ich hab sie dir abgetrocknet.",
+    ["Mind your battery, Pip. Climb high, then glide: gliding is free."] = "Achte auf den Akku, Pip. Steig hoch, dann gleite: Gleiten kostet nichts.",
+    ["The satchel! And the letters are dry!"] = "Die Tasche! Und die Briefe sind trocken!",
+    ["Snagged on an old mast out on the reef. Easy... mostly."] = "Hing an einem alten Mast draußen am Riff. Ganz leicht... meistens.",
+    ["Pip, how would you like a job? Perch could use a mail plane."] = "Pip, wie wär's mit einem Job? Perch könnte ein Postflugzeug brauchen.",
+    ["Thanks for playing Tinwing! Keep flying to find the rest of the scrap."] = "Danke fürs Spielen von Tinwing! Flieg weiter, um den restlichen Schrott zu finden.",
+    ["No cannons"] = "Keine Kanonen",
+    ["Clean wings, nothing to carry."] = "Freie Flügel, nichts zu tragen.",
+    ["Cork Popper"] = "Korkknaller",
+    ["Toy cannons for the wings. B: pop balloons!"] = "Spielzeugkanonen für die Flügel. B: Ballons knallen!",
+    ["Puff Mortar"] = "Puffmörser",
+    ["Heavy, slow, and pops anything near it."] = "Schwer, langsam, und knallt alles in der Nähe.",
+    ["Cannons"] = "Kanonen",
+    ["Make the body big enough for your motor and battery, and grab M or B to move them. The motor stays in the front."] = "Mach den Rumpf groß genug für Motor und Akku, und pack M oder B, um sie zu verschieben. Der Motor bleibt vorne.",
+    ["More wing glides, short wings turn quick. Cannons go on the wings: B fires them at balloons."] = "Mehr Flügel gleitet, kurze Flügel wenden schnell. Kanonen kommen auf die Flügel: B schießt auf Ballons.",
+    ["%s sticks out of the body."] = "%s ragt aus dem Rumpf.",
+    ["%s: too tall. Raise it on SIDE."] = "%s: zu hoch. Auf SEITE erhöhen.",
+    ["%s: too wide. Widen it on TOP."] = "%s: zu breit. Auf OBEN verbreitern.",
+    ["The motor must sit in the front half."] = "Der Motor muss vorne sitzen.",
+    ["Motor and battery overlap. Move one."] = "Motor und Akku überlappen. Schieb einen.",
+    ["Cannons must sit on the wings (TOP)."] = "Kanonen gehören auf die Flügel (OBEN).",
+    ["The motor has to stay in the front."] = "Der Motor muss vorne bleiben.",
+    ["D-pad: pick a corner or part. A: grab."] = "Kreuz: Ecke oder Teil wählen. A: packen.",
+    ["off!"] = "daneben!",
+    ["PRE-FLIGHT"] = "VORFLUG",
+    ["Wings"] = "Flügel",
+    ["B fires the cannons. Pop the balloons!"] = "B feuert die Kanonen. Knall die Ballons!",
+    ["Pop! Scrap +#"] = "Plopp! Schrott +#",
+    ["Whirr"] = "Surrer",
+    ["A little faster. A little fatter."] = "Etwas schneller. Etwas dicker.",
+    ["Zinger"] = "Flitzer",
+    ["Quick off the ramp, thirsty."] = "Schnell von der Rampe, durstig.",
+    ["Double Cell"] = "Doppelzelle",
+    ["A bit more range for a bit more width."] = "Etwas mehr Reichweite für etwas mehr Breite.",
+    ["Lighthouse stock. Reaches the Reef."] = "Leuchtturm-Ware. Reicht bis zum Riff.",
+    ["Long and tall. Good range."] = "Lang und hoch. Gute Reichweite.",
+    ["Deep Cell"] = "Tiefzelle",
+    ["Reaches the far end of the Reef."] = "Reicht bis ans Ende des Riffs.",
+    ["Storm Cell"] = "Sturmzelle",
+    ["Glows faintly. Huge range."] = "Glüht leicht. Riesige Reichweite.",
+    ["B fires: pops balloons, shoos hawks."] = "B feuert: knallt Ballons, verscheucht Falken.",
+    ["Heavy, but hard to push around."] = "Schwer, aber kaum zu schubsen.",
+    ["Balsa"] = "Balsa",
+    ["Lighter: glides and climbs better."] = "Leichter: gleitet und steigt besser.",
+    ["Silk"] = "Seide",
+    ["Featherweight. Hawks toss her about."] = "Federleicht. Falken werfen sie herum.",
+    ["Skin"] = "Bespannung",
+    ["The Shallows"] = "Die Untiefen",
+    ["The Reef"] = "Das Riff",
+    ["Thunderhead"] = "Gewitterturm",
+    ["Scrap"] = "Schrott",
+    ["Copper"] = "Kupfer",
+    ["Explore! Storms north, hawks east."] = "Erkunde! Stürme im Norden, Falken im Osten.",
+    ["Find the Twin Cell on the Belltower."] = "Finde die Zelle auf dem Glockenturm.",
+    ["Need range: Deep Cell or Storm Cell."] = "Mehr Reichweite: Tief- oder Sturmzelle.",
+    ["Find the satchel at the Reef's far end."] = "Finde die Tasche am Ende des Riffs.",
+    ["Built and fitted: %s!"] = "Gebaut und eingebaut: %s!",
+    ["You need %s for that."] = "Dafür brauchst du %s.",
+    ["free"] = "gratis",
+    ["Shoo! The hawk flaps off."] = "Husch! Der Falke flattert davon.",
+    ["Pop! "] = "Plopp! ",
+    ["A hawk! Knocked off course!"] = "Ein Falke! Vom Kurs gestoßen!",
+    ["ZAP! Lightning charged the battery!"] = "ZACK! Der Blitz lädt den Akku!",
+    ["A STORM CELL! It hums. Take it home."] = "EINE STURMZELLE! Sie summt. Bring sie heim.",
+    ["HAWK!"] = "FALKE!",
+  },
+}
 `;
 
   // ------------------------------------------------------------------ pixel art, drawn in code

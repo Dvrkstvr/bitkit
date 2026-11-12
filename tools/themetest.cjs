@@ -166,6 +166,7 @@ const runtime = require('../studio/runtime.js');
     M.HEAP32[sv] = -1; M.HEAP32[sv + 1] = 0;
     load('', app.code); frames(2);
     press('r');                       // USER
+    press('down');                    // past LANGUAGE
     press('a');                       // keyboard for YOUR NAME
     press('a'); press('right'); press('a'); press('down'); press('a'); press('start');   // "A", "B", "L"
     press('down'); press('right'); press('right');   // colour +2

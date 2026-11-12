@@ -46,6 +46,8 @@ jobs:
         run: node tools/windrowtest.cjs
       - name: Windrow neighbours
         run: node tools/windrowlinktest.cjs
+      - name: Languages (tr, texts, font)
+        run: node tools/langtest.cjs
       - name: Emulator apps (WASM)
         run: node tools/emutest.cjs
       - name: Emulators built natively, like the device firmware

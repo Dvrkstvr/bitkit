@@ -203,7 +203,7 @@ function finish_run()
   save_records()
   clear_t = 300
   clear_lines = {
-    LEVELS[run.level].name .. " clear!",
+    tr("%s clear!", tr(LEVELS[run.level].name)),
     "time " .. clock_text(run.t) .. (best and "  NEW BEST" or "  best " .. clock_text(r.time)),
     "drops " .. run.drops .. "/" .. run.total .. "  defeated " .. run.kills .. "  deaths " .. run.deaths,
   }
@@ -255,7 +255,7 @@ function levels_draw()
     local r = rec(i)
     rectfill(8, y, 148, 22, on and 2 or 1)
     if on then rect(8, y, 148, 22, 27) end
-    text(i .. " " .. (open and L.name or "???"), 14, y + 3, open and (on and 27 or 13) or 29)
+    text(i .. " " .. (open and tr(L.name) or "???"), 14, y + 3, open and (on and 27 or 13) or 29)
     local note = not open and "locked" or (r.clears > 0 and ("cleared x" .. r.clears) or "not cleared yet")
     text(note, 14, y + 12, r.clears > 0 and 17 or 29)
     if r.clears > 0 then spr(3, 144, y + 7) end
@@ -266,7 +266,7 @@ function levels_draw()
   rectfill(162, 36, 150, 158, 1) rect(162, 36, 150, 158, 13)
   if not unlocked(n) then
     text("Locked", 170, 44, 29)
-    text("Clear " .. LEVELS[n - 1].name, 170, 60, 13)
+    text(tr("Clear %s", tr(LEVELS[n - 1].name)), 170, 60, 13)
     text("to open it.", 170, 70, 13)
   else
     text(LEVELS[n].name, 170, 42, 27)
@@ -294,7 +294,7 @@ function levels_draw()
   local v = SKIP and "< ON >" or "< OFF >"
   text(v, 304 - #v * 8, 204, SKIP and 17 or 29)
   rectfill(0, 224, 320, 16, 1)
-  local help = on and "A or left/right: switch   B: back" or "A: play this level   B: back"
+  local help = tr(on and "A or left/right: switch   B: back" or "A: play this level   B: back")
   text(help, 160 - #help * 4, 228, 29)
 end
 
@@ -392,6 +392,67 @@ function bar(x, y, v)
   rect(x, y, 44, 6, 29)
   rectfill(x + 1, y + 1, v * 42 // 255, 4, 17)
 end
+-- this game's words in other languages (the Bit's language, LANGUAGE in Settings; runtime/bk_lang.lua)
+texts{
+  de = {
+    ["Hop through Sunny Meadow and Mossy Cave and reach the red flag."] = "Hüpf durch die Sonnenwiese und die Moos-Höhle und erreiche die rote Fahne.",
+    ["Levels"] = "Level",
+    ["Level select"] = "Level wählen",
+    ["Back to checkpoint"] = "Zum Kontrollpunkt",
+    ["You reached the flag with #/# water drops."] = "Du hast die Fahne mit #/# Wassertropfen erreicht.",
+    ["%s clear!"] = "%s geschafft!",
+    ["time #:#  NEW BEST"] = "Zeit #:#  NEUER REKORD",
+    ["time #:#  best #:#"] = "Zeit #:#  Rekord #:#",
+    ["drops #/#  defeated #  deaths #"] = "Tropfen #/#  besiegt #  gestorben #",
+    ["LEVELS"] = "LEVEL",
+    ["locked"] = "gesperrt",
+    ["cleared x#"] = "geschafft x#",
+    ["not cleared yet"] = "noch nicht geschafft",
+    ["Locked"] = "Gesperrt",
+    ["Clear %s"] = "Schaff %s,",
+    ["to open it."] = "um es zu öffnen.",
+    ["Best time"] = "Bestzeit",
+    ["Most drops"] = "Meiste Tropfen",
+    ["Deaths"] = "Gestorben",
+    ["Fewest deaths"] = "Wenigste Tode",
+    ["Defeated"] = "Besiegt",
+    ["Hits taken"] = "Treffer kassiert",
+    ["Cleared"] = "Geschafft",
+    ["Played"] = "Gespielt",
+    ["Skip cutscenes on replays"] = "Zwischenszenen beim Wiederholen überspringen",
+    ["< ON >"] = "< AN >",
+    ["< OFF >"] = "< AUS >",
+    ["A or left/right: switch   B: back"] = "A oder links/rechts: umschalten   B: zurück",
+    ["A: play this level   B: back"] = "A: dieses Level spielen   B: zurück",
+    ["SLOW"] = "LANGSAM",
+    ["YOU MADE IT!"] = "GESCHAFFT!",
+    ["#/# drops"] = "#/# Tropfen",
+    ["ALL DROPS! THE GARDEN BLOOMS"] = "ALLE TROPFEN! DER GARTEN BLÜHT",
+    ["Sunny Meadow"] = "Sonnenwiese",
+    ["Mossy Cave"] = "Moos-Höhle",
+    ["# Sunny Meadow"] = "# Sonnenwiese",
+    ["# Mossy Cave"] = "# Moos-Höhle",
+    ["Protect me!"] = "Beschütz mich!",
+    ["B throws pebbles!"] = "B wirft Kiesel!",
+    ["Step on the button"] = "Tritt auf den Knopf",
+    ["Almost there!"] = "Fast geschafft!",
+    ["Good morning, little sprout! Did you sleep well?"] = "Guten Morgen, kleiner Spross! Hast du gut geschlafen?",
+    ["Mm-hm! What is that red thing, far away?"] = "Mhm! Was ist das Rote da, ganz weit weg?",
+    ["Far across the meadow, a red flag waves in the wind."] = "Weit hinter der Wiese weht eine rote Fahne im Wind.",
+    ["Reach the flag and the garden will bloom. Mind the slugs!"] = "Erreiche die Fahne, dann blüht der Garten. Pass auf die Schnecken auf!",
+    ["This gate is shut tight. Step on the button to open it!"] = "Dieses Tor ist fest zu. Tritt auf den Knopf, um es zu öffnen!",
+    ["It is so dark in here..."] = "Hier ist es so dunkel...",
+    ["Follow the glowing moss. The last flag is at the far end!"] = "Folge dem leuchtenden Moos. Die letzte Fahne ist ganz am Ende!",
+    ["You made it! The whole garden is blooming. Thanks for playing Sprout Hop!"] = "Geschafft! Der ganze Garten blüht. Danke fürs Spielen von Sprout Hop!",
+    ["Sage"] = "Salbei",
+    ["Sprout"] = "Spross",
+    ["Guide"] = "Führer",
+    ["D-pad or stick: move. A: jump (hold for higher). Squeeze R to run. B: throw a pebble."] = "Steuerkreuz oder Stick: laufen. A: springen (halten für höher). R drücken zum Rennen. B: Kiesel werfen.",
+    ["Stand by a sapling until it grows into a tree: that's your checkpoint."] = "Bleib bei einem Setzling, bis er ein Baum ist: das ist dein Kontrollpunkt.",
+    ["Water drops heal you, mud and sticky seeds slow you down."] = "Wassertropfen heilen dich, Schlamm und klebrige Samen machen dich langsam.",
+    ["Levels replays any level you have reached and shows your best time, drops, deaths and more."] = "Unter Level spielst du jedes erreichte Level nochmal und siehst Bestzeit, Tropfen, Tode und mehr.",
+  },
+}
 `;
 
   // Pixel art: one char per pixel, mapped to palette indices.

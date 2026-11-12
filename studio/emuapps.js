@@ -77,10 +77,10 @@ local function poll()
         mode = "play"; hint_t = 240
         emu_palette(S.pal)
       else
-        mode = "list"; note("Could not start it: " .. tostring(emu_error()), 300)
+        mode = "list"; note(tr("Could not start it: %s", tostring(emu_error())), 300)
       end
     elseif ev == "load" then
-      note(ok and ("Loaded slot " .. S.slot) or ("Slot " .. S.slot .. " does not fit this game"))
+      note(ok and tr("Loaded slot %d", S.slot) or tr("Slot %d does not fit this game", S.slot))
       if ok then mode = "play" end
     elseif ev == "roms" then
       refresh()
@@ -105,8 +105,8 @@ end
 local function menu_items()
   local items = {
     {"RESUME"},
-    {"SAVE STATE", function() return "SLOT " .. S.slot .. ((cur and cur.states and cur.states[S.slot]) and "  (USED)" or "") end, "slot"},
-    {"LOAD STATE", function() return "SLOT " .. S.slot .. ((cur and cur.states and cur.states[S.slot]) and "" or "  (EMPTY)") end, "slot"},
+    {"SAVE STATE", function() return tr("SLOT %d", S.slot) .. tr((cur and cur.states and cur.states[S.slot]) and "  (USED)" or "") end, "slot"},
+    {"LOAD STATE", function() return tr("SLOT %d", S.slot) .. tr((cur and cur.states and cur.states[S.slot]) and "" or "  (EMPTY)") end, "slot"},
     {"SCREEN", function() return SIZES[S.scale][1] end, "scale"},
   }
   if emu_kind() == "gb" then items[#items + 1] = {"COLOURS", function() return PALS[S.pal] end, "pal"} end
@@ -129,7 +129,7 @@ local function menu_act(it)
   elseif n == "SAVE STATE" then
     if emu_save_state(S.slot) then
       cur.states = cur.states or {}; cur.states[S.slot] = true
-      note("Saved in slot " .. S.slot); mode = "play"
+      note(tr("Saved in slot %d", S.slot)); mode = "play"
     else note("Could not save") end
   elseif n == "LOAD STATE" then
     if not emu_load_state(S.slot) then note("Could not load") end
@@ -149,7 +149,7 @@ function _update()
     if btnp("right") then sel = sel + 8 end
     sel = clamp(sel, 1, math.max(1, #roms))
     if pressed("a") then start_game() end
-    if pressed("y") then refresh(); note(#roms .. " games") end
+    if pressed("y") then refresh(); note(tr("%d games", #roms)) end
   elseif mode == "play" then
     if pressed(S.map.menu) then mode = "menu"; msel = 1
     else
@@ -194,10 +194,10 @@ local function draw_list()
   cls(1)
   rectfill(0, 0, 320, 14, EMU.accent)
   text(EMU.title, 6, 3, 1)
-  local sub = #roms == 1 and "1 GAME" or (#roms .. " GAMES")
+  local sub = #roms == 1 and tr("1 GAME") or tr("%d GAMES", #roms)
   text(sub, 314 - #sub * 8, 3, 1)
   if #roms == 0 then
-    local lines = {"No games here yet.", "", "In the studio: drop " .. EMU.ext .. " files on the", "Bit's screen, or press ROMs under it.", "",
+    local lines = {"No games here yet.", "", tr("In the studio: drop %s files on the", EMU.ext), "Bit's screen, or press ROMs under it.", "",
       "On a PocketBit: put them in /roms", "on the SD card.", "", "Only play games you own."}
     for i, l in ipairs(lines) do text(l, 20, 40 + i * 12, i == 1 and 13 or 29) end
   else
@@ -251,7 +251,7 @@ local function draw_menu()
     if i == msel then rectfill(44, y - 3, 232, 13, 30) end
     text(it[1], 52, y, i == msel and 13 or 29)
     if it[2] then
-      local v = it[2]()
+      local v = tr(it[2]())
       if i == msel and it[3] then v = "< " .. v .. " >" end
       text(v, 272 - #v * 8, y, i == msel and 27 or 28)
     end
@@ -279,11 +279,11 @@ end
 
 function _draw()
   if mode == "list" then draw_list()
-  elseif mode == "loading" then draw_list(); bar("Loading " .. (cur and cur.name or "") .. "...", 214, 27)
+  elseif mode == "loading" then draw_list(); bar(tr("Loading %s...", cur and cur.name or ""), 214, 27)
   elseif mode == "play" then
     draw_game()
     if hint_t > 0 and hint_t % 60 < 45 then
-      local s = string.upper(S.map.menu) .. ": MENU"
+      local s = string.upper(S.map.menu) .. tr(": MENU")
       rectfill(0, 0, #s * 8 + 8, 12, 31); text(s, 4, 2, 29)
     end
     if msg_t > 0 and msg then bar(msg, 228, 27) end
@@ -292,6 +292,65 @@ function _draw()
     if msg_t > 0 and msg then bar(msg, 228, 27) end
   elseif mode == "buttons" then draw_buttons() end
 end
+texts{
+  de = {
+    ["TURBO A"] = "TURBO A", ["TURBO B"] = "TURBO B", ["FAST FORWARD"] = "VORSPULEN", ["MENU"] = "MENÜ",
+    ["PEA GREEN"] = "ERBSENGRÜN", ["GREY"] = "GRAU", ["COLOUR"] = "FARBE", ["AMBER"] = "BERNSTEIN", ["NIGHT"] = "NACHT",
+    ["TV"] = "TV", ["CROPPED"] = "BESCHNITTEN", ["FULL"] = "VOLL", ["FIT"] = "PASSEND",
+    ["This Bit cannot load games"] = "Dieses Bit kann keine Spiele laden", ["Could not start it: %s"] = "Start ging nicht: %s",
+    ["Loaded slot %d"] = "Platz %d geladen", ["Slot %d does not fit this game"] = "Platz %d passt nicht zu diesem Spiel",
+    ["RESUME"] = "WEITER", ["SAVE STATE"] = "STAND SPEICHERN", ["SLOT %d"] = "PLATZ %d", ["  (USED)"] = "  (BELEGT)",
+    ["LOAD STATE"] = "STAND LADEN", ["  (EMPTY)"] = "  (LEER)", ["SCREEN"] = "BILD", ["COLOURS"] = "FARBEN", ["BUTTONS"] = "TASTEN",
+    ["RESET GAME"] = "SPIEL NEU STARTEN", ["QUIT GAME"] = "SPIEL BEENDEN", ["Saved in slot %d"] = "Auf Platz %d gespeichert",
+    ["Could not save"] = "Speichern ging nicht", ["Could not load"] = "Laden ging nicht", ["%d games"] = "%d Spiele",
+    ["Buttons back to normal"] = "Tasten wieder normal", ["1 GAME"] = "1 SPIEL", ["%d GAMES"] = "%d SPIELE",
+    ["No games here yet."] = "Noch keine Spiele hier.", ["In the studio: drop %s files on the"] = "Im Studio: zieh %s-Dateien auf den",
+    ["Bit's screen, or press ROMs under it."] = "Bildschirm des Bits oder drück ROMs.",
+    ["On a PocketBit: put them in /roms"] = "Auf einem PocketBit: leg sie in /roms", ["on the SD card."] = "auf der SD-Karte.",
+    ["Only play games you own."] = "Spiel nur Spiele, die dir gehören.", ["STATE "] = "STAND ", ["SAVE"] = "SPEICHER",
+    ["A PLAY   Y REFRESH   START+SELECT HOME"] = "A SPIELEN  Y NEU LADEN  START+SELECT", ["PRESS A BUTTON"] = "DRÜCK EINE TASTE",
+    ["BACK TO NORMAL"] = "WIEDER NORMAL", ["The D-pad is always the D-pad."] = "Das Steuerkreuz bleibt das Steuerkreuz.",
+    ["A CHANGE   B BACK"] = "A ÄNDERN   B ZURÜCK", ["Loading %s..."] = "Lade %s...", [": MENU"] = ": MENÜ",
+  },
+  fr = {
+    ["FAST FORWARD"] = "AVANCE RAPIDE", ["MENU"] = "MENU",
+    ["PEA GREEN"] = "VERT POIS", ["GREY"] = "GRIS", ["COLOUR"] = "COULEUR", ["AMBER"] = "AMBRE", ["NIGHT"] = "NUIT",
+    ["TV"] = "TÉLÉ", ["CROPPED"] = "RECADRÉ", ["FULL"] = "PLEIN", ["FIT"] = "AJUSTÉ",
+    ["This Bit cannot load games"] = "Ce Bit ne peut pas charger de jeux", ["Could not start it: %s"] = "Démarrage impossible : %s",
+    ["Loaded slot %d"] = "Emplacement %d chargé", ["Slot %d does not fit this game"] = "L'emplacement %d ne va pas à ce jeu",
+    ["RESUME"] = "REPRENDRE", ["SAVE STATE"] = "SAUVER L'ÉTAT", ["SLOT %d"] = "EMPL. %d", ["  (USED)"] = "  (PRIS)",
+    ["LOAD STATE"] = "CHARGER L'ÉTAT", ["  (EMPTY)"] = "  (VIDE)", ["SCREEN"] = "ÉCRAN", ["COLOURS"] = "COULEURS", ["BUTTONS"] = "BOUTONS",
+    ["RESET GAME"] = "RELANCER LE JEU", ["QUIT GAME"] = "QUITTER LE JEU", ["Saved in slot %d"] = "Sauvé dans l'emplacement %d",
+    ["Could not save"] = "Sauvegarde impossible", ["Could not load"] = "Chargement impossible", ["%d games"] = "%d jeux",
+    ["Buttons back to normal"] = "Boutons par défaut", ["1 GAME"] = "1 JEU", ["%d GAMES"] = "%d JEUX",
+    ["No games here yet."] = "Pas encore de jeux ici.", ["In the studio: drop %s files on the"] = "Dans le studio : dépose des %s sur",
+    ["Bit's screen, or press ROMs under it."] = "l'écran du Bit, ou appuie sur ROMs.",
+    ["On a PocketBit: put them in /roms"] = "Sur un PocketBit : mets-les dans /roms", ["on the SD card."] = "de la carte SD.",
+    ["Only play games you own."] = "Ne joue qu'à des jeux que tu possèdes.", ["STATE "] = "ÉTAT ", ["SAVE"] = "SAUV",
+    ["A PLAY   Y REFRESH   START+SELECT HOME"] = "A JOUER  Y ACTUALISER  START+SELECT", ["PRESS A BUTTON"] = "APPUIE SUR UN BOUTON",
+    ["BACK TO NORMAL"] = "PAR DÉFAUT", ["The D-pad is always the D-pad."] = "La croix reste toujours la croix.",
+    ["A CHANGE   B BACK"] = "A CHANGER   B RETOUR", ["Loading %s..."] = "Chargement de %s...", [": MENU"] = " : MENU",
+  },
+  es = {
+    ["FAST FORWARD"] = "AVANCE RÁPIDO", ["MENU"] = "MENÚ",
+    ["PEA GREEN"] = "VERDE GUISANTE", ["GREY"] = "GRIS", ["COLOUR"] = "COLOR", ["AMBER"] = "ÁMBAR", ["NIGHT"] = "NOCHE",
+    ["TV"] = "TELE", ["CROPPED"] = "RECORTADO", ["FULL"] = "COMPLETO", ["FIT"] = "AJUSTADO",
+    ["This Bit cannot load games"] = "Este Bit no puede cargar juegos", ["Could not start it: %s"] = "No se pudo iniciar: %s",
+    ["Loaded slot %d"] = "Ranura %d cargada", ["Slot %d does not fit this game"] = "La ranura %d no es de este juego",
+    ["RESUME"] = "SEGUIR", ["SAVE STATE"] = "GUARDAR ESTADO", ["SLOT %d"] = "RANURA %d", ["  (USED)"] = "  (USADA)",
+    ["LOAD STATE"] = "CARGAR ESTADO", ["  (EMPTY)"] = "  (VACÍA)", ["SCREEN"] = "PANTALLA", ["COLOURS"] = "COLORES", ["BUTTONS"] = "BOTONES",
+    ["RESET GAME"] = "REINICIAR JUEGO", ["QUIT GAME"] = "SALIR DEL JUEGO", ["Saved in slot %d"] = "Guardado en la ranura %d",
+    ["Could not save"] = "No se pudo guardar", ["Could not load"] = "No se pudo cargar", ["%d games"] = "%d juegos",
+    ["Buttons back to normal"] = "Botones como al principio", ["1 GAME"] = "1 JUEGO", ["%d GAMES"] = "%d JUEGOS",
+    ["No games here yet."] = "Aún no hay juegos aquí.", ["In the studio: drop %s files on the"] = "En el estudio: suelta archivos %s en",
+    ["Bit's screen, or press ROMs under it."] = "la pantalla del Bit, o pulsa ROMs.",
+    ["On a PocketBit: put them in /roms"] = "En un PocketBit: ponlos en /roms", ["on the SD card."] = "de la tarjeta SD.",
+    ["Only play games you own."] = "Juega solo juegos que tengas.", ["STATE "] = "ESTADO ", ["SAVE"] = "PARTIDA",
+    ["A PLAY   Y REFRESH   START+SELECT HOME"] = "A JUGAR  Y ACTUALIZAR  START+SELECT", ["PRESS A BUTTON"] = "PULSA UN BOTÓN",
+    ["BACK TO NORMAL"] = "COMO AL PRINCIPIO", ["The D-pad is always the D-pad."] = "La cruceta siempre es la cruceta.",
+    ["A CHANGE   B BACK"] = "A CAMBIAR   B ATRÁS", ["Loading %s..."] = "Cargando %s...", [": MENU"] = ": MENÚ",
+  },
+}
 `;
 
   const PAL = { '.': 0, k: 1, w: 13, y: 27, o: 10, b: 21, l: 22, g: 17, G: 16, p: 4, P: 3, d: 31, r: 26, c: 12, s: 29, S: 28, n: 30 };

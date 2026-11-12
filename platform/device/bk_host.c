@@ -211,6 +211,19 @@ static void take_save(void) {
   if (!strcmp(cur->save_key, "Bit theme")) read_theme(BK->save.data, (size_t)BK->save.len);
 }
 
+/* the host's own few words (error screen, linked Bits' banner) in the Bit's language; UTF-8, the font reads it */
+static const char *host_tr(const char *en) {
+  static const char *W[][4] = {   /* en, de, fr, es */
+    {"THE GAME STOPPED", "DAS SPIEL HAT ANGEHALTEN", "LE JEU S'EST ARRÊTÉ", "EL JUEGO SE DETUVO"},
+    {"A: back to the home screen", "A: zurück zum Startbildschirm", "A : retour à l'accueil", "A: volver al inicio"},
+    {"WAITING FOR BIT %d   START+SELECT LEAVES", "WARTE AUF BIT %d   START+SELECT: RAUS", "ON ATTEND LE BIT %d   START+SELECT: QUITTER", "ESPERANDO AL BIT %d   START+SELECT: SALIR"},
+  };
+  const char *l = bk_lang_get();
+  int k = !strcmp(l, "de") ? 1 : !strcmp(l, "fr") ? 2 : !strcmp(l, "es") ? 3 : 0;
+  for (size_t i = 0; i < sizeof(W) / sizeof(W[0]); i++) if (!strcmp(W[i][0], en)) return W[i][k];
+  return en;
+}
+
 /* ------------------------------------------------------------ the Bit's settings ("Bit settings") and theme ("Bit theme") */
 static void str_field(lua_State *l, const char *k, char *out, size_t n) {
   if (lua_getfield(l, -1, k) == LUA_TSTRING) snprintf(out, n, "%s", lua_tostring(l, -1));
@@ -229,11 +242,13 @@ static int lua_table_of(lua_State *l, const char *data, size_t len) {
 static void read_settings(const char *data, size_t len) {
   bk_bit_settings n = bs;
   snprintf(n.look, sizeof(n.look), "theme"); n.strength = n.bright = n.volume = 10; n.color = 27; n.name[0] = n.bit[0] = 0;
+  snprintf(n.lang, sizeof(n.lang), "en");
   lua_State *l = luaL_newstate();
   if (l && data && lua_table_of(l, data, len)) {
     str_field(l, "look", n.look, sizeof(n.look));
     str_field(l, "name", n.name, sizeof(n.name));
     str_field(l, "bit", n.bit, sizeof(n.bit));
+    str_field(l, "lang", n.lang, sizeof(n.lang));
     const char *k[4] = { "strength", "bright", "volume", "color" };
     int *v[4] = { &n.strength, &n.bright, &n.volume, &n.color };
     for (int i = 0; i < 4; i++) {
@@ -244,6 +259,7 @@ static void read_settings(const char *data, size_t len) {
   }
   if (l) lua_close(l);
   bs = n;
+  bk_lang_set(bs.lang);          /* every cart from now on, and the one that runs (the Settings app shows it at once) */
 }
 static void read_theme(const char *data, size_t len) {
   snprintf(bs.theme_look, sizeof(bs.theme_look), "game"); snprintf(bs.theme_boot, sizeof(bs.theme_boot), "rise"); bs.boottext[0] = 0;
@@ -334,14 +350,14 @@ static void show_error(const char *msg) {
   bk_reset_draw_state();
   bk_cls(1);
   bk_rectfill(0, 0, BK_W, 18, 8);
-  bk_text("THE GAME STOPPED", 8, 5, 7, 1);
+  bk_text(host_tr("THE GAME STOPPED"), 8, 5, 7, 1);
   int y = 28, col = 0; char line[41];
   for (const char *p = errmsg; *p && y < BK_H - 24; p++) {
     if (*p == '\n' || col == 38) { line[col] = 0; bk_text(line, 8, y, 6, 1); y += 10; col = 0; if (*p == '\n') continue; }
     line[col++] = *p == '\t' ? ' ' : *p;
   }
   if (col && y < BK_H - 24) { line[col] = 0; bk_text(line, 8, y, 6, 1); }
-  bk_text("A: back to the home screen", 8, BK_H - 14, 13, 1);
+  bk_text(host_tr("A: back to the home screen"), 8, BK_H - 14, 13, 1);
   for (int c = 0; c < BK_CHANNELS; c++) BK->voice[c].len = 0;
   mode = MODE_ERROR;
 }
@@ -1025,7 +1041,7 @@ static void banner_on(void) {
   char t[64]; int miss = 0;
   for (int k = 0; k < LK.np && !miss; k++) if (LK.in[k][LK.f % LK_RING].f1 != LK.f + 1) miss = k + 1;
   const lk_peer *p = miss ? find_peer(LK.ids[miss - 1]) : NULL;
-  snprintf(t, sizeof(t), "WAITING FOR BIT %d   START+SELECT LEAVES", p ? p->num : 0);
+  snprintf(t, sizeof(t), host_tr("WAITING FOR BIT %d   START+SELECT LEAVES"), p ? p->num : 0);
   bk_machine *keep = BK;
   BK = sysm;                           /* draw the text on the error screen's machine, then copy its pixels */
   bk_reset_draw_state();

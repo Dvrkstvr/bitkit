@@ -33,6 +33,7 @@ typedef struct {
   int strength, bright, volume;  /* 0..10 */
   char name[16], bit[20];        /* the owner's name and the Bit's name (Settings app, USER page) */
   int color;                     /* the owner's colour, a palette index */
+  char lang[8];                  /* the Bit's language ("en", "de", "fr", "es"): lang(), tr() and texts{} in every cart */
   char theme_look[16], theme_boot[12], boottext[24];   /* from the "Bit theme" save (docs/THEMES.md) */
 } bk_bit_settings;
 

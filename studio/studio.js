@@ -49,6 +49,11 @@
     onLog: (msg, isErr) => { if (isErr) { log(msg, 'err'); onRuntimeError(msg); } else log(msg); }
   });
   RT._bkw_init();
+  {   // the Bit's language (Settings app) from the start, so games run from the editor speak it too
+    let l = ((navigator.languages || [navigator.language || 'en']).map(x => String(x).slice(0, 2).toLowerCase()).find(x => ['en', 'de', 'fr', 'es'].includes(x))) || 'en';
+    try { const m = /lang\s*=\s*"([a-z_-]+)"/.exec(localStorage.getItem('bitkit.save.Bit settings') || ''); if (m) l = m[1]; } catch (e) { /* the browser's */ }
+    const p = RT.stringToNewUTF8(l); RT._bkw_lang(p); RT._free(p);
+  }
   const ptr = {
     pal: RT._bkw_palette(), tiles: RT._bkw_tiles(), flags: RT._bkw_flags(), map: RT._bkw_map(),
     press: RT._malloc(16), track: RT._bkw_track() >> 2, sys: RT._bkw_sys() >> 2, save: RT._bkw_save() >> 2, press2: RT._malloc(16)
@@ -1643,10 +1648,16 @@ display()                                   -- off</pre><p class="dim">The Help 
      put in just for drawing the frame, so the game's own display() value stays as it was (and in a paused game). */
   /* The Settings app's USER page is the owner's profile: name, colour (a palette index) and the Bit's own name.
      "theme" (THEME'S) as the look means the look of the Bit's theme (studio/themes.js). */
-  const bitSet = { look: 'theme', strength: 10, bright: 10, volume: 10, name: '', color: 27, bit: '' };
+  /* lang: the Bit's language (Settings app, USER page). Until it's picked there, the browser's, when the Bit knows it. */
+  const BIT_LANGS = ['en', 'de', 'fr', 'es'];
+  const browserLang = () => { for (const l of (navigator.languages || [navigator.language || 'en'])) { const k = String(l).slice(0, 2).toLowerCase(); if (BIT_LANGS.includes(k)) return k; } return 'en'; };
+  const bitSet = { look: 'theme', strength: 10, bright: 10, volume: 10, name: '', color: 27, bit: '', lang: browserLang() };
   let bitTheme = BKThemes.current();
+  function setRuntimeLang(M) { const p = M.stringToNewUTF8(String(bitSet.lang || 'en')); M._bkw_lang(p); M._free(p); }
+  window.BKBitLang = setRuntimeLang;   // other runtimes in the studio (the My Bit preview) speak the Bit's language too
   function loadBitSettings() {
     try { const raw = localStorage.getItem('bitkit.save.Bit settings'); if (raw) Object.assign(bitSet, BKMusic.parseLua(raw)); } catch (e) { /* keep the last ones */ }
+    setRuntimeLang(RT);
     bitTheme = BKThemes.current();
     screen.style.filter = bit.on && bitSet.bright < 10 ? `brightness(${(0.35 + bitSet.bright * 0.065).toFixed(3)})` : '';
   }

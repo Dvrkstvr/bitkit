@@ -446,7 +446,7 @@ function kb_draw()
   if not KB then return end
   local C = KB_COL
   rectfill(16, 30, 288, 184, C.panel); rect(16, 30, 288, 184, C.edge)
-  text(KB.title, 28, 38, C.dim)
+  text(tr(KB.title), 28, 38, C.dim)
   rectfill(28, 52, 264, 16, C.key)
   local s = KB.s .. ((t() // 15) % 2 == 0 and "_" or "")
   text(s, 34, 56, C.text)
@@ -463,10 +463,16 @@ function kb_draw()
     local x, y = 32 + (c - 1) * 88, 180
     local on = KB.r == #KB_ROWS + 1 and KB.c == c
     rectfill(x, y, 80, 16, on and C.sel or C.key)
+    l = tr(l)
     text(l, x + 40 - #l * 4, y + 4, on and C.panel or C.text)
   end
   text("B delete  Y space  START done", 44, 202, C.dim)
 end
+texts{
+  de = {["SPACE"] = "LEERTASTE", ["DELETE"] = "LÖSCHEN", ["DONE"] = "FERTIG", ["B delete  Y space  START done"] = "B löschen  Y Leertaste  START fertig"},
+  fr = {["SPACE"] = "ESPACE", ["DELETE"] = "EFFACER", ["DONE"] = "OK", ["B delete  Y space  START done"] = "B effacer  Y espace  START ok"},
+  es = {["SPACE"] = "ESPACIO", ["DELETE"] = "BORRAR", ["DONE"] = "LISTO", ["B delete  Y space  START done"] = "B borrar  Y espacio  START listo"},
+}
 `;
 
   /* ------------------------------------------------------------------ the boot screen: plays once when the Bit is switched on */
@@ -483,8 +489,12 @@ end
 function _draw()
   local title = BOOT and BOOT.title or ""
   if title == "" then title = "POCKETBIT" end
-  theme_boot(T, f, title, BOOT and BOOT.sub)
+  local sub = BOOT and BOOT.sub
+  local who = sub and sub:match("^(.+)'S BIT$")      -- "ADA'S BIT" from the host, in the Bit's language
+  if who then sub = tr("%s'S BIT", who) end
+  theme_boot(T, f, title, sub)
 end
+texts{ de = {["%s'S BIT"] = "BIT VON %s"}, fr = {["%s'S BIT"] = "LE BIT DE %s"}, es = {["%s'S BIT"] = "EL BIT DE %s"} }
 `;
 
   /* ------------------------------------------------------------------ the Themes app (Utilities row) */
@@ -644,10 +654,10 @@ function _update()
         local m = theme_copy(saved_theme or T)
         for _, p in ipairs(THEME_PRESETS) do if p.name == m.name then m.name = "MY THEME " .. (#SAVE.mine + 1) end end
         SAVE.mine[#SAVE.mine + 1] = m
-        T = theme_copy(m); saved_theme = nil; apply(); store(); say("SAVED AS " .. m.name)
+        T = theme_copy(m); saved_theme = nil; apply(); store(); say(tr("SAVED AS %s", m.name))
         lsel = #THEME_PRESETS + #SAVE.mine
       else
-        saved_theme = nil; store(); theme_sfx(T, "open"); say("NOW USING " .. T.name)
+        saved_theme = nil; store(); theme_sfx(T, "open"); say(tr("NOW USING %s", T.name))
       end
     end
     if btnp("b") and saved_theme then T = saved_theme; saved_theme = nil; apply(); theme_sfx(T, "back") end
@@ -659,7 +669,7 @@ function _update()
       else confirm_del = 90; say("PRESS X AGAIN TO DELETE") end
     end
     if btnp("y") and it.mine then   -- keep the changes made since in this slot
-      SAVE.mine[it.mine] = theme_copy(saved_theme or T); store(); say("UPDATED " .. it.name)
+      SAVE.mine[it.mine] = theme_copy(saved_theme or T); store(); say(tr("UPDATED %s", it.name))
     end
   elseif SCR == 2 then
     if btnp("down") then esel = esel % #EDIT + 1; theme_sfx(T, "move") end
@@ -689,15 +699,18 @@ local NAMES = {bg = "BACKGROUND", wall = "WALLPAPER 1", wall2 = "WALLPAPER 2", c
 local function topbar()
   theme_bar(T, 0, 16, true)
   local c = theme_bartext(T)
-  text("THEMES", 6, 4, TC.accent)
-  local x = 70
+  local ttl = tr("THEMES")
+  text(ttl, 6, 4, TC.accent)
+  local x = math.max(70, 6 + #ttl * 8 + 12)
   for i, n in ipairs(SCREENS) do
+    n = tr(n)
     if i == SCR then rectfill(x - 3, 2, #n * 8 + 6, 12, TC.accent) text(n, x, 4, TC.bar) else text(n, x, 4, c) end
     x = x + #n * 8 + 12
   end
   text("L R", 314 - 24, 4, TC.dim)
 end
 local function hint(s)
+  s = tr(s)
   theme_bar(T, 222, 18, false)
   if msgt > 0 then text(msg, 8, 227, TC.accent) else text(s, 8, 227, theme_bartext(T)) end
 end
@@ -754,7 +767,7 @@ function _draw()
     end
     sample(212, 40)
     local cur = items[lsel]
-    text(saved_theme and "A USE IT  B BACK" or (cur.add and "A SAVE COPY" or "IN USE"), 190, 150, TC.dim)
+    text(tr(saved_theme and "A USE IT  B BACK" or (cur.add and "A SAVE COPY" or "IN USE")), 190, 150, TC.dim)
     for i, k in ipairs(THEME_KEYS) do if i <= 11 then rectfill(190 + (i - 1) * 11, 166, 9, 9, TC[k]) rect(190 + (i - 1) * 11, 166, 9, 9, TC.dim) end end
     hint(cur.mine and "A use  X delete  Y keep changes" or "UP DOWN look  A use  L R edit")
   elseif SCR == 2 then
@@ -764,7 +777,7 @@ function _draw()
       local on = i == esel
       if on then rectfill(12, y - 2, 202, 12, TC.accent) end
       text(it[1], 16, y, on and TC.card or TC.text)
-      local v = tostring(it[2]())
+      local v = tr(tostring(it[2]()))
       if #v > 10 then v = v:sub(1, 9) .. "." end
       text(v, 210 - #v * 8, y, on and TC.card or TC.dim)
     end
@@ -796,6 +809,69 @@ function _draw()
   end
   kb_draw()
 end
+
+texts{
+  de = {
+    ["THEMES"] = "DESIGNS", ["PICK"] = "WÄHLEN", ["EDIT"] = "ÄNDERN", ["COLOURS"] = "FARBEN", ["L R"] = "L R",
+    ["SAVE FULL: delete one of your themes"] = "SPEICHER VOLL: lösche ein Design", ["+ SAVE AS MY THEME"] = "+ ALS MEIN DESIGN",
+    ["NAME"] = "NAME", ["THEME NAME"] = "NAME DES DESIGNS", ["WALLPAPER"] = "HINTERGRUND", ["MOTION"] = "BEWEGUNG", ["STILL"] = "STILL",
+    ["PAINT WALLPAPER"] = "HINTERGR. MALEN", ["A EDIT"] = "A ÄNDERN", ["A START"] = "A LOS", ["LETTERS"] = "SCHRIFT",
+    ["LETTER OUTLINE"] = "SCHRIFTRAND", ["ON"] = "AN", ["OFF"] = "AUS", ["CARDS"] = "KARTEN", ["BARS"] = "LEISTEN", ["SOUNDS"] = "KLÄNGE",
+    ["BOOT ANIMATION"] = "START-ANIMATION", ["BOOT TEXT"] = "STARTTEXT", ["BIT NAME"] = "BIT-NAME",
+    ["BOOT TEXT (EMPTY = BIT NAME)"] = "STARTTEXT (LEER = NAME DES BITS)", ["PLAY BOOT"] = "START ZEIGEN", ["SCREEN LOOK"] = "BILDSTIL",
+    ["GAME'S OWN"] = "VOM SPIEL", ["WALLPAPER SAVED"] = "HINTERGRUND GESPEICHERT", ["SAVED AS %s"] = "GESPEICHERT ALS %s",
+    ["NOW USING %s"] = "JETZT AKTIV: %s", ["DELETED"] = "GELÖSCHT", ["PRESS X AGAIN TO DELETE"] = "NOCHMAL X ZUM LÖSCHEN", ["UPDATED %s"] = "AKTUALISIERT: %s",
+    ["BACKGROUND"] = "GRUND", ["WALLPAPER 1"] = "HINTERGRUND 1", ["WALLPAPER 2"] = "HINTERGRUND 2", ["CARD EDGE"] = "KARTENRAND",
+    ["CARD SHADOW"] = "KARTENSCHATTEN", ["ACCENT"] = "AKZENT", ["TEXT"] = "TEXT", ["SOFT TEXT"] = "BLASSER TEXT", ["BAR TEXT"] = "LEISTENTEXT",
+    ["PAINT 1"] = "MALFARBE 1", ["PAINT 2"] = "MALFARBE 2", ["PAINT 3"] = "MALFARBE 3", ["PAINT 4"] = "MALFARBE 4", ["PAINT 5"] = "MALFARBE 5",
+    ["PAINT THE WALLPAPER"] = "HINTERGRUND MALEN", ["A paint  Y fill  X pick  L R colour"] = "A malen  Y füllen  X nehmen  L R Farbe",
+    ["SELECT fill all  B done"] = "SELECT alles füllen  B fertig", ["PREVIEW"] = "VORSCHAU",
+    ["A USE IT  B BACK"] = "A NEHMEN  B ZURÜCK", ["A SAVE COPY"] = "A KOPIE SPEICHERN", ["IN USE"] = "AKTIV",
+    ["A use  X delete  Y keep changes"] = "A nehmen  X löschen  Y behalten", ["UP DOWN look  A use  L R edit"] = "OBEN UNTEN sehen  A nehmen  L R ändern",
+    ["A open   UP DOWN choose"] = "A öffnen   OBEN UNTEN wählen", ["LEFT RIGHT change   UP DOWN choose"] = "LINKS RECHTS ändern  OBEN UNTEN wählen",
+    ["UP DOWN R G B   LEFT RIGHT change   A done"] = "OBEN UNTEN R G B  LINKS RECHTS  A ok", ["LEFT RIGHT quick colours   A mix"] = "LINKS RECHTS Farben   A mischen",
+  },
+  fr = {
+    ["THEMES"] = "THÈMES", ["PICK"] = "CHOIX", ["EDIT"] = "MODIFIER", ["COLOURS"] = "COULEURS",
+    ["SAVE FULL: delete one of your themes"] = "MÉMOIRE PLEINE : efface un thème", ["+ SAVE AS MY THEME"] = "+ GARDER COMME MON THÈME",
+    ["NAME"] = "NOM", ["THEME NAME"] = "NOM DU THÈME", ["WALLPAPER"] = "FOND", ["MOTION"] = "MOUVEMENT", ["STILL"] = "FIXE",
+    ["PAINT WALLPAPER"] = "PEINDRE LE FOND", ["A EDIT"] = "A MODIF", ["A START"] = "A COMMENCER", ["LETTERS"] = "LETTRES",
+    ["LETTER OUTLINE"] = "CONTOUR", ["ON"] = "OUI", ["OFF"] = "NON", ["CARDS"] = "CARTES", ["BARS"] = "BARRES", ["SOUNDS"] = "SONS",
+    ["BOOT ANIMATION"] = "ANIM. DÉMARRAGE", ["BOOT TEXT"] = "TEXTE DÉMARRAGE", ["BIT NAME"] = "NOM DU BIT",
+    ["BOOT TEXT (EMPTY = BIT NAME)"] = "TEXTE (VIDE = NOM DU BIT)", ["PLAY BOOT"] = "VOIR DÉMARRAGE", ["SCREEN LOOK"] = "STYLE D'ÉCRAN",
+    ["GAME'S OWN"] = "DU JEU", ["WALLPAPER SAVED"] = "FOND ENREGISTRÉ", ["SAVED AS %s"] = "ENREGISTRÉ : %s",
+    ["NOW USING %s"] = "THÈME ACTIF : %s", ["DELETED"] = "EFFACÉ", ["PRESS X AGAIN TO DELETE"] = "X ENCORE POUR EFFACER", ["UPDATED %s"] = "MIS À JOUR : %s",
+    ["BACKGROUND"] = "ARRIÈRE-PLAN", ["WALLPAPER 1"] = "FOND 1", ["WALLPAPER 2"] = "FOND 2", ["CARD EDGE"] = "BORD CARTE",
+    ["CARD SHADOW"] = "OMBRE CARTE", ["ACCENT"] = "ACCENT", ["TEXT"] = "TEXTE", ["SOFT TEXT"] = "TEXTE DOUX", ["BAR TEXT"] = "TEXTE BARRE",
+    ["PAINT 1"] = "PEINTURE 1", ["PAINT 2"] = "PEINTURE 2", ["PAINT 3"] = "PEINTURE 3", ["PAINT 4"] = "PEINTURE 4", ["PAINT 5"] = "PEINTURE 5",
+    ["PAINT THE WALLPAPER"] = "PEINDRE LE FOND", ["A paint  Y fill  X pick  L R colour"] = "A peindre  Y remplir  X pipette  L R",
+    ["SELECT fill all  B done"] = "SELECT tout remplir  B fini", ["PREVIEW"] = "APERÇU",
+    ["A USE IT  B BACK"] = "A PRENDRE  B RETOUR", ["A SAVE COPY"] = "A COPIER", ["IN USE"] = "ACTIF",
+    ["A use  X delete  Y keep changes"] = "A prendre  X effacer  Y garder", ["UP DOWN look  A use  L R edit"] = "HAUT BAS voir  A prendre  L R modifier",
+    ["A open   UP DOWN choose"] = "A ouvrir   HAUT BAS choisir", ["LEFT RIGHT change   UP DOWN choose"] = "GAUCHE DROITE changer  HAUT BAS choix",
+    ["UP DOWN R G B   LEFT RIGHT change   A done"] = "HAUT BAS R V B  GAUCHE DROITE  A fini", ["LEFT RIGHT quick colours   A mix"] = "GAUCHE DROITE couleurs   A mélanger",
+  },
+  es = {
+    ["THEMES"] = "TEMAS", ["PICK"] = "ELEGIR", ["EDIT"] = "EDITAR", ["COLOURS"] = "COLORES",
+    ["SAVE FULL: delete one of your themes"] = "MEMORIA LLENA: borra un tema", ["+ SAVE AS MY THEME"] = "+ GUARDAR COMO MI TEMA",
+    ["NAME"] = "NOMBRE", ["THEME NAME"] = "NOMBRE DEL TEMA", ["WALLPAPER"] = "FONDO", ["MOTION"] = "MOVIMIENTO", ["STILL"] = "QUIETO",
+    ["PAINT WALLPAPER"] = "PINTAR FONDO", ["A EDIT"] = "A EDITAR", ["A START"] = "A EMPEZAR", ["LETTERS"] = "LETRAS",
+    ["LETTER OUTLINE"] = "BORDE LETRAS", ["ON"] = "SÍ", ["OFF"] = "NO", ["CARDS"] = "TARJETAS", ["BARS"] = "BARRAS", ["SOUNDS"] = "SONIDOS",
+    ["BOOT ANIMATION"] = "ANIM. INICIO", ["BOOT TEXT"] = "TEXTO INICIO", ["BIT NAME"] = "NOMBRE DEL BIT",
+    ["BOOT TEXT (EMPTY = BIT NAME)"] = "TEXTO (VACÍO = NOMBRE DEL BIT)", ["PLAY BOOT"] = "VER INICIO", ["SCREEN LOOK"] = "ESTILO",
+    ["GAME'S OWN"] = "DEL JUEGO", ["WALLPAPER SAVED"] = "FONDO GUARDADO", ["SAVED AS %s"] = "GUARDADO: %s",
+    ["NOW USING %s"] = "AHORA: %s", ["DELETED"] = "BORRADO", ["PRESS X AGAIN TO DELETE"] = "PULSA X OTRA VEZ PARA BORRAR", ["UPDATED %s"] = "ACTUALIZADO: %s",
+    ["BACKGROUND"] = "FONDO BASE", ["WALLPAPER 1"] = "FONDO 1", ["WALLPAPER 2"] = "FONDO 2", ["CARD EDGE"] = "BORDE TARJETA",
+    ["CARD SHADOW"] = "SOMBRA TARJETA", ["ACCENT"] = "ACENTO", ["TEXT"] = "TEXTO", ["SOFT TEXT"] = "TEXTO SUAVE", ["BAR TEXT"] = "TEXTO BARRA",
+    ["PAINT 1"] = "PINTURA 1", ["PAINT 2"] = "PINTURA 2", ["PAINT 3"] = "PINTURA 3", ["PAINT 4"] = "PINTURA 4", ["PAINT 5"] = "PINTURA 5",
+    ["PAINT THE WALLPAPER"] = "PINTA EL FONDO", ["A paint  Y fill  X pick  L R colour"] = "A pintar  Y rellenar  X tomar  L R",
+    ["SELECT fill all  B done"] = "SELECT rellenar todo  B listo", ["PREVIEW"] = "VISTA PREVIA",
+    ["A USE IT  B BACK"] = "A USAR  B ATRÁS", ["A SAVE COPY"] = "A GUARDAR COPIA", ["IN USE"] = "EN USO",
+    ["A use  X delete  Y keep changes"] = "A usar  X borrar  Y guardar cambios", ["UP DOWN look  A use  L R edit"] = "ARRIBA ABAJO ver  A usar  L R editar",
+    ["A open   UP DOWN choose"] = "A abrir   ARRIBA ABAJO elegir", ["LEFT RIGHT change   UP DOWN choose"] = "IZQ. DER. cambiar  ARRIBA ABAJO elegir",
+    ["UP DOWN R G B   LEFT RIGHT change   A done"] = "ARRIBA ABAJO R G B  IZQ. DER.  A listo", ["LEFT RIGHT quick colours   A mix"] = "IZQ. DER. colores rápidos   A mezclar",
+  },
+}
 `;
 
   const PALI = { '.': 0, k: 1, w: 13, y: 27, o: 10, b: 21, l: 22, g: 17, p: 4, d: 31, r: 26, c: 12, m: 5 };

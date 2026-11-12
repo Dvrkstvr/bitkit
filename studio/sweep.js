@@ -374,6 +374,7 @@ function flush()
 end
 
 function say(s, c)
+  s = tr(s)                       -- the Bit's language (texts{} at the end)
   table.insert(feed, 1, { s = s, c = c or 13, t = 240 })
   if #feed > 4 then feed[5] = nil end
 end
@@ -392,7 +393,7 @@ function got_item(p, it)
     if p.bot and TRICK[it] then use_item(p, it) else p.item = it end
   end
   if p == me then
-    say("Found " .. def.name .. ": " .. def.info, 27)
+    say(tr("Found %s: %s", tr(def.name), tr(def.info)), 27)
     sfx("E6", 4, 0.3, 6) sfx("B6", 4, 0.3, 10)
   end
 end
@@ -403,7 +404,7 @@ function hurt(p, why)
   p.stun = STUN
   if p.hearts <= 0 then
     p.hearts, p.out = 0, true
-    say(p == me and "You're out! Watch the rest of the match." or (p.name .. " is out"), p == me and 26 or 28)
+    say(p == me and "You're out! Watch the rest of the match." or tr("%s is out", p.name), p == me and 26 or 28)
   elseif p == me then say(why, 26) end
   send_state(p)
 end
@@ -488,9 +489,9 @@ function add_trick(by, it, x, y)
   tricks[#tricks + 1] = { by = by, kind = it, x = x, y = y, r = t.r, left = t.len, len = t.len }
   splats[#splats + 1] = { fx = by.x * 8 + 4, fy = by.y * 8 + 4, x = x * 8 + 4, y = y * 8 + 4, t = 20, kind = it }
   local near = math.max(math.abs(me.x - x), math.abs(me.y - y)) <= t.r + 2
-  if by == me then say(ITEMS[it].name .. " thrown!", 22)
-  elseif near then say(by.name .. " hit you with " .. ITEMS[it].name .. "!", it == 7 and 5 or 22); sfx("F3", 2, 0.4, 14, nil, 0, -80)
-  else say(by.name .. " threw " .. ITEMS[it].name, 28) end
+  if by == me then say(tr("%s thrown!", tr(ITEMS[it].name)), 22)
+  elseif near then say(tr("%s hit you with %s!", by.name, tr(ITEMS[it].name)), it == 7 and 5 or 22); sfx("F3", 2, 0.4, 14, nil, 0, -80)
+  else say(tr("%s threw %s", by.name, tr(ITEMS[it].name)), 28) end
 end
 
 -- the trick (if any) that hides cell x, y from player p: "confuse" or "paint"
@@ -506,12 +507,12 @@ function match_event(from, ev, a, b, c, d, e, f, g)
   if not p or p.owner ~= from or mine_slot(p) then return end
   if ev == EV_OPEN then
     local n = open_cell(b, c, p.k)
-    if n < 0 then boom(b, c, p); say(p.name .. " hit a mine", 28) end
+    if n < 0 then boom(b, c, p); say(tr("%s hit a mine", p.name), 28) end
   elseif ev == EV_STATE then
     local was_out = p.out
     p.x, p.y, p.score, p.hearts = b, c, d, e
     p.out, p.stun, p.shield, p.item = f % 2 == 1, (f // 2) % 2 == 1 and 30 or 0, (f // 4) % 2 == 1, f // 8
-    if p.out and not was_out then say(p.name .. " is out", 28) end
+    if p.out and not was_out then say(tr("%s is out", p.name), 28) end
     if g and g > match.mt and g < match.mt + 600 then match.mt = g end   -- clocks follow the furthest Bit
   elseif ev == EV_TRICK and TRICK[b] then
     add_trick(p, b, c, d)
@@ -702,7 +703,7 @@ function match_update()
     if m.wait <= 0 and hold_btn("a") then to_lobby() return end
     if m.wait == 0 then
       local r = rank_of(me)
-      if r == 1 and m.n > 1 then game_win("You won Sweep Storm with " .. me.score .. " points!") end
+      if r == 1 and m.n > 1 then game_win(tr("You won Sweep Storm with %d points!", me.score)) end
     end
   end
   flush()
@@ -775,7 +776,7 @@ function _draw()
   if scene == "lobby" then draw_lobby() else draw_match() end
 end
 
-function ctext(s, y, c) text(s, 160 - #s * 4, y, c) end
+function ctext(s, y, c) s = tr(s) text(s, 160 - #s * 4, y, c) end
 
 function draw_lobby()
   cls(19)
@@ -903,7 +904,7 @@ function draw_hud()
   end
   if p.shield then spr(128, 48, 4) end
   text(tostring(p.score), 62, 4, 27)
-  if p.item > 0 then spr(ITEMS[p.item].spr, 104, 4) text("X:" .. ITEMS[p.item].name, 114, 4, 13) end
+  if p.item > 0 then spr(ITEMS[p.item].spr, 104, 4) text("X:" .. tr(ITEMS[p.item].name), 114, 4, 13) end
   local left = math.max(0, MATCH_LEN - match.mt) // 60
   local tm = string.format("%d:%02d", left // 60, left % 60)
   text(tm, 210, 4, match.mt > STORM_AT and 5 or 13)
@@ -962,14 +963,81 @@ function draw_results()
     if q == me then rectfill(64, yy - 2, 192, 10, 2) end
     text(k .. ".", 70, yy, 13)
     rectfill(92, yy, 7, 7, q.col)
-    text(q.name .. (q.out and " (out)" or "") .. (q.last and " *" or ""), 104, yy, q.out and 29 or 13)
+    text(q.name .. (q.out and tr(" (out)") or "") .. (q.last and " *" or ""), 104, yy, q.out and 29 or 13)
     local s = tostring(q.score)
     text(s, 250 - #s * 8, yy, 27)
   end
   local mr = rank_of(me)
-  if mr > n then ctext("you: #" .. mr .. "  " .. me.score, y + h - 22, 13) end
+  if mr > n then ctext(tr("you: #%d  %d", mr, me.score), y + h - 22, 13) end
   if match.wait <= 0 then ctext("hold A: back to the lobby", y + h - 11, 17) end
 end
+-- this game's words in other languages (the Bit's language, LANGUAGE in Settings; runtime/bk_lang.lua)
+texts{
+  de = {
+    ["Shield"] = "Schild",
+    ["the next mine can't hurt you"] = "die nächste Mine tut dir nichts",
+    ["Scan"] = "Scan",
+    ["flags every mine next to you"] = "markiert jede Mine neben dir",
+    ["Heart"] = "Herz",
+    ["+1 heart"] = "+1 Herz",
+    ["Sonar"] = "Sonar",
+    ["flags mines in a wide circle"] = "markiert Minen in einem weiten Kreis",
+    ["Blast"] = "Sprengung",
+    ["digs every safe cell around you"] = "gräbt jedes sichere Feld um dich frei",
+    ["Confuse"] = "Verwirrung",
+    ["throw it: rivals there see wrong numbers"] = "werfen: Gegner dort sehen falsche Zahlen",
+    ["Paint"] = "Farbe",
+    ["throw it: hides the numbers there"] = "werfen: versteckt die Zahlen dort",
+    ["Dig the most ground before the storm closes in. The middle is worth more."] = "Grab am meisten Boden frei, bevor der Sturm alles schließt. Die Mitte zählt mehr.",
+    ["D-pad: walk over dug ground and aim at the next cell. A: dig. B: flag a mine."] = "Steuerkreuz: über gegrabenen Boden laufen und aufs nächste Feld zielen. A: graben. B: Mine markieren.",
+    ["Numbers tell how many mines touch that cell. A mine costs a heart and stuns you."] = "Zahlen sagen, wie viele Minen das Feld berühren. Eine Mine kostet ein Herz und betäubt dich.",
+    ["X: use your power-up. Hold Y: island map."] = "X: Power-up nutzen. Y halten: Inselkarte.",
+    ["Confuse and Paint fly at the nearest rival: for a while they see wrong numbers or none there."] = "Verwirrung und Farbe fliegen zum nächsten Gegner: eine Weile sieht er dort falsche oder gar keine Zahlen.",
+    ["Shore cells are worth 1, the middle ring 2, the core 4. Power-ups get stronger towards the middle."] = "Strandfelder zählen 1, der mittlere Ring 2, der Kern 4. Power-ups werden zur Mitte hin stärker.",
+    ["The storm shrinks the island. Standing in it costs hearts."] = "Der Sturm macht die Insel kleiner. Wer drin steht, verliert Herzen.",
+    ["Fog covers the island and you can only walk where you can see. Digging clears the fog around what you dig, and so does standing on dug ground."] = "Nebel liegt über der Insel, du läufst nur, wo du etwas siehst. Graben lichtet den Nebel um das Gegrabene, genauso das Stehen auf gegrabenem Boden.",
+    ["Up to 20 Bits nearby can join the same match. Bots fill the empty spots."] = "Bis zu 20 Bits in der Nähe können mitspielen. Bots füllen freie Plätze.",
+    ["Bot skill"] = "Bot-Können",
+    ["Fog of war"] = "Nebel des Krieges",
+    ["Bot #"] = "Bot #",
+    ["The storm comes in #s. Dig towards the middle!"] = "Der Sturm kommt in #s. Grab dich zur Mitte!",
+    ["Found %s: %s"] = "%s gefunden: %s",
+    ["You're out! Watch the rest of the match."] = "Du bist raus! Schau dir den Rest an.",
+    ["%s is out"] = "%s ist raus",
+    ["Your shield took the blast"] = "Dein Schild hat die Explosion abgefangen",
+    ["Scan: # mines flagged"] = "Scan: # Minen markiert",
+    ["Sonar: # mines flagged"] = "Sonar: # Minen markiert",
+    ["%s thrown!"] = "%s geworfen!",
+    ["%s hit you with %s!"] = "%s hat dich mit %s getroffen!",
+    ["%s threw %s"] = "%s warf %s",
+    ["%s hit a mine"] = "%s trat auf eine Mine",
+    ["Flagged: press B to take the flag off first"] = "Markiert: erst mit B die Fahne wegnehmen",
+    ["Can't dig in the storm"] = "Im Sturm kann man nicht graben",
+    ["No power-up. Dig to find one"] = "Kein Power-up. Grab, um eins zu finden",
+    ["The storm is coming in!"] = "Der Sturm zieht auf!",
+    ["Time's up!"] = "Die Zeit ist um!",
+    ["Last digger standing!"] = "Der letzte Gräber steht!",
+    ["You won Sweep Storm with %d points!"] = "Du hast Sweep Storm mit %d Punkten gewonnen!",
+    ["Welcome back!"] = "Willkommen zurück!",
+    ["minesweeper battle royale"] = "Minensuche-Battle-Royale",
+    ["Bits here: #"] = "Bits hier: #",
+    ["waiting for other Bits..."] = "warte auf andere Bits...",
+    ["No network on this Bit: you vs bots"] = "Kein Netz: du gegen Bots",
+    ["Open more studio windows to play together"] = "Mehr Studiofenster: zusammen spielen",
+    ["< Bots: # >"] = "< Bots: # >",
+    ["# diggers on the island"] = "# Gräber auf der Insel",
+    ["A: start the match"] = "A: Spiel starten",
+    ["left/right: bots  up/down: +-5"] = "links/rechts: Bots  oben/unten: +-5",
+    ["STUNNED"] = "BETÄUBT",
+    ["IN THE STORM: go to the middle!"] = "IM STURM: ab in die Mitte!",
+    ["TIME'S UP"] = "ZEIT UM",
+    ["MATCH OVER"] = "SPIEL VORBEI",
+    [" (out)"] = " (raus)",
+    ["you: #%d  %d"] = "du: #%d  %d",
+    ["A: back to the lobby"] = "A: zurück zur Lobby",
+    ["hold A: back to the lobby"] = "A halten: zur Lobby",
+  },
+}
 `;
 
   // ---- pixel art (palette indices from the default palette)
