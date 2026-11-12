@@ -156,7 +156,7 @@ const runtime = require('../studio/runtime.js');
     input: f => [bit('right') | (f === 30 ? bit('a') : 0) | (f === 90 ? bit('b') : 0), bit('left')] }, 'true true true true');
   // alone, an idle player loses the match to the crab; the win only counts for the player's side
   expect('puffball: crab wins', { players: 1, setup: 'start(1)', check: 'state, winner, score[2], GAME.state', at: 9000,
-    every: 'P[1].x = 20', shot: [300, 'puffball-match'] }, 'over 2 7 play');
+    every: 'P[1].x = 20', shot: [300, 'puffball-match'] }, 'over 2 7 over');   // (the after-match menu is up)
   // two crabs keep a rally going (the crab on the player's side is switched on for the test)
   {
     const r = scenario('puffball: crabs rally', { players: 1, setup: 'start(1) P[1].pl = 0 most = 0', every: 'most = math.max(most, hits)', check: 'most, score[1] + score[2]', at: 3000 });
@@ -166,9 +166,10 @@ const runtime = require('../studio/runtime.js');
   // changed, A starts the game with them, and New match starts over with the same setup
   expect('puffball: setup screen', { players: 2, setup: 'go_setup(1)', check: 'state, col[1], col[2], NET_TOP, opt.float, R0, BALL_G < BALL_G0, target', at: 200,
     input: f => {
-      const p1 = [30, 'right'], seq = { 30: 'right', 40: 'down', 50: 'right', 60: 'down', 70: 'left', 80: 'down', 90: 'right', 100: 'down', 110: 'left', 112: 0, 120: 'a' };
+      // the rules first (net, puffer, size, points), then everyone's colour
+      const seq = { 30: 'right', 40: 'down', 50: 'left', 60: 'down', 70: 'right', 80: 'down', 90: 'left', 100: 'down', 104: 'right', 120: 'a' };
       const k = seq[f];
-      return [k ? bit(k) : 0, f === 34 ? bit('left') : 0];
+      return [k ? bit(k) : 0, f === 108 ? bit('left') : 0];
     }, shot: [115, 'puffball-setup'] }, 'play 3 1 134 1 11 true 6');
   expect('puffball: setup 4 players', { players: 4, setup: 'go_setup(2)', check: 'state', at: 40, shot: [38, 'puffball-setup-4'] }, 'setup');
   expect('puffball: setup back', { players: 1, setup: 'go_setup(2)', check: 'state, #setup_rows()', at: 60, input: f => [f === 40 ? bit('b') : 0] }, 'pick 4');

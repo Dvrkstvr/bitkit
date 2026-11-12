@@ -210,5 +210,27 @@ require('../studio/runtime.js')({ onLog: (m, e) => { if (e) errors.push(m); else
     if (errors.length) { errors.forEach(e => fail(d.name + ' resumed: ' + e)); errors = []; }
   }
 
+  // 9. the standard flow's setup screens and after-match menu (Puffball): Start doesn't pause on the setup screen
+  //    (game{in_menu}); when a match ends, game_over() brings up Rematch / Change setup / Change mode / Quit to title,
+  //    which ignores taps and wants A held, and Change setup goes back to the game's setup screen
+  {
+    M.HEAP32[sv] = -1;
+    const PP = 'local _pd = _bk_overlay\nfunction _bk_overlay() if _pd then _pd() end print("gs", GAME.state, state) end' + IP;
+    load('Puffball', PP, 'GAME_BOOT = 3\n');
+    const ev = c => { const p = s(c); if (M._bkw_eval(p)) fail('Puffball eval: ' + errors.join(' ')); M._free(p); };
+    run(2); ev('go_setup(1)'); run(15);
+    tap('start'); run(2);
+    if (st()[0] !== 'play' || st()[1] !== 'setup') fail(`Start on the setup screen should not pause, got ${st().join(' ')}`);
+    ev('start(1) winner, score = 2, {3, 7} state, state_t = "over", 0'); run(70);
+    if (st()[0] !== 'over') fail(`a finished match should bring up the after-match menu, got ${st().join(' ')}`);
+    if (items().join('|') !== 'Rematch|Change setup|Change mode|Quit to title') fail('after-match menu: ' + items().join(', '));
+    tap('right'); tap('a'); run(2);
+    if (st()[0] !== 'over') fail('a tap of A should not choose on the after-match menu');
+    for (let f = 0; f < 46; f++) frame(bit('a'));
+    run(2);
+    if (st()[0] !== 'play' || st()[1] !== 'setup') fail(`holding A on Change setup should open the setup screen, got ${st().join(' ')}`);
+    if (errors.length) { errors.forEach(e => fail('Puffball after-match: ' + e)); errors = []; }
+  }
+
   if (!process.exitCode) console.log('ok: game shell (title, pause, settings, checkpoints, Continue, save files, goal) in every demo passed');
 });

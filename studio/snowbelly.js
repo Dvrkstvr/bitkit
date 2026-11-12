@@ -111,6 +111,7 @@ COURSES = {
 function _init()
   game{
     title = "Snowbelly",
+    in_menu = function() return state == "yard" or state == "pick" end,   -- rider and slope pick: no pause
     players = { 1, 8 },
     goal = "Win the Snowbelly Cup: the most points after all three slopes.",
     help = {
@@ -811,8 +812,10 @@ function _update()
   end
   if state == "results" then
     update_cams()
-    if state_t > 60 and hold_btn("a") then
-      if cup and cup.run < 3 then
+    local mid_cup = cup and cup.run < 3
+    -- between cup runs A (held) goes on to the next slope; after the last run the podium comes up by itself
+    if (state_t > 60 and hold_btn("a")) or (not mid_cup and state_t > 240) then
+      if mid_cup then
         cup.run = cup.run + 1
         start_run(cup.run)
       else
@@ -823,11 +826,20 @@ function _update()
     return
   end
   if state == "podium" then
-    if state_t > 90 then
-      if hold_btn("a") then
-        if cup then cup = nil end
-        state, state_t = "pick", 0
-      end
+    -- the after-match menu (game shell)
+    if state_t > 90 and GAME.state == "play" then
+      local n, was_cup = course_n, cup ~= nil
+      game_over({
+        { "Ride again", function()
+            if was_cup then cup = { run = 1, total = {} } start_run(1) else cup = nil start_run(n) end
+          end },
+        { "Change slope", function() cup = nil state, state_t = "pick", 0 end },
+        { "Change rider", function()
+            cup = nil
+            for p = 1, NP do ready[p] = false end
+            state, state_t = "yard", 0
+          end },
+      })
     end
   end
 end
@@ -1484,7 +1496,6 @@ function draw_podium()
     local s = i .. "." .. b.r.name .. " " .. b.total
     stext(s, i <= 6 and 4 or 316 - #s * 8, 36 + ((i - 4) % 3) * 10, 13)
   end
-  if state_t > 90 then rectfill(0, 229, 320, 11, 19) ctext("hold A: ride again", 231, 13) end
 end
 
 -- ---------------------------------------------------------------- the title screen: a penguin rides the first slope

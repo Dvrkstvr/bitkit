@@ -125,9 +125,10 @@ const runtime = require('../studio/runtime.js');
 
   use('Snowbelly');
   const T = 'state, state_t = "race", 0 race_t = 1 ';      // skip the countdown
-  // a solo run with nobody touching anything: the slope carries you to the finish and the results come up
-  expect('ride to the finish', { setup: 'start_run(1)', check: 'state, riders[1].fin ~= nil, riders[1].pts > 0, #riders', at: 6000,
-    shot: [400, 'snowbelly-start'] }, 'results true true 4');
+  // a solo run with nobody touching anything: the slope carries you to the finish, the results come up,
+  // then the podium with the after-match menu
+  expect('ride to the finish', { setup: 'start_run(1)', check: 'state, riders[1].fin ~= nil, riders[1].pts > 0, #riders, GAME.state', at: 6000,
+    shot: [400, 'snowbelly-start'] }, 'podium true true 4 over');
   shot('snowbelly-results');
   // the camera ride for screenshots of each slope
   for (const [n, f, nm] of [[1, 900, 'frostpine'], [2, 1100, 'gully'], [3, 900, 'aurora']])

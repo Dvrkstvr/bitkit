@@ -1156,6 +1156,7 @@ function _init()
   -- title screen, pause menu (Start) and settings: the game shell (see GAME_RULES.md)
   game{
     title = "Kart Lab",
+    in_menu = function() return mode == "menu" or mode == "setup" or mode == "garage" or mode == "loading" end,   -- no pause there
     players = {1, 8},
     title_draw = draw_title,          -- its own animated title screen (above)
     look = { title = 27, shadow = 24, panel = 1, edge = 25, hi = 25, text = 13, pick = 27, goal = 11, footer = 11, menu = "right", name_y = 10 },
@@ -1172,13 +1173,13 @@ function _init()
     pause = {
       {"Restart", function() if mode == "count" or mode == "race" then start_race() end end},
       {"Back to garage", function() mode, gt, ready = "garage", 0, {} end},
-      {"Main menu", function() mode, gt, ready = "menu", 0, {} end},
+      {"Change mode", function() mode, gt, ready = "menu", 0, {} end},
     },
     settings = {{key = "rivals", name = "Rivals", values = {"Easy", "Normal", "Hard"}, value = 2}},
   }
   sel = {track=1, body=1, eng=2, tyre=1, paint=1}
   best, wins = {}, {}
-  GMODE, menu_row, set_row, ARENA_I = "race", 1, 1, 1
+  GMODE, menu_row, set_row, ARENA_I, SET_PART = "race", 1, 1, 1, "rules"
   rules = {laps = LAPS, rivals = KARTS - 1, skill = setting and setting("rivals") or 2, pool = {}, helmets = 3, minutes = 3}
   if saved then
     local d = saved()
@@ -1305,7 +1306,15 @@ function _update()
   elseif mode == "count" or mode == "race" then race_update()
   elseif mode == "results" then
     race_update()
-    if gt > 60 and hold_btn("a") then mode, gt = "setup", 0 end
+    -- the after-match menu (game shell)
+    if gt > 60 and GAME.state == "play" then
+      game_over({
+        { GMODE == "rumble" and "Rematch" or "Race again", function() start_race() end },
+        { "Change kart", function() mode, gt, ready = "garage", 0, {} end },
+        { GMODE == "rumble" and "Change arena" or "Change track", function() mode, gt, set_row, SET_PART = "setup", 0, 1, "track" end },
+        { "Change mode", function() mode, gt, ready = "menu", 0, {} end },
+      })
+    end
   end
 end
 
@@ -1325,7 +1334,10 @@ function garage_player(p)
   if btnp("up", p) then rows[p] = (rows[p] - 2) % 5 + 1; sfx("E5", 0, 0.2, 3) end
   if btnp("down", p) then rows[p] = rows[p] % 5 + 1; sfx("E5", 0, 0.2, 3) end
   local r = rows[p]
-  if btnp("b", p) and p == 1 then mode, gt = "setup", 0; sfx("E4", 0, 0.2, 3); return end   -- back to the track and rules
+  if btnp("b", p) and p == 1 then                     -- back to the rules (a time trial has none: the modes)
+    if GMODE == "trial" then mode, gt = "menu", 0 else mode, gt, set_row, SET_PART = "setup", 0, 1, "rules" end
+    sfx("E4", 0, 0.2, 3); return
+  end
   if r <= 4 then
     local key, n = keys[r], #lists[r]
     if btnp("left", p) then s[key] = (s[key] - 2) % n + 1; sfx("A5", 0, 0.2, 3) end
@@ -1343,9 +1355,10 @@ function garage_update()
     for p = 1, NH do garage_player(p) end
   end
   for p = 2, NH do sels[p].track = sels[1].track end
-  if not garage_turn() then
+  if not garage_turn() then           -- everyone is ready: on to the track (the standard order: karts, then track)
     ready = {}
-    persist(); load_track()
+    persist()
+    mode, gt, set_row, SET_PART = "setup", 0, 1, "track"
   end
 end
 
@@ -1355,7 +1368,8 @@ function menu_update()
   if btnp("up", 1) then menu_row = (menu_row - 2) % #MODES + 1; sfx("E5", 0, 0.2, 3) end
   if btnp("down", 1) then menu_row = menu_row % #MODES + 1; sfx("E5", 0, 0.2, 3) end
   if btnp("a", 1) and gt > 10 then
-    GMODE, mode, gt, set_row = MODES[menu_row].key, "setup", 0, 1
+    GMODE, mode, gt, set_row, SET_PART = MODES[menu_row].key, "setup", 0, 1, "rules"
+    if GMODE == "trial" then mode, ready = "garage", {} end   -- a time trial has no rules to set
     sfx("C5", 4, 0.3, 10)
   end
 end
@@ -1365,17 +1379,23 @@ function setup_rows()
   local r = {}
   local function add(label, val, change, about) r[#r + 1] = {label, val, change, about} end
   local function cyc(v, lo, hi, d) return (v - lo + d) % (hi - lo + 1) + lo end
+  if SET_PART == "track" then           -- the track screen (after the garage): where to race, and how long
+    if GMODE == "rumble" then
+      add("Arena", ARENAS[ARENA_I].name, function(d) ARENA_I = cyc(ARENA_I, 1, #ARENAS, d) end)
+    else
+      local tr = TRACKS[sel.track]
+      add("Track", tr.name, function(d)
+        sel.track = cyc(sel.track, 1, #TRACKS, d)
+        rules.laps = (TRACKS[sel.track].track and TRACKS[sel.track].track.laps) or rules.laps
+      end, best[tr.name] and ("Best time " .. tstr(best[tr.name]) .. (wins[tr.name] and "  (won)" or "")) or "No time set yet.")
+      add("Laps", tostring(rules.laps), function(d) rules.laps = cyc(rules.laps, 1, 9, d) end)
+    end
+    return r
+  end
+  -- the rules screen (before the garage)
   if GMODE == "rumble" then
-    add("Arena", ARENAS[ARENA_I].name, function(d) ARENA_I = cyc(ARENA_I, 1, #ARENAS, d) end)
     add("Helmets", tostring(rules.helmets), function(d) rules.helmets = cyc(rules.helmets, 1, 5, d) end, "Hits each kart can take.")
     add("Time limit", rules.minutes > 0 and (rules.minutes .. " min") or "none", function(d) rules.minutes = cyc(rules.minutes, 0, 5, d) end)
-  else
-    local tr = TRACKS[sel.track]
-    add("Track", tr.name, function(d)
-      sel.track = cyc(sel.track, 1, #TRACKS, d)
-      rules.laps = (TRACKS[sel.track].track and TRACKS[sel.track].track.laps) or rules.laps
-    end, best[tr.name] and ("Best time " .. tstr(best[tr.name]) .. (wins[tr.name] and "  (won)" or "")) or "No time set yet.")
-    add("Laps", tostring(rules.laps), function(d) rules.laps = cyc(rules.laps, 1, 9, d) end)
   end
   if GMODE ~= "trial" then
     add("Rivals", tostring(rules.rivals), function(d) rules.rivals = cyc(rules.rivals, 0, #PAINTS - NH, d) end)
@@ -1399,11 +1419,16 @@ function setup_update()
     if btnp("left", 1) then r[3](-1); sfx("A5", 0, 0.2, 3) end
     if btnp("right", 1) then r[3](1); sfx("A5", 0, 0.2, 3) end
   end
-  if btnp("b", 1) then mode, gt = "menu", 0; sfx("E4", 0, 0.2, 3) return end
+  if btnp("b", 1) then
+    if SET_PART == "track" then mode, gt, ready = "garage", 0, {} else mode, gt = "menu", 0 end   -- one step back
+    sfx("E4", 0, 0.2, 3) return
+  end
   if btnp("a", 1) and gt > 10 and (set_row == n or not r) then
-    for p = 2, NH do sels[p].track = sel.track end
-    mode, gt, ready = "garage", 0, {}
     sfx("C5", 4, 0.3, 10)
+    if SET_PART == "track" then
+      for p = 2, NH do sels[p].track = sel.track end
+      persist(); load_track()
+    else mode, gt, ready = "garage", 0, {} end
   elseif btnp("a", 1) and gt > 10 then set_row = n end
 end
 
@@ -1892,8 +1917,8 @@ function _draw()
   if #vs == 2 then rectfill(0, 119, 320, 2, 1) elseif #vs > 2 then rectfill(0, 119, 320, 2, 1); rectfill(159, 0, 2, 240, 1) end
   if mode == "results" then
     local n = #order
-    local top = 112 - n * 6
-    local ph = n * 12 + 56
+    local top = math.max(2, 92 - n * 6)   -- (clear of the after-match menu along the bottom)
+    local ph = n * 12 + 46
     rectfill(56, top, 208, ph, 1); rect(56, top, 208, ph, 13)
     text(GMODE == "rumble" and "RUMBLE OVER" or "FINISH!", GMODE == "rumble" and 80 or 104, top + 6, 27, 2)
     for i, k in ipairs(order) do
@@ -1906,12 +1931,11 @@ function _draw()
     end
     if GMODE ~= "rumble" then
       local b = best[TRACKS[sel.track].name] or 0
-      text(new_best and "New best time!" or ("Best " .. tstr(b)), 64, top + ph - 18, new_best and 17 or 29)
+      text(new_best and "New best time!" or ("Best " .. tstr(b)), 64, top + ph - 12, new_best and 17 or 29)
     end
-    if gt > 60 then text("hold A: next", 112, top + ph - 8, 29) end
     if #humans > 1 then
       local p = humans[(ME or 0) > 0 and ME or 1]
-      if (ME or 0) > 0 and p then text("You: " .. place_str(p.place), 200, top + ph - 18, 27) end
+      if (ME or 0) > 0 and p then text("You: " .. place_str(p.place), 200, top + ph - 12, 27) end
     end
   end
 end
@@ -1975,7 +1999,7 @@ function draw_setup()
   cls(1)
   local m = MODES[menu_row]
   shadow_text(string.upper(m.name), 12, 8, 27, 2)
-  text(GMODE == "rumble" and "arena and rules" or "track and rules", 12, 26, 29)
+  text(SET_PART == "track" and (GMODE == "rumble" and "pick the arena" or "pick the track") or "rules", 12, 26, 29)
   draw_preview(228, 4, 84, 38)
   local rows_ = setup_rows()
   local top = 44
@@ -1988,8 +2012,9 @@ function draw_setup()
     local v = r[2]
     local off = v == "off"
     text((on and "< " or "") .. v .. (on and " >" or ""), 150, y, off and 30 or 13)
-    if i > (GMODE == "rumble" and 5 or 4) and GMODE ~= "trial" then   -- item rows get their icon
-      local ii = i - (GMODE == "rumble" and 5 or 4)
+    local first = GMODE == "rumble" and 4 or 2   -- the rows before the items
+    if SET_PART ~= "track" and i > first and GMODE ~= "trial" then   -- item rows get their icon
+      local ii = i - first
       if ITEMS[ii] then
         if off then pal(); for c = 0, 31 do pal(c, 30) end end
         sspr(ITEMS[ii].icon, 128, y - 3, 2, 2, 0.6)
@@ -2000,9 +2025,10 @@ function draw_setup()
   local ny = top + #rows_ * rh + 2
   local on = set_row == #rows_ + 1
   rectfill(110, ny, 100, 14, on and 25 or 2)
-  text("NEXT: KART >", 118, ny + 3, on and 27 or 13)
+  local nx = SET_PART == "track" and "RACE! >" or "NEXT: KART >"
+  text(nx, 160 - #nx * 4, ny + 3, on and 27 or 13)
   local r = rows_[set_row]
-  text(r and r[4] or "A: on to the garage. B: back.", 12, 230, 29)
+  text(r and r[4] or (SET_PART == "track" and "A: race. B: back to the garage." or "A: on to the garage. B: back."), 12, 230, 29)
   waiting_note()
 end
 

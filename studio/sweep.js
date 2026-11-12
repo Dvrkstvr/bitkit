@@ -93,6 +93,7 @@ end
 function _init()
   game{
     title = "Sweep Storm",
+    in_menu = function() return scene == "lobby" end,   -- the lobby isn't a match yet: Start doesn't pause there
     players = {1, 20},                -- net_send: every Bit plays its own copy
     title_draw = draw_title,          -- its own animated title screen (above)
     look = { title = 27, shadow = 1, panel = 1, edge = 5, hi = 3, text = 13, pick = 27, goal = 22, footer = 29 },
@@ -699,7 +700,8 @@ function match_update()
   end
   if m.over then
     m.wait = m.wait - 1
-    if m.wait <= 0 and hold_btn("a") then to_lobby() return end
+    -- the after-match menu (game shell), once the results (and any goal screen) are up
+    if m.wait < 0 and GAME.state == "play" then game_over({ { "Back to lobby", to_lobby } }) end
     if m.wait == 0 then
       local r = rank_of(me)
       if r == 1 and m.n > 1 then game_win("You won Sweep Storm with " .. me.score .. " points!") end
@@ -968,7 +970,6 @@ function draw_results()
   end
   local mr = rank_of(me)
   if mr > n then ctext("you: #" .. mr .. "  " .. me.score, y + h - 22, 13) end
-  if match.wait <= 0 then ctext("hold A: back to the lobby", y + h - 11, 17) end
 end
 `;
 

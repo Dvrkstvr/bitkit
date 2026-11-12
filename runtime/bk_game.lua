@@ -55,7 +55,14 @@
 --   hold_btn(b, n)  true once, on the frame button b (any player) has been held n frames (default 45): for
 --                   "again" / "next" on a results screen, so a button still mashed from the match can't skip it.
 --                   While it fills, the shell draws a bar at the bottom of the screen. Let go to do it again.
---   GAME.state      "title", "play", "screen", "pause", "settings", "help", "confirm" or "won"
+--   game_over(items) the match is over: the after-match menu comes up along the bottom of the screen, over the
+--                   game's own results (its _update and _draw keep running, so a podium can animate). items =
+--                   {{"Rematch", fn}, {"Change kart", fn}, ...}; the shell adds "Quit to title" (not when linked).
+--                   Left / right picks, A has to be held to choose, and nothing reacts for the first 45 frames.
+--                   The shell is back in gameplay before fn runs, so fn can open the game's own setup screens.
+--   game{in_menu = function() return state == "pick" end}   true while the game shows its own setup screens
+--                   (mode, rules, character, track select): Start doesn't pause there, it's not a match yet
+--   GAME.state      "title", "play", "screen", "pause", "settings", "help", "confirm", "won" or "over"
 --   GAME.items      the names in the menu on screen
 --
 -- Save file: the first play makes one. From then on the title screen shows Continue instead of New game,
@@ -194,9 +201,10 @@ do
     return KIT.set[key]
   end
 
-  local WON_T = 0                  -- frames since the goal screen came up
+  local WON_T = 0                  -- frames since the goal screen (or the after-match menu) came up
+  local OVER = nil                 -- the after-match menu's items, from game_over()
   local function set_state(s)
-    if s == "won" then WON_T = 0 end
+    if s == "won" or s == "over" then WON_T = 0 end
     if s == "title" and ST ~= "title" and ST ~= "settings" and ST ~= "help" and ST ~= "confirm" then TT = 0 end
     ST, GAME.state = s, s
     SEL = 1
@@ -275,7 +283,7 @@ do
     if can_resume() and not DIRTY and CFG.continue then CFG.continue(not linked() and KIT.cp or nil) end
     local back = RESUMED
     RESUMED = nil
-    if back == "screen" then DIRTY = true; set_state("screen") else play() end
+    if back == "screen" or back == "over" then DIRTY = true; set_state(back) else play() end
   end
 
   -- The host calls this when it carries on with a paused game (picked again on the Bit's home screen):
@@ -283,7 +291,7 @@ do
   -- (A race keeps running: its clock is shared with the other Bits.)
   function _bk_resumed()
     if not CFG or R or on_title() then return end
-    RESUMED = ST == "screen" and "screen" or nil
+    RESUMED = (ST == "screen" or ST == "over") and ST or nil
     START_DOWN, COMBO = false, false   -- Start+Select left the game: don't let it open the pause menu now
     set_state("title")
   end
@@ -325,6 +333,10 @@ do
       if CFG.help then add("How to play", function() set_state("help") end) end
       if R then add("Leave race", function() home() end)
       elseif not linked() then add("Quit to title", function() set_state("title") end) end
+    elseif ST == "over" then
+      for _, it in ipairs(OVER or {}) do add(it[1], function() set_state("play"); it[2]() end) end
+      if R then add("Leave race", function() home() end)
+      elseif not linked() then add("Quit to title", function() set_state("title") end) end
     elseif ST == "won" then
       add("Keep playing", function() set_state("play") end)
       if R then add("Leave race", function() home() end)
@@ -362,8 +374,17 @@ do
     if ST ~= "confirm" then build() end
     if #ITEMS == 0 then return end
     if SEL > #ITEMS then SEL = #ITEMS end
-    if any_btnp("up") then SEL = (SEL - 2) % #ITEMS + 1; raw_sfx("E5", 0, 0.15 * vol(), 3) end
-    if any_btnp("down") then SEL = SEL % #ITEMS + 1; raw_sfx("E5", 0, 0.15 * vol(), 3) end
+    if ST == "over" then             -- the after-match menu: two columns along the bottom
+      local was = SEL
+      if any_btnp("left") then SEL = (SEL - 2) % #ITEMS + 1 end
+      if any_btnp("right") then SEL = SEL % #ITEMS + 1 end
+      if any_btnp("up") and SEL > 2 then SEL = SEL - 2 end
+      if any_btnp("down") and SEL + 2 <= #ITEMS then SEL = SEL + 2 end
+      if SEL ~= was then raw_sfx("E5", 0, 0.15 * vol(), 3) end
+    else
+      if any_btnp("up") then SEL = (SEL - 2) % #ITEMS + 1; raw_sfx("E5", 0, 0.15 * vol(), 3) end
+      if any_btnp("down") then SEL = SEL % #ITEMS + 1; raw_sfx("E5", 0, 0.15 * vol(), 3) end
+    end
     if ST == "settings" then
       local r = setting_row(SEL)
       if r then
@@ -377,9 +398,9 @@ do
       end
     end
     local it = ITEMS[SEL]
-    local won = ST == "won"
+    local won = ST == "won" or ST == "over"   -- (both come straight out of play: they want a held A)
     if won and WON_T < 45 then return end   -- the goal screen just came up: buttons still mashed from play wait
-    if (won and (hold_btn("a") or any_btnp("start")) or (not won and any_btnp("a"))) and it and it[2] then
+    if (won and (hold_btn("a") or (ST == "won" and any_btnp("start"))) or (not won and any_btnp("a"))) and it and it[2] then
       raw_sfx("C5", 4, 0.25 * vol(), 6)
       it[2]()
     elseif any_btnp("b") and not won then
@@ -456,7 +477,8 @@ do
   end
 
   local function draw_menu()
-    if not CFG.title_draw then dim(ST == "title" or ST == "help")
+    if ST == "over" then
+    elseif not CFG.title_draw then dim(ST == "title" or ST == "help")
     elseif ST ~= "title" then dim(not on_title() or ST == "help") end   -- the art stays bright on the title itself
     if ST == "title" then
       local t = CFG.title or "BitKit game"
@@ -509,6 +531,29 @@ do
       for i, l in ipairs(lines) do center(l, y + 22 + (i - 1) * 10, lk("text", 13)) end
       draw_items(y + 28 + extra, 180)
       footer(ST == "won" and "hold A: choose" or "A: choose   B: back to the game")
+    elseif ST == "over" then
+      -- two columns along the bottom, so the game's own results stay readable above it
+      local n = #ITEMS
+      local rows = (n + 1) // 2
+      local top = 240 - rows * 13 - 14
+      local f = lk("panel", 1)
+      if f then rectfill(0, top, 320, 240 - top, f) end
+      local e = lk("edge", 13)
+      if e then rectfill(0, top, 320, 1, e) end
+      local TC, PC = lk("text", 13), lk("pick", 27)
+      for i, it in ipairs(ITEMS) do
+        local x = ((i - 1) % 2) * 160
+        local y = top + 4 + ((i - 1) // 2) * 13
+        local on = i == SEL
+        if on then
+          rectfill(x + 4, y - 2, 152, 12, lk("hi", 2))
+          local h = WON_T >= 45 and hold_fill("a") or 0
+          if h > 0 then rectfill(x + 4, y + 9, math.min(152, 152 * h // 45), 1, PC) end
+        end
+        text(it[1], x + 18, y, on and PC or TC)
+        if on then text(">", x + 8, y, PC) end
+      end
+      center(WON_T < 45 and "..." or "hold A: choose", 240 - 10, lk("footer", 29))
     elseif ST == "settings" then
       local h = #ITEMS * 14 + 34
       local y = 120 - h // 2
@@ -548,11 +593,14 @@ do
   k_update = function()
     count_held()
     ASKED = nil
-    if ST == "won" then WON_T = WON_T + 1 end
+    if ST == "won" or ST == "over" then WON_T = WON_T + 1 end
     race_tick()
     if R and R.cd > 0 and ST == "play" then adopt() return end   -- 3, 2, 1: the run hasn't started yet
     if ST == "screen" then           -- the game's own menu screen: no pause menu, and not gameplay yet
       if CART_UPDATE then CART_UPDATE() end
+    elseif ST == "over" then         -- the after-match menu: the game's results keep animating under it
+      if CART_UPDATE then CART_UPDATE() end
+      if ST == "over" then menu_update() end
     elseif ST == "play" then
       if WIN_PENDING and not (cutscene_playing and cutscene_playing()) then
         WIN_PENDING = false; set_state("won")
@@ -563,6 +611,7 @@ do
       -- (during a cutscene Start skips it instead)
       local down = false
       for p = 1, players() do if btn("start", p) then down = true end; if btn("select", p) then COMBO = true end end
+      if CFG.in_menu and CFG.in_menu() then down, START_DOWN, COMBO = false, false, false end   -- own setup screens: no pause
       if down and cutscene_playing and cutscene_playing() then COMBO = true end
       if down then START_DOWN = true
       elseif START_DOWN then
@@ -587,7 +636,7 @@ do
   end
   local overlay = _bk_overlay
   local function draw_hold()      -- the bar a results screen's hold_btn() fills
-    if not ASKED or ASKED[3] ~= HF then return end
+    if not ASKED or ASKED[3] ~= HF or ST == "over" then return end   -- (the after-match menu draws its own)
     local b, n = ASKED[1], ASKED[2]
     local h = hold_fill(b)
     if h <= 0 or h >= n then return end
@@ -664,6 +713,12 @@ do
     WIN_PENDING = true
   end
   function game_play() if CFG then play() end end
+  -- the match is over: the after-match menu (Rematch, Change ..., Quit to title) along the bottom of the screen
+  function game_over(items)
+    if not CFG then return end
+    OVER = items or {}
+    if ST ~= "over" then set_state("over") end
+  end
   function game_screen() if CFG then set_state("screen") end end
   function game_title() if CFG then set_state("title") end end
 

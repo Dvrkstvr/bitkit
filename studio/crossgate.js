@@ -298,10 +298,9 @@ function _update()
   if mode == "over" then
     over_t = over_t + 1
     for _, f in ipairs(F) do if not f.ghost then physics(f) end end
-    if over_t > 60 then
-      if hold_btn("a") then next_match() return end   -- held, so a shot still being mashed doesn't skip the result
-      if over_t > 900 then next_match() end
-    end
+    -- the after-match menu (game shell; A is held, so a shot still being mashed doesn't skip the result)
+    if over_t > 60 and GAME.state == "play" then game_over({ { "Next duel", next_match } }) end
+    if over_t > 900 then game_play() next_match() end   -- nobody chose: the next duel starts by itself
     return
   end
   if mode == "ready" then
@@ -832,7 +831,6 @@ function hud()
     rectfill(30, 80, 260, 66, 31) rect(30, 80, 260, 66, COL[winner][1])
     text(l1, 160 - #l1 * 8, 88, COL[winner][1], 2)
     text(l2, 160 - #l2 * 4, 110, 13)
-    if over_t > 60 then text("hold A: next duel", 92, 128, 29) end
   end
 end
 `;

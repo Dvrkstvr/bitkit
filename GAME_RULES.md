@@ -14,7 +14,7 @@ You don't have to build any of this yourself. One call to `game{}` in `_init` gi
 
 ## How a game flows
 
-Every game goes through the same screens in the same order, so a player who knows one BitKit game knows them all. Steps with a dashed border are optional: skip the ones your game has no use for, but keep the order of the rest.
+Every game goes through the same screens in the same order, so a player who knows one BitKit game knows them all. It's the order big party and racing games use too: the mode and its rules first, then everyone picks a character, then the stage, then play, and after the match a menu to go again or change something. Steps with a dashed border are optional: skip the ones your game has no use for, but keep the order of the rest.
 
 ```mermaid
 flowchart TD
@@ -25,17 +25,19 @@ flowchart TD
   HELP["How to play"]
   LOBBY["<b>4 · Lobby</b> <i>(net games only)</i><br/>who's in · A: start the match"]
   MODE["<b>5 · Mode choice</b> <i>(if the game has modes)</i><br/>Solo · Together · Versus · Team"]
-  RULES["<b>6 · Rules / setup</b> <i>(optional)</i><br/>track · points · time"]
+  RULES["<b>6 · Rules</b> <i>(optional)</i><br/>points · time · rivals · items"]
   CHAR["<b>7 · Character select</b> <i>(optional)</i><br/>each player picks · A: ready · B: back"]
-  PLAY(["<b>8 · Gameplay</b>"])
+  STAGE["<b>8 · Stage select</b> <i>(optional)</i><br/>track · arena · slope · laps"]
+  PLAY(["<b>9 · Gameplay</b>"])
   PAUSE["<b>Pause menu</b><br/>Resume · the game's own items<br/>Settings · How to play · Quit to title"]
   AWAY["<b>Left on the Bit</b><br/>Start + Select: back home,<br/>the card shows a pause badge"]
-  RES["<b>9 · Results / podium</b><br/>hold A: new match, same setup<br/>B: change mode or players"]
+  RES["<b>10 · Results / podium</b><br/>who won, by how much"]
+  AFTER["<b>11 · After-match menu</b><br/>Rematch · Change characters · Change stage<br/>Change mode · Quit to title<br/>left / right: pick · hold A: choose"]
   WON["<b>Goal complete</b><br/>short wait, then hold A or Start<br/>Keep playing · Back to title"]
 
   HOME -->|A| TITLE --> MENU
   MENU -->|New game| LOBBY
-  LOBBY --> MODE --> RULES --> CHAR -->|everyone ready| PLAY
+  LOBBY --> MODE --> RULES --> CHAR -->|everyone ready| STAGE --> PLAY
   MENU ==>|"Continue: straight in, at the checkpoint<br/>or exactly where a paused game was"| PLAY
   MENU -.- SET
   MENU -.- HELP
@@ -45,14 +47,17 @@ flowchart TD
   PLAY -->|"Start + Select"| AWAY
   AWAY -->|"later: A on the card"| TITLE
 
-  PLAY -->|match over| RES
-  RES -->|hold A| PLAY
-  RES -->|B| MODE
+  PLAY -->|match over| RES --> AFTER
+  AFTER -->|Rematch| PLAY
+  AFTER -->|Change characters| CHAR
+  AFTER -->|Change stage| STAGE
+  AFTER -->|Change mode| MODE
+  AFTER -->|Quit to title| TITLE
   PLAY -->|goal reached| WON
   WON -->|Keep playing| PLAY
 
   classDef opt stroke-dasharray: 5 4
-  class LOBBY,MODE,RULES,CHAR opt
+  class LOBBY,MODE,RULES,CHAR,STAGE opt
 ```
 
 | Step | What happens | Who does it |
@@ -61,14 +66,34 @@ flowchart TD
 | 2. Title screen | The game's own animated intro (`title_draw`), its name, its goal, and a star once it has been won. A paused game picked again comes back here too, so the intro still plays. | `game{}` |
 | 3. Main menu | **New game** the first time, **Continue** once there is a save file (never both), then your own items (`menu`, like Levels), **Settings** and **How to play**. Settings has **Delete save**, which asks first and brings back New game. | `game{}` |
 | 4. Lobby | Only for net games (10 to 20 Bits, like Sweep Storm): who's in, and A starts the match. Lockstep games don't need one: Bits link up on the home screen before the game starts. | your game |
-| 5. Mode choice | Only for games with more than one way to play: Solo, Together, Versus, Team. One list, A picks, B goes back to the title. | your game |
-| 6. Rules / setup | The match's rules: track, points to win, time limit. Keep it to one screen. | your game |
-| 7. Character select | Each player picks their look (rider, kart, boat, colour) at the same time and presses **A** when ready; **B** takes it back, or goes back a step. Play starts when everyone is ready. | your game |
-| 8. Gameplay | **Start** opens the pause menu (Resume, your `pause` items, Settings, How to play, Quit to title). **Start + Select** leaves for the home screen and keeps the game exactly as it was. | `game{}` + your game |
-| 9. Results / podium | Who won and by how much. **Hold A** starts a new match with the same setup (`hold_btn("a")`), **B** goes back to the mode choice (or the character select, if there are no modes). | your game |
+| 5. Mode choice | Only for games with more than one way to play: Solo, Together, Versus, Team. Call the screen "Pick a mode". | your game |
+| 6. Rules | The match's rules: points to win, time limit, rivals, items. Keep it to one screen. | your game |
+| 7. Character select | Each player picks their look (rider, kart, boat, colour) at the same time and presses **A** when ready; **B** takes it back, or goes back a step. | your game |
+| 8. Stage select | Where to play: the track, arena or slope (and how many laps). Player 1 picks. | your game |
+| 9. Gameplay | **Start** opens the pause menu (Resume, your `pause` items, Settings, How to play, Quit to title). **Start + Select** leaves for the home screen and keeps the game exactly as it was. | `game{}` + your game |
+| 10. Results / podium | Who won and by how much. | your game |
+| 11. After-match menu | `game_over{...}`: a row along the bottom with **Rematch** and whatever can change (**Change characters**, **Change track**, **Change mode**), then **Quit to title**. Left / right picks, **A has to be held** to choose, so buttons still mashed from the match can't skip it. | `game{}` + your game |
 | Goal complete | `game_win()` reached the goal. A short wait, then hold A or press Start: Keep playing, or Back to title. | `game{}` |
 
-Continue (thick arrow) never goes through steps 4 to 7: it goes straight back into play, at the last checkpoint, or exactly where the player left a paused game.
+Continue (thick arrow) never goes through steps 4 to 8: it goes straight back into play, at the last checkpoint, or exactly where the player left a paused game.
+
+Your own setup screens (steps 4 to 8) aren't the match yet, so Start shouldn't pause there. Tell the shell when they're up with `in_menu`:
+
+```lua
+game{
+  title = "Snowbelly",
+  in_menu = function() return state == "yard" or state == "pick" end,   -- rider pick, slope pick
+}
+
+-- and when the match is over (once, after the results have had a moment):
+if state == "podium" and state_t > 90 and GAME.state == "play" then
+  game_over({
+    { "Ride again", function() start_run(course_n) end },
+    { "Change slope", function() state = "pick" end },
+    { "Change rider", function() state = "yard" end },
+  })
+end
+```
 
 **Racing a one-player game** skips the title screen altogether: every Bit counts down together and plays its own run on a shared clock.
 
@@ -177,7 +202,7 @@ There is at least one level that a player can finish: from New game, through the
 
 When the player reaches the goal, call `game_win("what they did")`. It shows the **Goal complete** screen (after any cutscene that is playing ends), lets them keep playing or go back to the title, and puts a star on the title screen from then on. Buttons still mashed from play can't skip it: it waits a moment, then **A has to be held** (a bar fills) or **Start** pressed.
 
-**Results screens of your own** ("A: again", "next match") should do the same: use `hold_btn("a")` instead of `btnp("a")`. It is true once, when A has been held for 45 frames, the shell draws the filling bar for you, and the held A doesn't count as a press on the next screen. Say "hold A: again" on screen.
+**When a match ends**, show your results, then call `game_over({...})` for the after-match menu (see How a game flows): it has the same protection. For a screen in between, like the next run of a cup, use `hold_btn("a")` instead of `btnp("a")`. It is true once, when A has been held for 45 frames, the shell draws the filling bar for you, and the held A doesn't count as a press on the next screen. Say "hold A: next" on screen.
 
 ### 3. Quick resume
 
@@ -261,6 +286,7 @@ game{
   music = true,                                -- adds the Music level, for notes played with mus()
   title_draw = function(t) ... end,            -- your own animated title screen (optional, see above)
   look = {title = 27, panel = 1, menu = "right"},   -- your menus' colours and layout (optional)
+  in_menu = function() return state == "pick" end, -- true while your own setup screens are up: Start doesn't pause (optional)
 }
 ```
 
@@ -268,13 +294,14 @@ game{
 |---|---|
 | `checkpoint(t)` | Remember where to carry on. `t` is any table `save()` can store. `checkpoint(nil)` forgets it. |
 | `game_win(text)` | The goal is reached: the Goal complete screen, and a star on the title. |
+| `game_over(items)` | The match is over: the after-match menu along the bottom of the screen, `items = {{"Rematch", fn}, {"Change track", fn}, ...}`. The shell adds Quit to title (not when linked), waits a moment, and wants A held to choose. Your `_update` and `_draw` keep running under it, so a podium can animate. |
 | `hold_btn(b, n)` | True once, when button `b` has been held `n` frames (default 45) by any player: for results screens, so a stray press can't skip them. The shell draws a filling bar while it's held. |
 | `setting(key)` | A settings value. `"volume"` and `"music"` are 0 to 10. |
 | `mus(note, ...)` | Same as `sfx()`, but also follows the Music level. |
 | `game_play()` | Skip the menus and go straight into play (for example when a level is started from the editor). |
 | `game_screen()` | Hand the screen to your own menu, like a level select: `_update` and `_draw` run, the shell draws nothing and Start does nothing. It isn't gameplay yet, so Continue on the title still works. Leave with `game_play()` or `game_title()`. |
 | `game_title()` | Back to the title screen. |
-| `GAME.state` | `"title"`, `"play"`, `"screen"`, `"pause"`, `"settings"`, `"help"`, `"confirm"` or `"won"`. |
+| `GAME.state` | `"title"`, `"play"`, `"screen"`, `"pause"`, `"settings"`, `"help"`, `"confirm"`, `"won"` or `"over"` (the after-match menu). |
 | `GAME.items` | The names in the menu on screen, top to bottom (handy for tests). |
 
 Sprout Hop shows how the pieces fit together for a level select: **Levels** on the title (`menu`) and in the pause menu (`pause`) opens a `game_screen()` that lists the levels you have reached with your stats for each (kept with `save()`), and starting one calls `game_play()`. Continue still skips it and goes straight back to the checkpoint.
