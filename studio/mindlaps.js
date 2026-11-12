@@ -26,6 +26,7 @@ EX = {
 function _init()
   game{
     title = "Mind Laps",
+    in_menu = function() return state == "pick" or state == "practice" end,   -- Start doesn't pause there
     players = {1, 8},
     goal = "Run a Daily Jog of five brain laps and earn a gold medal (" .. GOLD .. " points).",
     help = {
@@ -420,11 +421,19 @@ function _update()
   elseif state == "lapdone" then
     if state_t > 150 or (state_t > 30 and hold_btn("a", 30)) then next_lap() end
   elseif state == "done" then
-    if state_t > 60 then
-      if hold_btn("a") then
-        if run.mode == "practice" then start_run("practice", run.laps[1])
-        else state, pick_t = "pick", 0 end
-      elseif any_edge("b") then state, pick_t = run.mode == "practice" and "practice" or "pick", 0 end
+    -- the after-match menu (game shell)
+    if state_t > 60 and GAME.state == "play" then
+      local m = run.mode
+      if m == "practice" then
+        local ex = run.laps[1]
+        game_over({ { "Again", function() start_run("practice", ex) end },
+                    { "Change exercise", function() state, pick_t = "practice", 0 end } })
+      elseif m == "daily" then
+        game_over({ { "Back to today", function() state, pick_t = "pick", 0 end } })
+      else
+        game_over({ { "Rematch", function() start_run(m) end },
+                    { "Change mode", function() state, pick_t = "pick", 0 end } })
+      end
     end
   end
 end
@@ -635,7 +644,7 @@ function _draw()
     draw_park(false)
     draw_runner(40 + (gt // 2) % 280, 210, gt, 21)
     draw_card(30, 26, 260, 156)
-    stext(SOLO and "TODAY'S JOG" or "PICK A GAME", 34, 27, 2)
+    stext(SOLO and "TODAY'S JOG" or "PICK A MODE", 34, 27, 2)
     local names = SOLO and { "DAILY JOG", "PRACTICE" } or { "RACE", "TEAM" }
     for i, m in ipairs(names) do
       local x = 48 + (i - 1) * 116
@@ -741,7 +750,6 @@ function _draw()
         end
       end
     end
-    if state_t > 60 then ctext("hold A: again    B: back", 180, 29) end
   end
 end
 
@@ -778,6 +786,8 @@ end
 -- this game's words in other languages (the Bit's language, LANGUAGE in Settings; runtime/bk_lang.lua)
 texts{
   de = {
+    ["Change exercise"] = "Übung wechseln",
+    ["Back to today"] = "Zurück zu heute",
     ["Seconds per lap"] = "Sekunden pro Runde",
     ["QUICK SUMS"] = "KOPFRECHNEN",
     ["Press the direction of the right answer."] = "Drück die Richtung der Antwort.",

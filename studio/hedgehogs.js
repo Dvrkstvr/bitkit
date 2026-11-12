@@ -27,6 +27,7 @@ RING = 2 * W + 2 * H - 4
 function _init()
   game{
     title = "Hedge Hogs",
+    in_menu = function() return state == "pick" end,   -- the mode pick: Start doesn't pause there
     players = {1, 8},
     goal = "Fence off " .. NEED .. "% of all " .. GARDENS .. " gardens together, or end a Land Grab with the most land.",
     help = {
@@ -385,10 +386,11 @@ function _update()
     return
   end
   if state == "over" or state == "clear" then
-    if state_t > 50 then
-      if hold_btn("a") then
-        if state == "clear" then start(1, lvl + 1) else start(mode, lvl) end
-      elseif press_b then state, pick_t = "pick", 0 end
+    -- the after-match menu (game shell)
+    if state_t > 50 and GAME.state == "play" then
+      local to_pick = { "Change mode", function() state, pick_t = "pick", 0 end }
+      if state == "clear" then game_over({ { "Next garden", function() start(1, lvl + 1) end }, to_pick })
+      else game_over({ { mode == 1 and "Try again" or "Rematch", function() start(mode, lvl) end }, to_pick }) end
     end
     return
   end
@@ -508,7 +510,7 @@ function _draw()
   draw_hud()
   if state == "pick" then
     rectfill(32, 76, 256, 104, 1) rect(32, 76, 256, 104, 13)
-    stext("PICK A GAME", 84, 27, 2)
+    stext("PICK A MODE", 84, 27, 2)
     for i, m in ipairs(MODES) do
       local x = 52 + (i - 1) * 112
       rectfill(x, 110, 104, 26, i == sel and 15 or 2)
@@ -525,7 +527,6 @@ function _draw()
     rectfill(40, 86, 240, 70, 1) rect(40, 86, 240, 70, 13)
     stext("GARDEN " .. lvl .. " DONE!", 96, 17, 2)
     ctext(lvl >= GARDENS and "Every garden is in bloom." or "On to the next garden.", 120, 13)
-    if state_t > 50 then ctext("hold A: next garden   B: pick a game", 136, 29) end
   elseif state == "over" then
     rectfill(40, 70, 240, 110, 1) rect(40, 70, 240, 110, 13)
     if mode == 1 then
@@ -540,7 +541,6 @@ function _draw()
         text(percent(h.team) .. "%", 192, 100 + (i - 1) * 12, 13)
       end
     end
-    if state_t > 50 then ctext(mode == 1 and "hold A: try again   B: pick a game" or "hold A: again   B: pick a game", 164, 29) end
   end
 end
 
@@ -589,6 +589,7 @@ end
 -- this game's words in other languages (the Bit's language, LANGUAGE in Settings; runtime/bk_lang.lua)
 texts{
   de = {
+    ["Next garden"] = "Nächster Garten",
     ["Fence off #% of all # gardens together, or end a Land Grab with the most land."] = "Umzäunt zusammen #% aller # Gärten, oder beende einen Landraub mit dem meisten Land.",
     ["D-pad: walk. Off your own land you keep walking."] = "Steuerkreuz: laufen. Außerhalb deines Landes läufst du immer weiter.",
     ["Leave your land to plant a hedge line. Walk back onto your land and all you fenced off is yours."] = "Verlass dein Land, um eine Hecke zu pflanzen. Läufst du zurück auf dein Land, gehört dir alles Umzäunte.",

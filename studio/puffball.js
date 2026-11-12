@@ -35,6 +35,7 @@ KEYS = { "left", "right", "up", "down", "a", "b" }
 function _init()
   game{
     title = "Puffball",
+    in_menu = function() return state == "pick" or state == "setup" end,   -- Start doesn't pause there
     players = {1, 8},
     goal = "Win a Match before the other side does, or pass the puffer " .. RALLY_GOAL .. " times in a row in a Rally.",
     help = {
@@ -73,8 +74,10 @@ end
 
 -- the setup screen's rows for the picked game (Points only in a Match)
 function setup_rows()
-  local r = { "COLORS", "NET", "PUFFER", "SIZE" }
+  -- the rules first, then everyone's colour (the standard order: rules, then characters)
+  local r = { "NET", "PUFFER", "SIZE" }
   if mode == 1 then r[#r + 1] = "POINTS" end
+  r[#r + 1] = "COLORS"
   return r
 end
 function row_value(name)
@@ -420,8 +423,11 @@ function _update()
   end
   state_t = state_t + 1
   if state == "over" then
-    if state_t > 50 then
-      if hold_btn("a") then start(mode) elseif any_edge("b") then go_setup() end
+    -- the after-match menu (game shell)
+    if state_t > 50 and GAME.state == "play" then
+      game_over({ { mode == 1 and "Rematch" or "Again", function() start(mode) end },
+                  { "Change setup", function() go_setup() end },
+                  { "Change mode", function() state, pick_t = "pick", 0 end } })
     end
     return
   end
@@ -530,7 +536,7 @@ function _draw()
   draw_court()
   if state == "pick" then
     rectfill(40, 60, 240, 104, 1) rect(40, 60, 240, 104, 13)
-    stext("PICK A GAME", 68, 27, 2)
+    stext("PICK A MODE", 68, 27, 2)
     for i, m in ipairs(MODES) do
       local x = 60 + (i - 1) * 104
       rectfill(x, 94, 96, 26, i == sel and 20 or 2)
@@ -564,7 +570,6 @@ function _draw()
       stext("DROPPED!", 80, 26, 2)
       ctext(passes_total .. " passes this run, best streak " .. best, 104, 13)
     end
-    if state_t > 50 then ctext("hold A: new match    B: setup", 128, 29) end
   end
 end
 
@@ -600,7 +605,7 @@ function draw_setup()
     end
     y = y + h + 4
   end
-  ctext(row == 1 and "left / right: your own colour" or "up/down: choose  left/right: change", 186, 29)
+  ctext(rows[row] == "COLORS" and "left / right: your own colour" or "up/down: choose  left/right: change", 186, 29)
   ctext("A: play    B: back", 200, 29)
 end
 

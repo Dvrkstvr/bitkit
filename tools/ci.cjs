@@ -187,8 +187,8 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
   }
 
   // Kart Lab menus: A on the main menu (Race), A twice on the rules screen (jump to Next, then Next),
-  // A in the garage. KGO(f) is true on the frames that press A.
-  const KGO = f => f === 10 || f === 25 || f === 40 || f === 55;
+  // A in the garage, A twice on the track screen. KGO(f) is true on the frames that press A.
+  const KGO = f => f === 10 || f === 25 || f === 40 || f === 55 || f === 70 || f === 85;
 
   // Kart Lab: start a race from the garage, an autopilot drives your kart; it should finish a lap
   {
@@ -218,18 +218,18 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
   }
 
   // Kart Lab, race end with your own input: start on the last lap, drive over the line, the autopilot
-  // takes over your kart while the rivals finish, then holding A goes back to the garage
+  // takes over your kart while the rivals finish, then holding A on the after-match menu races again
   {
     logs = [];
     const kd = window.BK_DEMOS.find(d => d.name === 'Kart Lab');
-    const fin = '\nlocal _sr = start_race\nfunction start_race() _sr() player.lap = LAPS end\nlocal _u = _update\nfunction _update() local m = mode _u() if m ~= mode then print("mode", mode) end end';
+    const fin = '\nlocal _sr = start_race\nfunction start_race() _sr() player.lap = LAPS end\nlocal _u = _update\nfunction _update() local m = mode _u() if m ~= mode then print("mode", mode) end LASTM = mode end\nlocal _d = _draw\nfunction _draw() if LASTM and LASTM ~= mode then print("mode", mode) LASTM = mode end _d() end';
     if (M._bkw_load(s('GAME_BOOT = 3 ' + kd.code + fin)) !== 0) fail('Kart Lab (finish) did not load');
     for (let f = 0; f < 1500; f++) {
       const mask = KGO(f) ? 1 << 4 : (f > 250 && f < 1000 ? 1 << 9 : 0) | (f >= 1400 && f < 1480 ? 1 << 4 : 0);
       if (M._bkw_frame(mask, 0)) { fail('Kart Lab (finish) stopped at frame ' + f); break; }
     }
     const modes = logs.filter(x => x.startsWith('mode')).map(x => x.split(/\s+/)[1]).join(',');
-    if (modes !== 'setup,garage,loading,count,race,results,setup') fail('Kart Lab race end: modes ' + modes + ' (expected setup,garage,loading,count,race,results,setup)');
+    if (modes !== 'setup,garage,setup,loading,count,race,results,count') fail('Kart Lab race end: modes ' + modes + ' (expected setup,garage,setup,loading,count,race,results,count)');
     if (errors.length) { errors.forEach(e => fail('Kart Lab finish: ' + e)); errors = []; }
   }
 
@@ -344,7 +344,7 @@ runtime({ onLog: (m, e) => { if (e) errors.push(m); else logs.push(m); } }).then
     if (!(+g('rwall') <= -3.9)) fail('Kart Lab Rumble: a kart got past the arena kerb (' + g('rwall') + ' from the edge, the wall is at -4)');
     if (g('rko') !== 'true 0') fail('Kart Lab Rumble KO: ' + g('rko'));
     const rm = logs.filter(x => x.startsWith('rmode')).map(x => x.split('\t')[1]).join(',');
-    if (rm !== 'setup,garage,loading,count,race,results') fail('Kart Lab Rumble modes: ' + rm);
+    if (rm !== 'setup,garage,setup,loading,count,race,results') fail('Kart Lab Rumble modes: ' + rm);
     if (errors.length) { errors.forEach(e => fail('Kart Lab Rumble: ' + e)); errors = []; }
   }
 

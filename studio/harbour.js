@@ -110,6 +110,7 @@ function _init()
   -- The harbour saves itself every few seconds, so Continue carries on right where you left it.
   game{
     title = "Beacon Keeper",
+    in_menu = function() return yard end,   -- the boat yard: Start doesn't pause while everyone picks
     players = {1, 4},
     title_draw = draw_title,          -- its own animated title screen (above)
     look = { title = 27, shadow = 24, panel = 1, edge = 20, hi = 20, text = 23, pick = 27, goal = 22, footer = 22, menu = "right" },

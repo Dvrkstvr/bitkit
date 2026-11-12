@@ -43,6 +43,7 @@ KITCHEN = {
 function _init()
   game{
     title = "Cauldron Crew",
+    in_menu = function() return state == "pick" end,   -- the mode pick: Start doesn't pause there
     players = {1, 8},
     goal = "Earn the shift's target in coins, or out-brew the other team's kitchen.",
     help = {
@@ -334,9 +335,11 @@ function _update()
     return
   end
   if state == "over" then
-    if state_t > 60 then
-      if hold_btn("a") then start(mode); save_point()
-      elseif any_edge("b") and NP > 1 then state, pick_t = "pick", 0 end
+    -- the after-match menu (game shell): rematch, or back to the mode pick with friends
+    if state_t > 60 and GAME.state == "play" then
+      local again = function() start(mode); save_point() end
+      if NP > 1 then game_over({ { "Rematch", again }, { "Change mode", function() state, pick_t = "pick", 0 end } })
+      else game_over({ { "Another shift", again } }) end
     end
     return
   end
@@ -494,7 +497,7 @@ function _draw()
   draw_hud()
   if state == "pick" then
     rectfill(32, 76, 256, 104, 1) rect(32, 76, 256, 104, 13)
-    stext("PICK A GAME", 84, 27, 2)
+    stext("PICK A MODE", 84, 27, 2)
     for i, m in ipairs(MODES) do
       local x = 48 + (i - 1) * 116
       rectfill(x, 110, 108, 26, i == sel and 8 or 2)
@@ -517,7 +520,6 @@ function _draw()
       stext(winner == 0 and "A DRAW!" or (winner == 1 and "LEFT KITCHEN WINS" or "RIGHT KITCHEN WINS"), 86, 27, winner == 0 and 2 or 1)
       ctext(score[1] .. " : " .. score[2], 108, 13, 2)
     end
-    if state_t > 60 then ctext(NP > 1 and "hold A: again   B: pick a game" or "hold A: another shift", 146, 29) end
   end
 end
 
@@ -558,6 +560,7 @@ end
 -- this game's words in other languages (the Bit's language, LANGUAGE in Settings; runtime/bk_lang.lua)
 texts{
   de = {
+    ["Another shift"] = "Noch eine Schicht",
     ["Earn the shift's target in coins, or out-brew the other team's kitchen."] = "Verdien das Münzziel der Schicht, oder braue mehr als die Küche des anderen Teams.",
     ["D-pad: walk. A: pick up, put down or use what you face. B: dash."] = "Steuerkreuz: laufen. A: aufheben, ablegen oder benutzen, was vor dir ist. B: sprinten.",
     ["Put 3 ingredients in a cauldron. Hold X next to it to stir: it brews faster."] = "Leg 3 Zutaten in einen Kessel. Halt X daneben zum Umrühren: dann braut es schneller.",

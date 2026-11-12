@@ -44,6 +44,8 @@ _SYSTEXT = {
     ["Quit to title"] = "Zurück zum Titel", ["Keep playing"] = "Weiterspielen", ["Back to title"] = "Zurück zum Titel",
     ["Volume"] = "Lautstärke", ["Music"] = "Musik", ["Delete save"] = "Spielstand löschen", ["Back"] = "Zurück",
     ["Cancel"] = "Abbrechen",
+    ["hold A: choose"] = "A halten: wählen", ["Rematch"] = "Revanche", ["Change mode"] = "Modus wechseln",
+    ["Again"] = "Nochmal", ["Try again"] = "Nochmal versuchen", ["PICK A MODE"] = "MODUS WÄHLEN",
     ["Delete your save? Your progress in this game is gone for good."] =
       "Spielstand löschen? Dein Fortschritt in diesem Spiel ist dann für immer weg.",
     ["Goal:"] = "Ziel:", ["* goal done *"] = "* Ziel erreicht *", ["A: choose"] = "A: wählen",
