@@ -388,6 +388,39 @@ require('../studio/runtime.js')({ onLog: (m, e) => { (e ? errors : logs).push(m)
   ev('ui = "bag"'); run(2); shot('windrow-bag-finds'); ev('ui = nil');
   if (errors.length) { errors.forEach(e => fail('valley: ' + e)); errors = []; }
 
+  // 7h. further out: Hoarfrost Peak above the hills and the Hollow Coast west of the shore
+  load(null); run(5);
+  ev('G.area, px, py = 6, 14 * 16 + 8, 30 toast_t = 0'); run(40, 1 << B.up);
+  check('the peak is too cold without a coat', get('G.area, toast:find("coat") ~= nil'), '6 true');
+  ev('ui = "shop" for i, it in ipairs(shop_items()) do if it.name == "Wool coat" then ui_sel = i end end G.coins = 220'); tap('a'); tap('b');
+  check('Marrow sells one', get('G.coat, G.coins'), '1 0');
+  run(40, 1 << B.up); run(40);
+  check('with it the path climbs to Hoarfrost Peak', get('G.area, fl(px / 16), fl(py / 16) > 16'), '8 14 true');
+  ev('px, py = 13 * 16 + 8, 6 * 16'); run(3); shot('windrow-peak');
+  ev('px, py, dx, dy = 13 * 16 + 8, 3 * 16 + 14, 0, -1 toast_t = 0'); run(3); tap('a');
+  check('the summit cairn rewards the climb', get('G.coins, G.seen.summit'), '250 1');
+  ev('toast_t = 0'); tap('a'); check('once', get('G.coins'), '250');
+  check('the tarn up there has its own fish', get('pick_fish(8).a, pick_fish(9).a'), '8 9');
+  check('and glowstone lies in the open', get('tile(8, 10, 13)'), 'Q');
+  ev('px, py = 14 * 16 + 8, 19 * 16 + 8'); run(40, 1 << B.down); run(40);
+  check('down again to the hills', get('G.area, fl(px / 16), fl(py / 16) < 3'), '6 14 true');
+  ev('G.area, px, py, G.clk = 4, 20, 5 * 16 + 12, DAY_FRAMES * 0.6 toast_t = 0'); run(40, 1 << B.left);
+  check('in the afternoon the tide bars the way west', get('G.area, toast:find("tide") ~= nil'), '4 true');
+  ev('G.clk = 100'); run(40, 1 << B.left); run(40);
+  check('in the morning it is dry: the Hollow Coast', get('G.area, AREAS[G.area].name, fl(py / 16)'), '9 The Hollow Coast 5');
+  ev('px, py = 9 * 16, 9 * 16 + 12'); run(3); shot('windrow-coast');
+  ev('px, py, dx, dy = 4 * 16 + 8, 11 * 16 + 14, 0, -1 toast_t = 0'); run(3); tap('a');
+  check('the wreck holds a treasure', get('G.coins, have("glow"), G.seen.wreck'), '550 3 1');
+  ev('G.clk = DAY_FRAMES * 0.7 px, py = 27 * 16, 5 * 16 + 12'); run(40, 1 << B.right); run(40);
+  check('you can always walk back out', get('G.area, fl(px / 16) < 3'), '4 true');
+  for (const a of [8, 9]) {
+    const n = num(`(function() local n = 0 for i, o in ipairs(FORAGE) do if o.a == ${a} then n = n + 1 end end return n end)()`);
+    if (n < 4) fail(`things should grow wild in ${get(`AREAS[${a}].name`)}: ${n}`);
+  }
+  ev('persist()'); load(getSave()); run(3);
+  check('coat and finds are in the save', get('G.coat, G.seen.summit, G.seen.wreck, G.area'), '1 1 1 4');
+  if (errors.length) { errors.forEach(e => fail('far valley: ' + e)); errors = []; }
+
   // 7g. fishing
   load(null); run(5);
   ev('G.area, px, py, dx, dy = 4, 8 * 16 + 8, 14 * 16 + 12, 1, 0 toast_t = 0'); run(3);
@@ -442,6 +475,8 @@ require('../studio/runtime.js')({ onLog: (m, e) => { (e ? errors : logs).push(m)
     if (f === 13000) ev('ui = nil G.area, G.rod, G.pick, px, py = 4, 1, 1, 8 * 16 + 8, 13 * 16 + 12');
     if (f === 14000) ev('ui, FISHING = nil, nil G.area, px, py = 6, 8 * 16, 5 * 16 + 12');
     if (f === 15000) ev('ui, FISHING = nil, nil G.area, px, py = 5, 12 * 16, 10 * 16 + 12');
+    if (f === 15400) ev('ui, FISHING = nil, nil G.area, px, py = 8, 12 * 16, 9 * 16 + 12');
+    if (f === 15700) ev('ui, FISHING = nil, nil G.area, px, py = 9, 12 * 16, 6 * 16 + 12');
     if (f === 4000) ev('G.trac, G.imp, G.impsel, G.plots = 1, { 1, 1, 1, 1 }, 1, { true, true, true } G.area, px, py = 1, 10 * 16, 17 * 16 mount()');
     if (M._bkw_frame(mask, 0)) { fail('random play stopped at frame ' + f + ': ' + errors.join(' ')); break; }
   }

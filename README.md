@@ -142,9 +142,15 @@ BitKit's flagship game, and it is growing. You arrive in the valley of Windrow w
   has its own wild finds (shells, pearls, bogberries, thyme, flint, dates, amber) and an old tin box.
 
   ![Gull Shore](docs/media/windrow-shore.png) ![The Dry Reach](docs/media/windrow-desert.png)
+- **Further out.** Above the Flint Hills lies Hoarfrost Peak (bring a wool coat): snow, a frozen tarn to
+  fish through, glowstone in the open and a cairn on the summit. West of Gull Shore the Hollow Coast
+  can only be reached before noon, while the tide is out: dark cliffs, tide pools, mussels, sea glass
+  and an old wreck.
+
+  ![Hoarfrost Peak](docs/media/windrow-peak.png) ![The Hollow Coast](docs/media/windrow-coast.png)
 - **Fishing.** With a rod from Marrow, A at any water casts the line. Strike when it bites, reel while
   the fish rests and ease off while it runs, or the line snaps (a light press reels gently on analog
-  buttons). 15 kinds of fish, each water with its own, some of them rare.
+  buttons). 20 kinds of fish, each water with its own, some of them rare.
 
   ![Fishing from the jetty](docs/media/windrow-fishing.png)
 - **Neighbours.** Every Bit keeps its own farm, and Bits in reach are neighbours (in the studio: open
