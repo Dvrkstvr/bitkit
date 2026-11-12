@@ -290,8 +290,8 @@ A downhill belly-slide race for 1-8 penguins and seals, on one screen (split in 
 - **B** in the air is a trick: hold it to keep turning, let go and the trick finishes its turn. Land only once it's done, or it's a wipeout; land right after it finishes for **PERFECT**. B alone is a Twirl, B + up a Flipper, B + down a Backflop, and mixing them in one jump scores more.
 - Rings in the air and flag gates score, and so does your finish place. Crates give **Snowballs** (X throws one at the rider ahead), **Fish** (a burst of speed), a **Magnet** (pulls rings in) or a **Guard** that saves your next bad landing or hit.
 - **Penguins** are light and nimble: sharp turns, quick tricks, a bigger pop. **Seals** are heavy and fast: a higher top speed, they shove penguins aside and shrug off snowballs, but their tricks turn slower. Pick your body colour and scarf in the rider yard.
-- Three slopes: Frostpine Run, Glacier Gully (long half pipes) and Aurora Drop (a night run with cliffs). After every run the top 3 stand on the podium.
-- **Goal:** win the Snowbelly Cup, the most points after all three slopes. Continue takes you straight to your next cup run.
+- Four slopes: Frostpine Run, Glacier Gully (long half pipes), Aurora Drop (a night run with cliffs) and Big Bowl (very wide pipes whose rim is too high to air over, except from the striped ramps built onto the walls). The open slopes bend gently left and right. Reaching a pipe's lip always airs you out. After every run the top 3 stand on the podium.
+- **Goal:** win the Snowbelly Cup, the most points after three slopes in a row. Continue takes you straight to your next cup run.
 
 ## ✨ Shaders
 

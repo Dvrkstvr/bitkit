@@ -34202,6 +34202,8 @@ texts{
 SL = 2                                      -- segment length (m)
 W = 6                                       -- half width of a normal slope
 PFLAT, POUT, LIP = 3, 7.5, 3.4              -- half pipe: flat floor half width, lip, lip height
+BOWL = 1.9                                  -- a wide bowl is this many times wider
+CURVY = 0.0032                              -- how much the open slopes bend left and right
 G = tune("Gravity", 0.0075, 0.003, 0.015, 0.0005)
 PULL = tune("Downhill pull", 0.0085, 0.003, 0.02, 0.0005)
 DRAG = tune("Air drag", 0.016, 0.005, 0.04, 0.001)
@@ -34236,7 +34238,7 @@ SCARF_NAMES = { "RED", "BLUE", "GREEN", "GOLD", "PURPLE", "RUST", "PINK", "SLATE
 CPU_NAMES = { "PIP", "MOSS", "TUFT", "ROE", "BRAN", "KELP", "DUNE" }
 KEYS = { "left", "right", "up", "down", "a", "b", "x" }
 
--- the three slopes: sections are {kind, length, curve, slope, extras}
+-- the slopes: sections are {kind, length, curve, slope, extras}
 COURSES = {
   { name = "FROSTPINE RUN", about = "Gentle pines, two kickers and a short pipe.", sky = { 21, 22, 23, 211 }, hill = { 169, 205 },
     snow = { 13, 247 }, track = { 211, 23 }, wall = { 211, 205, 169, 162 }, far = 211, night = false,
@@ -34291,6 +34293,19 @@ COURSES = {
       { "run", 50, 0.0015, -0.3, gates = 4 },
       { "finish" },
     } },
+  { name = "BIG BOWL", about = "Very wide pipes. Air out from the side ramps!", sky = { 21, 22, 23, 211 }, hill = { 169, 162 },
+    snow = { 13, 12 }, track = { 211, 23 }, wall = { 211, 205, 169, 162 }, far = 211, night = false, curvy = 0.6,
+    secs = {
+      { "run", 40, 0, -0.2 },
+      { "bowl", 170, 0.0008, -0.2 },
+      { "run", 30, 0, -0.24, crates = true },
+      { "kick", 3 },
+      { "run", 30, -0.0015, -0.26, gates = 2 },
+      { "bowl", 190, -0.0008, -0.21 },
+      { "run", 30, 0.0015, -0.25, rings = 3 },
+      { "bowl", 150, 0.001, -0.22 },
+      { "finish" },
+    } },
 }
 
 function _init()
@@ -34298,7 +34313,7 @@ function _init()
     title = "Snowbelly",
     in_menu = function() return state == "yard" or state == "pick" end,   -- rider and slope pick: no pause
     players = { 1, 8 },
-    goal = "Win the Snowbelly Cup: the most points after all three slopes.",
+    goal = "Win the Snowbelly Cup: the most points after three slopes in a row.",
     help = {
       "Left / right: steer. Down: tuck (faster, steers less). Up: brake.",
       "A: jump. Right at the lip of a ramp it's a PERFECT POP, right at the top of a hill an APEX POP.",
@@ -34377,15 +34392,16 @@ function build_course(n)
   course_n = n
   local C = COURSES[n]
   TH = C
-  Y, CX, PP, SLP, RMP, OBJ, CREST = {}, {}, {}, {}, {}, {}, {}
+  Y, CX, PP, SLP, RMP, OBJ, CREST, PWD, SIDE = {}, {}, {}, {}, {}, {}, {}, {}, {}
   RINGS, GATES, CRATES = {}, {}, {}
   local R = lcg(n * 7919)
   local y, cx, dcx, slope, curve, s = 0, 0, 0, -0.15, 0, 1
-  local function push(sl, cv, pipe, ramp)
+  local function push(sl, cv, pipe, ramp, wide)
     slope = lerp(slope, sl, 0.12)
     curve = lerp(curve, cv, 0.08)
     dcx = mid(-0.35, dcx + curve, 0.35)
     Y[s], CX[s], PP[s], SLP[s], RMP[s], OBJ[s] = y, cx, pipe, slope, ramp or 0, OBJ[s] or {}
+    PWD[s] = wide or 1
     y, cx, s = y + slope * SL, cx + dcx * SL, s + 1
   end
   local function obj(at, o) OBJ[at] = OBJ[at] or {} local l = OBJ[at] l[#l + 1] = o o.s = o.s or at return o end
@@ -34395,7 +34411,8 @@ function build_course(n)
     local s0 = s
     if k == "run" or k == "rollers" then
       for i = 1, sec[2] do
-        push(sec[4], sec[3], 0)
+        -- gentle left and right bends on the open slope, so you have to lean into them
+        push(sec[4], sec[3] + math.sin((s + n * 37) / 24) * CURVY * (C.curvy or 1), 0)
         if k == "rollers" then
           y = y + math.sin(i / 5) * 0.55
           if math.sin((i - 1) / 5) > 0 and math.sin(i / 5) <= 0 then CREST[s] = true end   -- the top of a roller
@@ -34411,6 +34428,24 @@ function build_course(n)
       for i = 24, len - 24, 18 do
         local side = ((i // 18) % 2 == 0) and 1 or -1
         RINGS[#RINGS + 1] = obj(s0 + i, { k = "ring", s = s0 + i, x = side * (POUT - 0.3), h = 1.6 + ((i // 36) % 2) * 0.6 })
+      end
+    elseif k == "bowl" then
+      -- a very wide pipe: its rim is too high to air over, except where a ramp is built onto the wall
+      local len = sec[2]
+      for i = 1, len do
+        local p = mid(0, math.min(i / 18, (len - i) / 18), 1)
+        push(sec[4], sec[3], p, 0, BOWL)
+      end
+      local n2 = 0
+      for i = 26, len - 26, 22 do
+        n2 = n2 + 1
+        local side = n2 % 2 == 1 and 2 or 1
+        for j = 0, 5 do SIDE[s0 + i + j] = side end
+        local sx = (side == 2 and 1 or -1) * (POUT * BOWL - 0.6)
+        RINGS[#RINGS + 1] = obj(s0 + i + 10, { k = "ring", s = s0 + i + 10, x = sx, h = 3.2 })
+      end
+      for i = 20, len - 20, 30 do
+        RINGS[#RINGS + 1] = obj(s0 + i, { k = "ring", s = s0 + i, x = 0, h = 1.4 })
       end
     elseif k == "kick" then
       local H, K = sec[2], 7
@@ -34462,6 +34497,7 @@ function build_course(n)
   end
   for i = 1, 4 do push(0, 0, 0) end
   N = s - 1
+  PWD[N + 1] = 1
   -- hill tops: wherever the slope suddenly gets steeper (a drop, the end of a flat bit) a jump right there is an APEX POP
   for i = 2, N - 1 do
     local d1, d2 = (Y[i] - Y[i - 1]) / SL, (Y[i + 1] - Y[i]) / SL
@@ -34488,19 +34524,31 @@ end
 function base_y(z) local s, f = seg_at(z) return Y[s] + (Y[s + 1] - Y[s]) * f end
 function pipe_at(z) local s, f = seg_at(z) return PP[s] + (PP[s + 1] - PP[s]) * f end
 -- height of the snow at (z, x) and how steep the pipe wall is there (dh/dx)
+-- a pipe's floor half width, rim half width and rim height at segment s (+ f); wide bowls are wider and deeper
+function pipe_shape(s, f)
+  local p = PP[s] + (PP[s + 1] - PP[s]) * f
+  local wd = PWD[s] + ((PWD[s + 1] or 1) - PWD[s]) * f
+  return p, lerp(W, PFLAT * wd, p), lerp(W, POUT * wd, p), LIP * p * (1 + (wd - 1) * 0.45)
+end
 function ground(z, x)
   local s, f = seg_at(z)
   local by = Y[s] + (Y[s + 1] - Y[s]) * f
-  local p = PP[s] + (PP[s + 1] - PP[s]) * f
+  local p, fl, out, lh = pipe_shape(s, f)
   if p <= 0 then return by, 0, W, W end
-  local fl, out = lerp(W, PFLAT, p), lerp(W, POUT, p)
   local ax = math.abs(x)
   if ax <= fl then return by, 0, fl, out end
   local span = out - fl
-  if ax >= out then return by + LIP * p, 0, fl, out end
+  if ax >= out then return by + lh, 0, fl, out end
   local u = (ax - fl) / span
-  return by + LIP * p * u * u, sgn(x) * 2 * LIP * p * u / span, fl, out
+  return by + lh * u * u, sgn(x) * 2 * lh * u / span, fl, out
 end
+-- is there a side ramp on this wall (side 1 = left, 2 = right) near z?
+function side_ramp(z, x)
+  local s = seg_at(z)
+  local want = x > 0 and 2 or 1
+  return SIDE[s] == want or SIDE[s + 1] == want
+end
+function wide_at(z) local s, f = seg_at(z) return PWD[s] + ((PWD[s + 1] or 1) - PWD[s]) * f end
 
 -- ---------------------------------------------------------------- starting a run
 function start_run(n)
@@ -34573,6 +34621,13 @@ function cpu_input(r)
     local _, _, fl, out = ground(r.z, r.x)
     if r.x * r.pump > out * 0.85 then r.pump = -r.pump end
     tx = r.pump * out
+    if wide_at(r.z) > 1.3 then
+      -- a bowl: cruise the floor, and go up the wall only where a side ramp is coming
+      tx = r.aim
+      for j = s + 2, s + 9 do
+        if SIDE[j] then tx = (SIDE[j] == 2 and 1 or -1) * out * 1.1 break end
+      end
+    end
   end
   I.steer = mid(-1, (tx - r.x) * 0.9, 1)
   I.tuck = math.abs(tx - r.x) < 1.2           -- tucked riders steer less, so only tuck when on line
@@ -34708,12 +34763,13 @@ function step(r, I)
   -- speed along the slope
   if not r.air then
     local ahead = base_y(r.z + 1) - base_y(r.z)
-    local drag = DRAG * (I.tuck and 0.6 or 1) * (I.brake and 3 or 1)
+    local drag = DRAG * (I.tuck and 0.5 or 1) * (I.brake and 3 or 1)
     if math.abs(r.x) > W + 0.5 and pipe < 0.1 then drag = drag * 3 end    -- deep snow beside the slope
     r.v = r.v - ahead * PULL * 2 * ST.pull - drag * r.v * r.v - 0.0004
     if r.boost > 0 then r.v = r.v + 0.004 end
+    if I.tuck then r.v = r.v + 0.0025 end               -- tucked: you pick up speed faster too
     if r.v < 0.04 and race_t > 0 then r.v = 0.04 end
-    r.v = mid(0, r.v, ST.top + (I.tuck and 0.05 or 0) + (r.boost > 0 and 0.13 or 0))
+    r.v = mid(0, r.v, ST.top + (I.tuck and 0.14 or 0) + (r.boost > 0 and 0.13 or 0))
   else
     r.v = r.v * 0.9995
   end
@@ -34731,20 +34787,32 @@ function step(r, I)
   end
   if not r.air then r.vx = r.vx - cv * r.v * r.v * 18 end
   r.lean = lerp(r.lean, I.steer or 0, 0.2)
+  r.tuck = I.tuck and not r.air and r.tumble == 0
   r.x = r.x + r.vx
   -- the walls of the slope: deep snow on a normal slope, the lip in a pipe
   if pipe > 0.3 then
     if math.abs(r.x) >= out - 0.05 and not r.air then
-      if r.vx * sgn(r.x) > 0.05 then
-        -- air out over the lip!
+      local wide = wide_at(r.z) > 1.3
+      local ramp = wide and side_ramp(r.z, r.x)
+      if wide and not ramp then
+        -- the rim of a wide bowl is a wall: you stall up there and slide back down
+        r.x = sgn(r.x) * (out - 0.05)
+        r.vx = -sgn(r.x) * 0.01
+      else
+        -- reaching the lip always airs you out (a slow arrival is just a small air, never a bounce)
         r.air, r.air_t = true, 0
-        r.vy = math.min(math.abs(r.vx) * 1.1, 0.19)
+        local sp = math.abs(r.vx)
+        if ramp then
+          r.vy = mid(0.17, sp * 1.8, 0.26)
+          r.pts = r.pts + 20
+          pop_text(r, "SIDE RAMP +20", 27)
+          if r.pn > 0 then sfx("A4", 1, 0.25, 5, nil, 0, 400) end
+        else
+          r.vy = mid(0.1, sp * 1.4, 0.19)
+        end
         r.x = sgn(r.x) * (out - 0.1)
         r.vx = -sgn(r.x) * 0.012
         r.done_t, r.combo = 99, {}
-      else
-        r.x = sgn(r.x) * (out - 0.05)
-        r.vx = -r.vx * 0.3
       end
     end
   else
@@ -34767,7 +34835,10 @@ function step(r, I)
     end
   else
     local ballistic = r.h + r.vy - G
-    if g1 < ballistic - 0.04 then
+    -- on a pipe wall you stay on the snow when you change direction (that used to fling riders off the wall)
+    local _, _, fl1 = ground(r.z, r.x)
+    local on_wall = pipe > 0.3 and math.abs(r.x) > fl1 + 0.05
+    if g1 < ballistic - 0.04 and not on_wall then
       r.air, r.air_t = true, 0
       r.h, r.vy = ballistic, r.vy - G
       r.done_t, r.combo = 99, {}
@@ -35071,7 +35142,7 @@ function update_cams()
       local tz = r.z - CAMD
       c.z = lerp(c.z, tz, 0.5)
       c.x = lerp(c.x, r.x * 0.8, 0.12)
-      local gy = math.max(base_y(r.z) + LIP * pipe_at(r.z) * 0.85, r.h - 1.0)
+      local gy = math.max(base_y(r.z) + LIP * pipe_at(r.z) * 0.85 * (1 + (wide_at(r.z) - 1) * 0.3), r.h - 1.0)
       c.y = lerp(c.y, gy + CAMH - (base_y(r.z) - base_y(c.z)) * 0.0, 0.18)
       local s = seg_at(c.z)
       local s2 = math.min(N, s + 6)
@@ -35104,7 +35175,7 @@ function update_yard()
   if all then state, state_t = "pick", 0 end
 end
 
-PICKS = { "SNOWBELLY CUP", "FROSTPINE RUN", "GLACIER GULLY", "AURORA DROP" }
+PICKS = { "SNOWBELLY CUP", "FROSTPINE RUN", "GLACIER GULLY", "AURORA DROP", "BIG BOWL" }
 function update_pick()
   local E = edge[1]
   if E.up then sel = sel == 1 and #PICKS or sel - 1 sfx("E5", 0, 0.12, 3) end
@@ -35179,14 +35250,14 @@ function proj_point(j, z, cam)
   local k = VF / dz
   local by = Y[s] + (Y[s + 1] - Y[s]) * f
   local cx = CX[s] + (CX[s + 1] - CX[s]) * f
-  local p = PP[s] + (PP[s + 1] - PP[s]) * f
+  local p, fl, out, lh = pipe_shape(s, f)
   local camx = CX0 + cam.x + cam.hd * dz
   PX[j] = VCX + (cx - camx) * k
   PY[j] = VHOR - (by - cam.y - cam.pt * dz) * k
   PK[j] = k
-  PFL[j] = lerp(W, PFLAT, p) * k
-  POU[j] = lerp(W, POUT, p) * k
-  PLH[j] = LIP * p * k
+  PFL[j] = fl * k
+  POU[j] = out * k
+  PLH[j] = lh * k
   PS[j] = s
 end
 
@@ -35247,12 +35318,17 @@ function draw_world(cam, me)
       local qa, qb = ya - PLH[a] * 0.25, yb - PLH[b] * 0.25
       -- left wall faces the sun: lighter; the upper half of each wall is lighter than the lower
       local w = TH.wall
-      quadfill(xa - oa, la, xa - ma, qa, xb - mb, qb, xb - ob, lb, w[1])
+      local sd = SIDE[PS[a]]
+      local rl = sd == 1 and (alt and 22 or 23) or w[1]
+      local rr = sd == 2 and (alt and 22 or 23) or w[2]
+      quadfill(xa - oa, la, xa - ma, qa, xb - mb, qb, xb - ob, lb, rl)
       quadfill(xa - ma, qa, xa - fa, ya, xb - fb, yb, xb - mb, qb, w[2])
       quadfill(xa + fa, ya, xa + ma, qa, xb + mb, qb, xb + fb, yb, w[3])
-      quadfill(xa + ma, qa, xa + oa, la, xb + ob, lb, xb + mb, qb, w[2])
+      quadfill(xa + ma, qa, xa + oa, la, xb + ob, lb, xb + mb, qb, rr)
       if alt and not farj then line(xa - ma, qa, xa - fa, ya, w[3]) line(xa + fa, ya, xa + ma, qa, w[4]) end
-      if not farj then line(xa - oa, la, xb - ob, lb, 20) line(xa + oa, la, xb + ob, lb, 20) end
+      if not farj then
+        line(xa - oa, la, xb - ob, lb, sd == 1 and 25 or 20) line(xa + oa, la, xb + ob, lb, sd == 2 and 25 or 20)
+      end
     end
     -- the groomed slope
     if ya >= yb - 0.5 then
@@ -35389,8 +35465,8 @@ function rider_pose(r)
       pitch, fy = ({ 0, 1, 2, 1 })[q + 1], q == 1
       if q == 1 then pitch = 1 end
     end
-  elseif r.lean > 0.5 and not r.air then yaw = 7
-  elseif r.lean < -0.5 and not r.air then yaw = 1
+  elseif r.lean > 0.5 and not r.air then yaw = 1       -- steering right: the nose turns right
+  elseif r.lean < -0.5 and not r.air then yaw = 7
   end
   return pitch, yaw % 8, fy
 end
@@ -35436,6 +35512,14 @@ function draw_dyn(cam, o, me)
   if r.guard and k < 60 then circ(sx, sy - 0.8 * k, 1.1 * k, gt % 8 < 4 and 22 or 23) end
   if r.boost > 0 and gt % 4 < 2 then
     for i = 1, 3 do pset(sx - 0.4 * k + i * 0.2 * k, sy + 1 + i, 10) end
+  end
+  if r.tuck and k > 2 then                           -- tucked: wind streaks fly past
+    for i = 0, 3 do
+      local ph = (gt * 3 + i * 7) % 12
+      local lx = sx + (i % 2 == 0 and -1 or 1) * (0.7 + 0.25 * (i // 2)) * k
+      local ly = sy - (0.3 + 0.35 * (i // 2)) * k + ph
+      line(lx, ly, lx, ly + 3 + k * 0.15, TH.night and 169 or 162)
+    end
   end
   local p, y, fy = rider_pose(r)
   draw_rider_at(r, sx, sy, k, p, y, fy)
@@ -35632,12 +35716,12 @@ function draw_pick()
   draw_snowfield(gt)
   sctext("WHERE TO?", 14, 27, 2)
   for i, nm in ipairs(PICKS) do
-    local y = 50 + (i - 1) * 30
+    local y = 42 + (i - 1) * 26
     local on = i == sel
-    rectfill(50, y, 220, 24, on and 20 or 19)
-    rect(50, y, 220, 24, on and 13 or 21)
-    text(nm, 160 - #nm * 4, y + 4, on and 27 or 23)
-    local sub = i == 1 and "All three slopes. Points add up." or COURSES[i - 1].about
+    rectfill(30, y, 260, 23, on and 20 or 19)
+    rect(30, y, 260, 23, on and 13 or 21)
+    text(nm, 160 - #nm * 4, y + 3, on and 27 or 23)
+    local sub = i == 1 and "Three slopes in a row. Points add up." or COURSES[i - 1].about
     if on then text(sub, 160 - #sub * 2, y + 14, 13) end
   end
   ctext(#riders > 0 and "" or "", 170, 1)

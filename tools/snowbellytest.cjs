@@ -131,7 +131,7 @@ const runtime = require('../studio/runtime.js');
     shot: [400, 'snowbelly-start'] }, 'podium true true 4 over');
   shot('snowbelly-results');
   // the camera ride for screenshots of each slope
-  for (const [n, f, nm] of [[1, 900, 'frostpine'], [2, 1100, 'gully'], [3, 900, 'aurora']])
+  for (const [n, f, nm] of [[1, 900, 'frostpine'], [2, 1100, 'gully'], [3, 900, 'aurora'], [4, 700, 'bowl']])
     scenario('slope ' + n, { setup: 'start_run(' + n + ')', check: 'riders[1].z', at: f, shot: [f, 'snowbelly-' + nm] });
   // rings: flying through one scores, missing doesn't
   expect('ring', { setup: 'start_run(1) ' + T + 'local o = RINGS[1] local z = (o.s - 1 + (o.zf or 0.5)) * SL - 3 r = riders[1] r.z, r.x, r.v = z, o.x, 0.4 r.h = ground(z, o.x) + o.h - 0.5 r.vy = 0.003 r.air = true',
@@ -160,9 +160,26 @@ const runtime = require('../studio/runtime.js');
   // holding down tucks: faster, but you steer less
   const tk = (chk, input, at) => +scenario('tuck', { setup: 'start_run(1) ' + T + 'r = riders[1] r.z, r.x, r.v = 200, 0, 0.35 r.h = ground(200, 0)', check: chk, at, input })[0];
   const vt = tk('riders[1].v', f => [f > 5 ? bit('down') : 0], 200), vn = tk('riders[1].v', () => [0], 200);
-  if (!(vt > vn)) fail(`tucking should be faster: tucked ${vt} upright ${vn}`);
+  if (!(vt > vn * 1.12)) fail(`tucking should be clearly faster: tucked ${vt} upright ${vn}`);
+  if (process.env.TIMING) console.log(`tuck speed ${vt.toFixed(3)} vs upright ${vn.toFixed(3)}`);
   const xt = tk('riders[1].x', f => [f > 5 ? bit('down', 'right') : 0], 25), xn = tk('riders[1].x', f => [f > 5 ? bit('right') : 0], 25);
   if (!(xn > xt * 1.5)) fail(`tucking should steer less: tucked ${xt} upright ${xn}`);
+  // the rider turns the way you steer: right shows the right-facing turn (yaw 1), left the left one (yaw 7)
+  expect('steer pose', { setup: 'start_run(1) ' + T, input: f => [f > 5 && f < 30 ? bit('right') : f >= 30 ? bit('left') : 0],
+    check: '(select(2, rider_pose(riders[1])))', at: 25 }, '1');
+  expect('steer pose left', { setup: 'start_run(1) ' + T, input: f => [f > 5 && f < 30 ? bit('right') : f >= 30 ? bit('left') : 0],
+    check: '(select(2, rider_pose(riders[1])))', at: 55 }, '7');
+  // half pipes: reaching the lip always airs out, even slowly (it used to bounce you back in)
+  const lip = (course, x0, vx, extra = '') => scenario('lip', { setup: `start_run(${course}) ` + T + `local p for s = 1, N do if PP[s] > 0.99 and PP[s + 30] and PP[s + 30] > 0.99 ${extra} then p = s break end end r = riders[1] r.z, r.v = (p - 1) * SL, 0.3 local _, _, fl, out = ground(r.z, 0) r.x = out - ${x0} r.h = ground(r.z, r.x) r.vx = ${vx} AIRED = nil`,
+    every: 'if riders[1].air and not AIRED then AIRED = riders[1].vy > 0.08 end', check: 'AIRED == true, riders[1].pts, riders[1].tumble', at: 9 });
+  if (lip(2, 0.04, 0.03)[0] !== 'true') fail('a slow rider reaching a half pipe lip should air out, not bounce');
+  // a wide bowl: the rim is a wall, except at the side ramps (+20 and a big air)
+  const rim = lip(4, 0.1, 0.12, 'and not SIDE[s] and not SIDE[s + 1]');
+  if (rim[0] !== 'false') fail(`the rim of a wide bowl should not air you out: ${rim}`);
+  const sr = lip(4, 0.1, 0.12, 'and SIDE[s] == 2');
+  if (sr[0] !== 'true' || sr[1] !== '20') fail(`a bowl's side ramp should air you out for +20: ${sr}`);
+  // CPU riders get down the bowl course
+  expect('bowl run', { setup: 'start_run(4)', check: 'state, riders[1].fin ~= nil', at: 6000 }, 'podium true');
   // a jump right at the top of a hill is an APEX POP
   expect('apex pop', { setup: 'start_run(3) ' + T + 'local c for s = 2, N do if CREST[s] then c = s break end end r = riders[1] r.z, r.x, r.v = (c - 1) * SL - 1.2, 0, 0.4 r.h = ground(r.z, 0) r.vy = ground(r.z + 0.4, 0) - r.h',
     input: f => [f === 6 ? bit('a') : 0], check: 'riders[1].air, riders[1].pts', at: 8 }, 'true 30');
@@ -174,8 +191,8 @@ const runtime = require('../studio/runtime.js');
   if (L1[1] !== 'true' || L0[1] !== 'false') fail(`only a tucked landing on a steep slope is a SLOPE LANDING: held ${L1[1]} not held ${L0[1]}`);
   if (!(lh > lf + 0.03)) fail(`landing tucked on a steep slope should be faster: held ${lh} not held ${lf}`);
   // playstyles: a seal gets faster on a long slope, a penguin turns sharper
-  const race2 = (sp, chk, input, at = 400) => scenario('style ' + sp, { setup: 'looks[1].sp = ' + sp + ' start_run(1) ' + T, check: chk, at, input });
-  const pv = +race2(1, 'riders[1].v')[0], sv = +race2(2, 'riders[1].v')[0];
+  const race2 = (sp, chk, input, at = 400, center) => scenario('style ' + sp, { setup: 'looks[1].sp = ' + sp + ' start_run(1) ' + T, check: chk, at, input, every: center ? 'riders[1].x, riders[1].vx = 0, 0' : '' });
+  const pv = +race2(1, 'riders[1].v', undefined, 400, true)[0], sv = +race2(2, 'riders[1].v', undefined, 400, true)[0];  // kept in the middle: the slope bends
   if (!(sv > pv)) fail(`seals should be faster at the top: seal ${sv} penguin ${pv}`);
   const px = +race2(1, 'riders[1].x', f => [f > 5 && f < 30 ? bit('right') : 0], 30)[0];
   const sx = +race2(2, 'riders[1].x', f => [f > 5 && f < 30 ? bit('right') : 0], 30)[0];
